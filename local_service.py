@@ -996,6 +996,12 @@ def command_error_summary(error: subprocess.CalledProcessError) -> str:
     return detail.splitlines()[-1] if detail else str(error)
 
 
+def truncate_message(message: str, max_length: int = 180) -> str:
+    if len(message) <= max_length:
+        return message
+    return f"{message[:max_length - 1]}…"
+
+
 def run_subtitle_job(job_id: str, audio_path: Path, segments: list[dict], source_language: str, target_language: str) -> None:
     try:
         ensure_job_not_cancelled(job_id)
@@ -1038,7 +1044,10 @@ def run_subtitle_job(job_id: str, audio_path: Path, segments: list[dict], source
             update_job(
                 job_id,
                 progress=1,
-                message=f"GPU transcription failed, retrying with CPU {CPU_WHISPER_RUNTIME.get('model', WHISPER_CPU_MODEL)}.",
+                message=truncate_message(
+                    f"GPU {WHISPER_RUNTIME.get('model', WHISPER_GPU_MODEL)}/{WHISPER_RUNTIME.get('computeType', WHISPER_GPU_COMPUTE_TYPE)} "
+                    f"failed: {fallback_reason}. Retrying with CPU {CPU_WHISPER_RUNTIME.get('model', WHISPER_CPU_MODEL)}."
+                ),
                 error=fallback_reason,
             )
             cpu_runtime = {

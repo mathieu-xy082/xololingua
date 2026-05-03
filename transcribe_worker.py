@@ -121,14 +121,46 @@ def _nvidia_smi_status() -> dict:
 def _validate_runtime(runtime: dict) -> str:
     try:
         from faster_whisper import WhisperModel
-        WhisperModel(
+        import tempfile
+
+        model = WhisperModel(
             runtime["model"],
             device=runtime["device"],
             compute_type=runtime["computeType"],
         )
+        with tempfile.TemporaryDirectory(prefix="xolo_probe_") as directory:
+            probe_audio = Path(directory) / "probe.wav"
+            _write_probe_audio(probe_audio)
+            transcription_segments, _ = model.transcribe(
+                str(probe_audio),
+                beam_size=1,
+                vad_filter=False,
+            )
+            list(transcription_segments)
         return ""
     except Exception as exc:
         return str(exc)
+
+
+def _write_probe_audio(path: Path) -> None:
+    import math
+    import struct
+    import wave
+
+    sample_rate = 16000
+    duration_seconds = 0.25
+    amplitude = 0.05
+    sample_count = int(sample_rate * duration_seconds)
+
+    with wave.open(str(path), "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(sample_rate)
+        frames = bytearray()
+        for index in range(sample_count):
+            value = int(32767 * amplitude * math.sin(2 * math.pi * 440 * index / sample_rate))
+            frames.extend(struct.pack("<h", value))
+        wav.writeframes(bytes(frames))
 
 
 # ---------------------------------------------------------------------------
