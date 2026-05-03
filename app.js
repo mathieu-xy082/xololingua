@@ -294,27 +294,69 @@ async function serviceSegmentAudioAdapter(audioId, onProgress) {
 async function generateSubtitles() {
   if (!canGenerate()) return;
   state.busyStep = "subtitle";
-  els.subtitleStatus.textContent = "Translating segments and preparing SRT...";
+  els.subtitleStatus.textContent = "Transcribing segmented audio...";
   setProgress("subtitle", 0);
   render();
 
-  const srt = await generateSrtAdapter(state.segments, state.targetLanguage, (progress) => {
-    setProgress("subtitle", progress);
+  try {
+    const transcribedSegments = await transcribeAudioAdapter(state.extractedAudio, state.sourceLanguage, state.segments, (progress) => {
+      setProgress("subtitle", Math.round(progress * 0.65));
+    });
+    state.segments = transcribedSegments;
+    renderSegmentReview();
+    els.subtitleStatus.textContent = "Preparing SRT from transcribed text...";
+
+    const srt = await generateSrtAdapter(state.segments, state.targetLanguage, (progress) => {
+      const scaledProgress = 65 + Math.round(progress * 0.35);
+      setProgress("subtitle", scaledProgress);
+    });
+    const fileName = makeSubtitleFileName(state.videoFile.name, state.targetLanguage);
+    const blob = new Blob([srt], { type: "application/x-subrip;charset=utf-8" });
+
+    if (state.srtUrl) URL.revokeObjectURL(state.srtUrl);
+    state.srtUrl = URL.createObjectURL(blob);
+
+    els.downloadLink.href = state.srtUrl;
+    els.downloadLink.download = fileName;
+    els.downloadLink.textContent = `Download ${fileName}`;
+    els.downloadLink.hidden = false;
+    els.subtitleStatus.textContent = "Subtitle file ready.";
+    state.busyStep = "";
+    setProgress("subtitle", 100);
+    render();
+  } catch (error) {
+    els.subtitleStatus.textContent = error.message;
+    state.busyStep = "";
+    setProgress("subtitle", 0);
+    render();
+  }
+}
+
+async function transcribeAudioAdapter(extractedAudio, sourceLanguage, segments, onProgress) {
+  if (!extractedAudio) {
+    throw new Error("Audio must be extracted before transcription.");
+  }
+
+  onProgress(5);
+  const response = await fetch(`${LOCAL_SERVICE_URL}/api/transcribe-audio`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      audioId: extractedAudio.audioId,
+      languageCode: sourceLanguage.code,
+      segments
+    })
   });
-  const fileName = makeSubtitleFileName(state.videoFile.name, state.targetLanguage);
-  const blob = new Blob([srt], { type: "application/x-subrip;charset=utf-8" });
+  const payload = await response.json();
 
-  if (state.srtUrl) URL.revokeObjectURL(state.srtUrl);
-  state.srtUrl = URL.createObjectURL(blob);
+  if (!response.ok) {
+    throw new Error(payload.error || "Audio transcription failed.");
+  }
 
-  els.downloadLink.href = state.srtUrl;
-  els.downloadLink.download = fileName;
-  els.downloadLink.textContent = `Download ${fileName}`;
-  els.downloadLink.hidden = false;
-  els.subtitleStatus.textContent = "Subtitle file ready.";
-  state.busyStep = "";
-  setProgress("subtitle", 100);
-  render();
+  onProgress(100);
+  return payload.segments;
 }
 
 async function identifyLanguageAdapter(file) {
@@ -366,7 +408,7 @@ async function generateSrtAdapter(segments, targetLanguageCode, onProgress) {
     blocks.push([
       String(segment.index),
       `${formatSrtTime(segment.start)} --> ${formatSrtTime(segment.end)}`,
-      `[${target.name}] ${segment.text}`
+      `[${target.name}] ${segment.text || ""}`
     ].join("\n"));
     onProgress(Math.round((segment.index / segments.length) * 100));
   }

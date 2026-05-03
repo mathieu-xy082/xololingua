@@ -18,8 +18,11 @@ The project has not published a first version yet.
 - Added first-pass audio segmentation through `ffmpeg` silence detection over the extracted WAV.
 - Added frontend audio extraction and service-backed segmentation, with fallback if the local service is not running.
 - Added a read-only segmentation review with summary metrics and optional segment details.
+- Added a local transcription endpoint backed by a configurable Whisper-compatible CLI.
+- Added frontend transcription before SRT generation, with a setup error when no transcription engine is installed.
 - Added a local service test for WAV extraction format.
 - Added a local service test for silence-based segmentation.
+- Added local service tests for transcription segment validation and text attachment.
 - Added the first supported language-pair scope:
   - English to French and French to English.
   - French to Russian and Russian to French.
@@ -38,4 +41,5 @@ The project has not published a first version yet.
 
 - Language identification and translation currently use local prototype adapters in `app.js`.
 - Speech segmentation is silence-based and does not yet use a speech-aware model.
-- Real speech recognition and translation still require a backend or local model integration.
+- Real speech recognition requires a configured Whisper-compatible CLI.
+- Translation still requires a backend or local model integration.

@@ -32,6 +32,20 @@ http://127.0.0.1:8765
 
 It requires `ffmpeg` and `ffprobe`, which are available from the Ubuntu package `ffmpeg`. Extracted audio is normalized to mono 16 kHz PCM WAV under `/tmp/xololingua`, then segmented from detected silence boundaries.
 
+Transcription uses a local Whisper-compatible CLI. By default the service runs:
+
+```bash
+whisper <segment.wav> --model base --output_format txt --output_dir <tmp>
+```
+
+You can override the command or model:
+
+```bash
+XOLOLINGUA_WHISPER_COMMAND=whisper XOLOLINGUA_WHISPER_MODEL=base python3 local_service.py
+```
+
+If the command is not installed, subtitle generation stops with a setup error instead of generating fake text.
+
 On Android, connect the phone to the same network as the Ubuntu machine and open:
 
 ```text
@@ -51,6 +65,6 @@ That is enough to run the app in the Android browser. To install it as a PWA, Ch
 - `index.html` contains the video workflow.
 - `styles.css` contains the responsive layout and visual design.
 - `app.js` contains file validation, language selection, processing state, subtitle filename handling, and SRT generation.
-- `local_service.py` contains the local MP4 audio extraction service for Ubuntu development.
+- `local_service.py` contains the local MP4 audio extraction, segmentation, and transcription service for Ubuntu development.
 - `tests/` contains local service tests.
 - `manifest.webmanifest` and `sw.js` make the app installable and cacheable.

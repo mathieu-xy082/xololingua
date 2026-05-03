@@ -3,7 +3,8 @@
 ## Product Scope
 
 - Replace prototype language identification with a real audio-language detection adapter.
-- Add real transcription for segmented audio.
+- Install and configure a Whisper-compatible CLI for real local transcription.
+- Validate transcription quality on representative English and French samples.
 - Add real translation for transcribed segment text.
 - Replace prototype subtitle text with translated segment text in generated SRT files.
 - Defer segmentation quality tuning until transcription, translation, and real SRT text are functional.
@@ -72,6 +73,7 @@
 - Add a browser test runner for UI behavior.
 - Add deterministic MP4 fixtures for short-video workflow tests.
 - Add adapter contract tests for language identification, segmentation, transcription, translation, and SRT formatting.
+- Add integration tests for the transcription endpoint when a local model is available.
 - Add frontend tests for successful local-service audio extraction and local-service fallback.
 - Add frontend tests for segmentation summary and optional read-only detail view.
 - Add functional tests for silence-based segment boundaries on representative speech samples.

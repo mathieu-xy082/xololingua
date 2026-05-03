@@ -3,6 +3,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import local_service
 
@@ -116,6 +117,27 @@ class LocalServiceAudioTests(unittest.TestCase):
             self.assertLess(segments[0]["end"], 1.2)
             self.assertGreater(segments[1]["start"], 1.7)
             self.assertGreater(segments[1]["end"], 2.8)
+
+    def test_normalize_segments_rejects_empty_payload(self):
+        with self.assertRaisesRegex(ValueError, "At least one segment"):
+            local_service.normalize_segments([])
+
+    def test_normalize_segments_rejects_invalid_time_range(self):
+        with self.assertRaisesRegex(ValueError, "Segment end"):
+            local_service.normalize_segments([{"index": 1, "start": 2, "end": 1}])
+
+    def test_transcribe_segments_preserves_timings_and_adds_text(self):
+        with tempfile.TemporaryDirectory() as directory:
+            audio_path = Path(directory) / "sample.wav"
+            audio_path.write_bytes(b"fake wav")
+            segments = [{"index": 1, "start": 0.0, "end": 1.5}]
+
+            with mock.patch.object(local_service, "slice_audio") as slice_audio:
+                with mock.patch.object(local_service, "transcribe_audio_file", return_value="Bonjour."):
+                    result = local_service.transcribe_segments(audio_path, segments, "fr")
+
+            slice_audio.assert_called_once()
+            self.assertEqual(result, [{"index": 1, "start": 0.0, "end": 1.5, "text": "Bonjour."}])
 
 
 if __name__ == "__main__":

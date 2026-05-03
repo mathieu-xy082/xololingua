@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import tempfile
 import uuid
+import os
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -28,6 +29,8 @@ MIN_SEGMENT_SECONDS = 0.4
 SILENCE_NOISE = "-35dB"
 SILENCE_DURATION_SECONDS = 0.45
 WORK_DIR = Path(tempfile.gettempdir()) / "xololingua"
+WHISPER_COMMAND = os.environ.get("XOLOLINGUA_WHISPER_COMMAND", "whisper")
+WHISPER_MODEL = os.environ.get("XOLOLINGUA_WHISPER_MODEL", "base")
 
 
 class LocalServiceHandler(BaseHTTPRequestHandler):
@@ -44,6 +47,9 @@ class LocalServiceHandler(BaseHTTPRequestHandler):
                 "ok": True,
                 "ffmpeg": bool(shutil.which("ffmpeg")),
                 "ffprobe": bool(shutil.which("ffprobe")),
+                "whisper": bool(shutil.which(WHISPER_COMMAND)),
+                "whisperCommand": WHISPER_COMMAND,
+                "whisperModel": WHISPER_MODEL,
             })
             return
 
@@ -55,6 +61,9 @@ class LocalServiceHandler(BaseHTTPRequestHandler):
             return
         if self.path == "/api/segment-audio":
             self.handle_segment_audio()
+            return
+        if self.path == "/api/transcribe-audio":
+            self.handle_transcribe_audio()
             return
 
         self.send_error_json(HTTPStatus.NOT_FOUND, "Unknown endpoint.")
@@ -156,6 +165,50 @@ class LocalServiceHandler(BaseHTTPRequestHandler):
             })
         except subprocess.CalledProcessError as error:
             self.send_error_json(HTTPStatus.BAD_REQUEST, error.stderr.strip() or "Audio segmentation failed.")
+
+    def handle_transcribe_audio(self) -> None:
+        if not shutil.which(WHISPER_COMMAND):
+            self.send_error_json(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                f"Transcription engine not found. Install Whisper CLI or set XOLOLINGUA_WHISPER_COMMAND. Tried: {WHISPER_COMMAND}.",
+            )
+            return
+
+        length = int(self.headers.get("Content-Length", "0"))
+        if length <= 0:
+            self.send_error_json(HTTPStatus.BAD_REQUEST, "Missing JSON body.")
+            return
+
+        try:
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+        except json.JSONDecodeError:
+            self.send_error_json(HTTPStatus.BAD_REQUEST, "Invalid JSON body.")
+            return
+
+        audio_id = str(payload.get("audioId", ""))
+        if not re.fullmatch(r"[a-f0-9]{32}", audio_id):
+            self.send_error_json(HTTPStatus.BAD_REQUEST, "Invalid audio id.")
+            return
+
+        audio_path = WORK_DIR / f"{audio_id}.wav"
+        if not audio_path.exists():
+            self.send_error_json(HTTPStatus.NOT_FOUND, "Extracted audio file was not found.")
+            return
+
+        language_code = str(payload.get("languageCode", ""))
+        segments_payload = payload.get("segments", [])
+        try:
+            segments = normalize_segments(segments_payload)
+            transcribed_segments = transcribe_segments(audio_path, segments, language_code)
+            self.send_json({
+                "audioId": audio_id,
+                "languageCode": language_code,
+                "segments": transcribed_segments,
+            })
+        except ValueError as error:
+            self.send_error_json(HTTPStatus.BAD_REQUEST, str(error))
+        except subprocess.CalledProcessError as error:
+            self.send_error_json(HTTPStatus.BAD_REQUEST, error.stderr.strip() or "Audio transcription failed.")
 
     def send_json(self, payload: dict, status: HTTPStatus = HTTPStatus.OK) -> None:
         body = json.dumps(payload).encode("utf-8")
@@ -300,6 +353,96 @@ def split_long_segments(segments: list[tuple[float, float]], max_seconds: float)
             bounded.append((cursor, end))
 
     return bounded
+
+
+def normalize_segments(payload: object) -> list[dict]:
+    if not isinstance(payload, list) or not payload:
+        raise ValueError("At least one segment is required.")
+
+    segments: list[dict] = []
+    for index, segment in enumerate(payload, start=1):
+        if not isinstance(segment, dict):
+            raise ValueError("Invalid segment payload.")
+
+        start = float(segment.get("start", 0))
+        end = float(segment.get("end", 0))
+        if end <= start:
+            raise ValueError("Segment end must be greater than start.")
+
+        segments.append({
+            "index": int(segment.get("index", index)),
+            "start": start,
+            "end": end,
+        })
+
+    return segments
+
+
+def transcribe_segments(audio_path: Path, segments: list[dict], language_code: str) -> list[dict]:
+    results: list[dict] = []
+    segment_dir = WORK_DIR / f"segments-{uuid.uuid4().hex}"
+    segment_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        for segment in segments:
+            segment_audio_path = segment_dir / f"segment-{segment['index']:05d}.wav"
+            slice_audio(audio_path, segment_audio_path, segment["start"], segment["end"])
+            text = transcribe_audio_file(segment_audio_path, language_code, segment_dir)
+            results.append({
+                **segment,
+                "start": round(segment["start"], 3),
+                "end": round(segment["end"], 3),
+                "text": text,
+            })
+    finally:
+        shutil.rmtree(segment_dir, ignore_errors=True)
+
+    return results
+
+
+def slice_audio(audio_path: Path, output_path: Path, start: float, end: float) -> None:
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-y",
+            "-ss",
+            f"{start:.3f}",
+            "-to",
+            f"{end:.3f}",
+            "-i",
+            str(audio_path),
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
+            "-c:a",
+            "pcm_s16le",
+            str(output_path),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def transcribe_audio_file(audio_path: Path, language_code: str, output_dir: Path) -> str:
+    command = [
+        WHISPER_COMMAND,
+        str(audio_path),
+        "--model",
+        WHISPER_MODEL,
+        "--output_format",
+        "txt",
+        "--output_dir",
+        str(output_dir),
+    ]
+    if language_code:
+        command.extend(["--language", language_code])
+
+    subprocess.run(command, check=True, capture_output=True, text=True)
+    text_path = output_dir / f"{audio_path.stem}.txt"
+    return text_path.read_text(encoding="utf-8").strip()
 
 
 def main() -> None:
