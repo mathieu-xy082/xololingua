@@ -444,7 +444,7 @@ function finishSegmentation(segments) {
   state.segments = segments;
   const extractionDetail = state.extractedAudio
     ? ` Audio file: ${state.extractedAudio.audioFileName}.`
-    : "";
+    : " Prototype-only segmentation cannot generate subtitles until audio extraction succeeds.";
   els.segmentationStatus.textContent = `${segments.length} speech segments prepared.${extractionDetail}`;
   state.busyStep = "";
   setProgress("segmentation", 100);
@@ -508,6 +508,7 @@ function render() {
   els.segmentButton.disabled = !canSegment() || state.busyStep === "segmentation";
   els.generateButton.disabled = !canGenerate() || state.busyStep === "subtitle";
   renderSegmentReview();
+  renderSubtitleStatus();
 }
 
 function canSegment() {
@@ -562,6 +563,22 @@ function resetSubtitle() {
   els.downloadLink.removeAttribute("href");
   els.downloadLink.removeAttribute("download");
   setProgress("subtitle", 0);
+}
+
+function renderSubtitleStatus() {
+  if (state.busyStep === "subtitle" || state.srtUrl) return;
+
+  if (canGenerate()) {
+    els.subtitleStatus.textContent = "Ready to transcribe and translate.";
+    return;
+  }
+
+  if (canSegment() && state.segments.length > 0 && !state.extractedAudio) {
+    els.subtitleStatus.textContent = "Rerun segmentation with the local service available.";
+    return;
+  }
+
+  els.subtitleStatus.textContent = "Run segmentation first.";
 }
 
 function setProgress(kind, value) {
