@@ -3,7 +3,7 @@
 ## Product Scope
 
 - Replace prototype language identification with a real audio-language detection adapter.
-- Replace prototype segmentation with real speech segmentation for MP4 audio.
+- Replace silence-based segmentation with model-backed speech segmentation over the extracted WAV audio.
 - Replace prototype subtitle text with real transcription and translation.
 - Decide whether processing runs locally, on a backend service, or through a third-party API.
 - Keep the 2 h 30 min maximum-video-duration rule enforced before processing starts.
@@ -67,4 +67,6 @@
 - Add a browser test runner for UI behavior.
 - Add deterministic MP4 fixtures for short-video workflow tests.
 - Add adapter contract tests for language identification, segmentation, transcription, translation, and SRT formatting.
+- Add frontend tests for successful local-service audio extraction and local-service fallback.
+- Add functional tests for silence-based segment boundaries on representative speech samples.
 - Add CI checks for syntax, unit tests, functional tests, and PWA asset availability.

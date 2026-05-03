@@ -1,5 +1,6 @@
 const MAX_DURATION_SECONDS = 2.5 * 60 * 60;
 const SEGMENT_SECONDS = 12;
+const LOCAL_SERVICE_URL = "http://127.0.0.1:8765";
 
 const languages = [
   { code: "en", name: "English" },
@@ -50,6 +51,7 @@ const state = {
   metadataReady: false,
   sourceLanguage: null,
   targetLanguage: "",
+  extractedAudio: null,
   segments: [],
   srtUrl: "",
   busyStep: ""
@@ -205,25 +207,84 @@ async function segmentAudio() {
 
   state.busyStep = "segmentation";
   resetSubtitle();
+  state.extractedAudio = null;
   state.segments = [];
-  els.segmentationStatus.textContent = "Segmenting speech audio...";
+  els.segmentationStatus.textContent = "Extracting audio from MP4...";
   setProgress("segmentation", 0);
   render();
 
+  try {
+    state.extractedAudio = await extractAudioAdapter(state.videoFile, (progress) => {
+      setProgress("segmentation", progress);
+    });
+    els.segmentationStatus.textContent = `Audio extracted: ${formatBytes(state.extractedAudio.audioSizeBytes)} WAV. Segmenting speech audio...`;
+    const serviceSegments = await serviceSegmentAudioAdapter(state.extractedAudio.audioId, (progress) => {
+      const scaledProgress = 35 + Math.round(progress * 0.65);
+      setProgress("segmentation", scaledProgress);
+    });
+    finishSegmentation(serviceSegments);
+    return;
+  } catch (error) {
+    state.extractedAudio = null;
+    els.segmentationStatus.textContent = `${error.message} Falling back to prototype segmentation.`;
+  }
+
   const segments = await segmentAudioAdapter(state.duration, (progress) => {
-    setProgress("segmentation", progress);
+    const scaledProgress = 35 + Math.round(progress * 0.65);
+    setProgress("segmentation", scaledProgress);
   });
 
-  state.segments = segments;
-  els.segmentationStatus.textContent = `${segments.length} speech segments prepared.`;
-  state.busyStep = "";
-  setProgress("segmentation", 100);
-  render();
+  finishSegmentation(segments);
+}
+
+async function extractAudioAdapter(file, onProgress) {
+  onProgress(5);
+
+  const health = await fetch(`${LOCAL_SERVICE_URL}/api/health`);
+  if (!health.ok) {
+    throw new Error("Local audio service is not available.");
+  }
+
+  const formData = new FormData();
+  formData.append("video", file, file.name);
+  onProgress(15);
+
+  const response = await fetch(`${LOCAL_SERVICE_URL}/api/extract-audio`, {
+    method: "POST",
+    body: formData
+  });
+  const payload = await response.json();
+
+  if (!response.ok) {
+    throw new Error(payload.error || "Audio extraction failed.");
+  }
+
+  onProgress(35);
+  return payload;
+}
+
+async function serviceSegmentAudioAdapter(audioId, onProgress) {
+  onProgress(10);
+
+  const response = await fetch(`${LOCAL_SERVICE_URL}/api/segment-audio`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ audioId })
+  });
+  const payload = await response.json();
+
+  if (!response.ok) {
+    throw new Error(payload.error || "Audio segmentation failed.");
+  }
+
+  onProgress(100);
+  return payload.segments;
 }
 
 async function generateSubtitles() {
   if (!canGenerate()) return;
-
   state.busyStep = "subtitle";
   els.subtitleStatus.textContent = "Translating segments and preparing SRT...";
   setProgress("subtitle", 0);
@@ -275,6 +336,17 @@ async function segmentAudioAdapter(duration, onProgress) {
   }
 
   return segments;
+}
+
+function finishSegmentation(segments) {
+  state.segments = segments;
+  const extractionDetail = state.extractedAudio
+    ? ` Audio file: ${state.extractedAudio.audioFileName}.`
+    : "";
+  els.segmentationStatus.textContent = `${segments.length} speech segments prepared.${extractionDetail}`;
+  state.busyStep = "";
+  setProgress("segmentation", 100);
+  render();
 }
 
 async function generateSrtAdapter(segments, targetLanguageCode, onProgress) {
@@ -359,6 +431,7 @@ function resetOutput() {
   state.metadataReady = false;
   state.sourceLanguage = null;
   state.targetLanguage = "";
+  state.extractedAudio = null;
   state.busyStep = "";
   els.videoPreview.removeAttribute("src");
   els.videoPreview.load();

@@ -14,6 +14,11 @@ The project has not published a first version yet.
 - Added a gated workflow for language identification, target selection, audio segmentation, and SRT generation.
 - Added progress bars for audio segmentation and subtitle generation.
 - Added downloadable `.srt` output with 20-character base filename shortening and target-language suffixes.
+- Added a local Ubuntu development service that extracts MP4 audio to mono 16 kHz WAV with `ffmpeg`.
+- Added first-pass audio segmentation through `ffmpeg` silence detection over the extracted WAV.
+- Added frontend audio extraction and service-backed segmentation, with fallback if the local service is not running.
+- Added a local service test for WAV extraction format.
+- Added a local service test for silence-based segmentation.
 - Added the first supported language-pair scope:
   - English to French and French to English.
   - French to Russian and Russian to French.
@@ -30,5 +35,6 @@ The project has not published a first version yet.
 
 ### Known Limitations
 
-- Language identification, speech segmentation, and translation currently use local prototype adapters in `app.js`.
+- Language identification and translation currently use local prototype adapters in `app.js`.
+- Speech segmentation is silence-based and does not yet use a speech-aware model.
 - Real speech recognition and translation still require a backend or local model integration.
