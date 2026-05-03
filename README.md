@@ -35,13 +35,19 @@ It requires `ffmpeg` and `ffprobe`, which are available from the Ubuntu package 
 Transcription uses a local Whisper-compatible CLI. By default the service runs:
 
 ```bash
-whisper <segment.wav> --model base --output_format txt --output_dir <tmp>
+whisper <segment.wav> --model base --device cpu --output_format txt --output_dir <tmp>
 ```
 
-You can override the command or model:
+The recommended install path is `pipx`:
 
 ```bash
-XOLOLINGUA_WHISPER_COMMAND=whisper XOLOLINGUA_WHISPER_MODEL=base python3 local_service.py
+pipx install openai-whisper --pip-args='--index-url https://pypi.org/simple'
+```
+
+You can override the command, model, or device:
+
+```bash
+XOLOLINGUA_WHISPER_COMMAND=whisper XOLOLINGUA_WHISPER_MODEL=base XOLOLINGUA_WHISPER_DEVICE=cpu python3 local_service.py
 ```
 
 If the command is not installed, subtitle generation stops with a setup error instead of generating fake text.

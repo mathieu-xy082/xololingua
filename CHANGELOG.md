@@ -20,6 +20,8 @@ The project has not published a first version yet.
 - Added a read-only segmentation review with summary metrics and optional segment details.
 - Added a local transcription endpoint backed by a configurable Whisper-compatible CLI.
 - Added frontend transcription before SRT generation, with a setup error when no transcription engine is installed.
+- Documented `pipx` installation for OpenAI Whisper and defaulted transcription to CPU execution.
+- Validated real Whisper transcription on a short segment from `lisoir_dnde442.mp4`.
 - Added a local service test for WAV extraction format.
 - Added a local service test for silence-based segmentation.
 - Added local service tests for transcription segment validation and text attachment.
@@ -41,5 +43,5 @@ The project has not published a first version yet.
 
 - Language identification and translation currently use local prototype adapters in `app.js`.
 - Speech segmentation is silence-based and does not yet use a speech-aware model.
-- Real speech recognition requires a configured Whisper-compatible CLI.
+- Real speech recognition requires the configured Whisper-compatible CLI available on the local service host.
 - Translation still requires a backend or local model integration.

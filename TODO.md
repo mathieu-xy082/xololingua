@@ -3,8 +3,8 @@
 ## Product Scope
 
 - Replace prototype language identification with a real audio-language detection adapter.
-- Install and configure a Whisper-compatible CLI for real local transcription.
-- Validate transcription quality on representative English and French samples.
+- Validate the installed Whisper CLI on a representative English sample.
+- Expand transcription validation beyond the first representative French sample.
 - Add real translation for transcribed segment text.
 - Replace prototype subtitle text with translated segment text in generated SRT files.
 - Defer segmentation quality tuning until transcription, translation, and real SRT text are functional.

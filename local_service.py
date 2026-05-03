@@ -31,6 +31,7 @@ SILENCE_DURATION_SECONDS = 0.45
 WORK_DIR = Path(tempfile.gettempdir()) / "xololingua"
 WHISPER_COMMAND = os.environ.get("XOLOLINGUA_WHISPER_COMMAND", "whisper")
 WHISPER_MODEL = os.environ.get("XOLOLINGUA_WHISPER_MODEL", "base")
+WHISPER_DEVICE = os.environ.get("XOLOLINGUA_WHISPER_DEVICE", "cpu")
 
 
 class LocalServiceHandler(BaseHTTPRequestHandler):
@@ -50,6 +51,7 @@ class LocalServiceHandler(BaseHTTPRequestHandler):
                 "whisper": bool(shutil.which(WHISPER_COMMAND)),
                 "whisperCommand": WHISPER_COMMAND,
                 "whisperModel": WHISPER_MODEL,
+                "whisperDevice": WHISPER_DEVICE,
             })
             return
 
@@ -432,6 +434,8 @@ def transcribe_audio_file(audio_path: Path, language_code: str, output_dir: Path
         str(audio_path),
         "--model",
         WHISPER_MODEL,
+        "--device",
+        WHISPER_DEVICE,
         "--output_format",
         "txt",
         "--output_dir",
