@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Faster-Whisper transcription worker.
 
-Runs inside the openai-whisper pipx venv (which has faster-whisper injected).
+Runs inside the project Python environment selected by local_service.py.
 Called as a subprocess by local_service.py.
 
 Usage:

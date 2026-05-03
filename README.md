@@ -6,10 +6,22 @@ The current implementation provides the browser workflow, MP4 validation, 2 h 30
 
 ## Run Locally
 
-From this repository, start the browser app:
+Install PDM if it is not already available:
 
 ```bash
-python3 -m http.server 4173
+pipx install pdm
+```
+
+Then install the project dependencies from this directory:
+
+```bash
+pdm install
+```
+
+Start the browser app:
+
+```bash
+pdm run web
 ```
 
 Then open:
@@ -21,7 +33,7 @@ http://localhost:4173
 For audio extraction and first-pass silence-based segmentation, start the local processing service in a second terminal:
 
 ```bash
-python3 local_service.py
+pdm run service
 ```
 
 The service listens on:
@@ -32,44 +44,34 @@ http://127.0.0.1:8765
 
 It requires `ffmpeg` and `ffprobe`, which are available from the Ubuntu package `ffmpeg`. Extracted audio is normalized to mono 16 kHz PCM WAV under `/tmp/xololingua`, then segmented from detected silence boundaries.
 
-Transcription uses a local Whisper-compatible CLI. By default the service runs:
+Transcription uses `faster-whisper` from the PDM environment. The service probes CUDA at startup, defaults to the `base` model on GPU, and keeps a CPU `base/int8` fallback. You can override the selected runtime:
 
 ```bash
-whisper <segment.wav> --model base --device cpu --output_format txt --output_dir <tmp>
+XOLOLINGUA_WHISPER_DEVICE=cpu pdm run service
+XOLOLINGUA_WHISPER_GPU_MODEL=medium pdm run service
+XOLOLINGUA_WHISPER_GPU_COMPUTE_TYPE=int8_float16 pdm run service
 ```
 
-The recommended install path is `pipx`:
+If the PDM-managed transcription dependencies are unavailable, subtitle generation stops with a setup error instead of generating fake text.
+
+Translation uses Argos Translate through the `argos-translate` CLI installed in the PDM environment. Install the language-pair packages needed by the MVP:
 
 ```bash
-pipx install openai-whisper --pip-args='--index-url https://pypi.org/simple'
-```
-
-You can override the command, model, or device:
-
-```bash
-XOLOLINGUA_WHISPER_COMMAND=whisper XOLOLINGUA_WHISPER_MODEL=base XOLOLINGUA_WHISPER_DEVICE=cpu python3 local_service.py
-```
-
-If the command is not installed, subtitle generation stops with a setup error instead of generating fake text.
-
-Translation uses Argos Translate through the `argos-translate` CLI. Install the CLI with:
-
-```bash
-pipx install argostranslate --pip-args='--index-url https://pypi.org/simple'
-```
-
-Then install the language-pair packages needed by the MVP. French to English and English to French are currently validated with:
-
-```bash
-argospm update
-argospm install translate-fr_en
-argospm install translate-en_fr
+pdm run argospm update
+pdm run argospm install translate-fr_en
+pdm run argospm install translate-en_fr
 ```
 
 Subtitle generation runs as an asynchronous local-service job. The browser starts a job, polls `/api/subtitle-jobs/<job-id>`, and stays responsive while the service transcribes and translates segments in the background. Whisper is kept sequential inside each job to avoid heavy concurrent model processes; translation can use a small bounded worker pool because segment translation is independent. Override the translation worker count with:
 
 ```bash
-XOLOLINGUA_TRANSLATION_WORKERS=2 python3 local_service.py
+XOLOLINGUA_TRANSLATION_WORKERS=2 pdm run service
+```
+
+Run the local service tests with:
+
+```bash
+pdm run test
 ```
 
 On Android, connect the phone to the same network as the Ubuntu machine and open:

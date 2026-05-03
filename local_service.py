@@ -17,6 +17,7 @@ import subprocess
 import tempfile
 import uuid
 import os
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from http import HTTPStatus
@@ -47,10 +48,11 @@ WHISPER_CPU_COMPUTE_TYPE = os.environ.get("XOLOLINGUA_WHISPER_CPU_COMPUTE_TYPE",
 _SERVICE_DIR = Path(__file__).parent
 TRANSCRIBE_WORKER = _SERVICE_DIR / "transcribe_worker.py"
 
-# Python executable inside the openai-whisper pipx venv (has faster-whisper injected)
+# Python executable used by transcribe_worker.py. When started with PDM this is
+# the project environment; XOLOLINGUA_WHISPER_PYTHON remains as an escape hatch.
 _WHISPER_VENV_PYTHON = os.environ.get(
     "XOLOLINGUA_WHISPER_PYTHON",
-    str(Path.home() / ".local/share/pipx/venvs/openai-whisper/bin/python"),
+    sys.executable,
 )
 
 # Runtime descriptor populated at startup by _detect_whisper_runtime()
@@ -324,7 +326,7 @@ class LocalServiceHandler(BaseHTTPRequestHandler):
         if not WHISPER_RUNTIME.get("available"):
             self.send_error_json(
                 HTTPStatus.SERVICE_UNAVAILABLE,
-                "Transcription engine not available. Start the service with the whisper pipx venv accessible.",
+                "Transcription engine not available. Install dependencies with PDM and start the service with `pdm run service`.",
             )
             return
 
@@ -404,7 +406,7 @@ class LocalServiceHandler(BaseHTTPRequestHandler):
         if not WHISPER_RUNTIME.get("available"):
             self.send_error_json(
                 HTTPStatus.SERVICE_UNAVAILABLE,
-                "Transcription engine not available. Start the service with the whisper pipx venv accessible.",
+                "Transcription engine not available. Install dependencies with PDM and start the service with `pdm run service`.",
             )
             return
         if not shutil.which(ARGOS_COMMAND):
