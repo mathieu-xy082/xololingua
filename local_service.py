@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import cgi
 import json
+import signal
 import re
 import shutil
 import subprocess
@@ -58,8 +59,15 @@ WHISPER_RUNTIME: dict = {
 }
 
 JOBS: dict[str, dict] = {}
+JOB_FUTURES: dict[str, object] = {}
+JOB_PROCESSES: dict[str, set[subprocess.Popen]] = {}
 JOBS_LOCK = Lock()
 JOBS_EXECUTOR = ThreadPoolExecutor(max_workers=SUBTITLE_JOB_WORKERS)
+TERMINAL_JOB_STATUSES = {"succeeded", "failed", "cancelled"}
+
+
+class JobCancelled(Exception):
+    """Raised when a subtitle job is cancelled while work is running."""
 
 
 def _detect_whisper_runtime() -> None:
@@ -123,6 +131,7 @@ class LocalServiceHandler(BaseHTTPRequestHandler):
         self.send_error_json(HTTPStatus.NOT_FOUND, "Unknown endpoint.")
 
     def do_POST(self) -> None:
+        parsed_path = urlparse(self.path)
         if self.path == "/api/extract-audio":
             self.handle_extract_audio()
             return
@@ -137,6 +146,10 @@ class LocalServiceHandler(BaseHTTPRequestHandler):
             return
         if self.path == "/api/subtitle-jobs":
             self.handle_create_subtitle_job()
+            return
+        if parsed_path.path.startswith("/api/subtitle-jobs/") and parsed_path.path.endswith("/cancel"):
+            job_id = parsed_path.path.split("/")[-2]
+            self.handle_cancel_subtitle_job(job_id)
             return
 
         self.send_error_json(HTTPStatus.NOT_FOUND, "Unknown endpoint.")
@@ -378,7 +391,8 @@ class LocalServiceHandler(BaseHTTPRequestHandler):
             "segments": [],
             "error": "",
         })
-        JOBS_EXECUTOR.submit(run_subtitle_job, job_id, audio_path, segments, source_language, target_language)
+        future = JOBS_EXECUTOR.submit(run_subtitle_job, job_id, audio_path, segments, source_language, target_language)
+        register_job_future(job_id, future)
         self.send_json(job_snapshot(job_id), HTTPStatus.ACCEPTED)
 
     def handle_get_subtitle_job(self, job_id: str) -> None:
@@ -387,6 +401,18 @@ class LocalServiceHandler(BaseHTTPRequestHandler):
             return
 
         snapshot = job_snapshot(job_id)
+        if snapshot is None:
+            self.send_error_json(HTTPStatus.NOT_FOUND, "Subtitle job was not found.")
+            return
+
+        self.send_json(snapshot)
+
+    def handle_cancel_subtitle_job(self, job_id: str) -> None:
+        if not re.fullmatch(r"[a-f0-9]{32}", job_id):
+            self.send_error_json(HTTPStatus.BAD_REQUEST, "Invalid job id.")
+            return
+
+        snapshot = cancel_subtitle_job(job_id)
         if snapshot is None:
             self.send_error_json(HTTPStatus.NOT_FOUND, "Subtitle job was not found.")
             return
@@ -573,7 +599,7 @@ def normalize_text_segments(payload: object) -> list[dict]:
     return segments
 
 
-def transcribe_segments(audio_path: Path, segments: list[dict], language_code: str, progress_callback=None) -> list[dict]:
+def transcribe_segments(audio_path: Path, segments: list[dict], language_code: str, progress_callback=None, job_id: str | None = None) -> list[dict]:
     """Transcribe all segments in one worker invocation (model loaded once)."""
     worker_python = _WHISPER_VENV_PYTHON
     use_worker = (
@@ -584,9 +610,9 @@ def transcribe_segments(audio_path: Path, segments: list[dict], language_code: s
     )
 
     if use_worker:
-        return _transcribe_segments_worker(audio_path, segments, language_code, progress_callback, worker_python)
+        return _transcribe_segments_worker(audio_path, segments, language_code, progress_callback, worker_python, job_id)
     else:
-        return _transcribe_segments_cli(audio_path, segments, language_code, progress_callback)
+        return _transcribe_segments_cli(audio_path, segments, language_code, progress_callback, job_id)
 
 
 def _transcribe_segments_worker(
@@ -595,6 +621,7 @@ def _transcribe_segments_worker(
     language_code: str,
     progress_callback,
     worker_python: str,
+    job_id: str | None,
 ) -> list[dict]:
     """Use transcribe_worker.py (faster-whisper, model loaded once for all segments)."""
     work_dir = WORK_DIR / f"job-{uuid.uuid4().hex}"
@@ -604,7 +631,7 @@ def _transcribe_segments_worker(
         out_file = work_dir / "segments_out.json"
         segments_file.write_text(json.dumps(segments), encoding="utf-8")
 
-        subprocess.run(
+        run_job_command(
             [
                 worker_python,
                 str(TRANSCRIBE_WORKER),
@@ -613,9 +640,7 @@ def _transcribe_segments_worker(
                 "--segments", str(segments_file),
                 "--out", str(out_file),
             ],
-            check=True,
-            capture_output=True,
-            text=True,
+            job_id=job_id,
         )
         results = json.loads(out_file.read_text(encoding="utf-8"))
         if progress_callback:
@@ -630,6 +655,7 @@ def _transcribe_segments_cli(
     segments: list[dict],
     language_code: str,
     progress_callback,
+    job_id: str | None,
 ) -> list[dict]:
     """Fallback: openai-whisper CLI, one subprocess per segment."""
     results: list[dict] = []
@@ -638,9 +664,11 @@ def _transcribe_segments_cli(
 
     try:
         for completed, segment in enumerate(segments, start=1):
+            if job_id is not None:
+                ensure_job_not_cancelled(job_id)
             segment_audio_path = segment_dir / f"segment-{segment['index']:05d}.wav"
-            slice_audio(audio_path, segment_audio_path, segment["start"], segment["end"])
-            text = transcribe_audio_file(segment_audio_path, language_code, segment_dir)
+            slice_audio(audio_path, segment_audio_path, segment["start"], segment["end"], job_id)
+            text = transcribe_audio_file(segment_audio_path, language_code, segment_dir, job_id)
             results.append({
                 **segment,
                 "start": round(segment["start"], 3),
@@ -655,7 +683,7 @@ def _transcribe_segments_cli(
     return results
 
 
-def translate_segments(segments: list[dict], source_language: str, target_language: str, progress_callback=None, max_workers: int = 1) -> list[dict]:
+def translate_segments(segments: list[dict], source_language: str, target_language: str, progress_callback=None, max_workers: int = 1, job_id: str | None = None) -> list[dict]:
     if not source_language or not target_language:
         raise ValueError("Source and target languages are required.")
     if source_language == target_language:
@@ -664,9 +692,14 @@ def translate_segments(segments: list[dict], source_language: str, target_langua
     translated: list[dict | None] = [None] * len(segments)
 
     def translate_one(position: int, segment: dict) -> tuple[int, dict]:
+        if job_id is not None:
+            ensure_job_not_cancelled(job_id)
+            translated_text = translate_text(segment.get("text", ""), source_language, target_language, job_id)
+        else:
+            translated_text = translate_text(segment.get("text", ""), source_language, target_language)
         return position, {
             **segment,
-            "translatedText": translate_text(segment.get("text", ""), source_language, target_language),
+            "translatedText": translated_text,
         }
 
     if max_workers <= 1 or len(segments) <= 1:
@@ -679,21 +712,26 @@ def translate_segments(segments: list[dict], source_language: str, target_langua
         completed = 0
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [executor.submit(translate_one, position, segment) for position, segment in enumerate(segments)]
-            for future in as_completed(futures):
-                position, translated_segment = future.result()
-                translated[position] = translated_segment
-                completed += 1
-                if progress_callback:
-                    progress_callback(completed, len(segments))
+            try:
+                for future in as_completed(futures):
+                    position, translated_segment = future.result()
+                    translated[position] = translated_segment
+                    completed += 1
+                    if progress_callback:
+                        progress_callback(completed, len(segments))
+            except JobCancelled:
+                for future in futures:
+                    future.cancel()
+                raise
 
     return [segment for segment in translated if segment is not None]
 
 
-def translate_text(text: str, source_language: str, target_language: str) -> str:
+def translate_text(text: str, source_language: str, target_language: str, job_id: str | None = None) -> str:
     if not text.strip():
         return ""
 
-    result = subprocess.run(
+    result = run_job_command(
         [
             ARGOS_COMMAND,
             "-f",
@@ -701,10 +739,8 @@ def translate_text(text: str, source_language: str, target_language: str) -> str
             "-t",
             target_language,
         ],
+        job_id=job_id,
         input=text,
-        check=True,
-        capture_output=True,
-        text=True,
     )
     return result.stdout.strip()
 
@@ -714,11 +750,78 @@ def put_job(job_id: str, values: dict) -> None:
         JOBS[job_id] = values
 
 
+def register_job_future(job_id: str, future: object) -> None:
+    with JOBS_LOCK:
+        JOB_FUTURES[job_id] = future
+
+
+def register_job_process(job_id: str, process: subprocess.Popen) -> None:
+    with JOBS_LOCK:
+        JOB_PROCESSES.setdefault(job_id, set()).add(process)
+
+
+def unregister_job_process(job_id: str, process: subprocess.Popen) -> None:
+    with JOBS_LOCK:
+        processes = JOB_PROCESSES.get(job_id)
+        if not processes:
+            return
+        processes.discard(process)
+        if not processes:
+            JOB_PROCESSES.pop(job_id, None)
+
+
+def cleanup_job_runtime(job_id: str) -> None:
+    with JOBS_LOCK:
+        JOB_FUTURES.pop(job_id, None)
+        JOB_PROCESSES.pop(job_id, None)
+
+
 def update_job(job_id: str, **values) -> None:
     with JOBS_LOCK:
         job = JOBS[job_id]
+        if job.get("status") == "cancelled":
+            raise JobCancelled()
         job.update(values)
         job["updatedAt"] = time.time()
+
+
+def ensure_job_not_cancelled(job_id: str) -> None:
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+        if job and job.get("status") == "cancelled":
+            raise JobCancelled()
+
+
+def is_job_cancelled(job_id: str) -> bool:
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+        return bool(job and job.get("status") == "cancelled")
+
+
+def cancel_subtitle_job(job_id: str) -> dict | None:
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+        if job is None:
+            return None
+
+        if job.get("status") not in TERMINAL_JOB_STATUSES:
+            job.update({
+                "status": "cancelled",
+                "stage": "cancelled",
+                "message": "Subtitle generation cancelled.",
+                "error": "",
+                "updatedAt": time.time(),
+            })
+
+        future = JOB_FUTURES.get(job_id)
+        processes = list(JOB_PROCESSES.get(job_id, set()))
+
+    if future is not None:
+        future.cancel()
+    for process in processes:
+        terminate_process(process)
+
+    return job_snapshot(job_id)
 
 
 def job_snapshot(job_id: str) -> dict | None:
@@ -729,8 +832,95 @@ def job_snapshot(job_id: str) -> dict | None:
         return dict(job)
 
 
+def mark_job_cancelled(job_id: str) -> None:
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+        if not job or job.get("status") in {"succeeded", "failed"}:
+            return
+        job.update({
+            "status": "cancelled",
+            "stage": "cancelled",
+            "message": "Subtitle generation cancelled.",
+            "error": "",
+            "updatedAt": time.time(),
+        })
+
+
+def terminate_process(process: subprocess.Popen) -> None:
+    if process.poll() is not None:
+        return
+
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    except Exception:
+        process.terminate()
+
+    try:
+        process.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            return
+        except Exception:
+            process.kill()
+        process.wait(timeout=2)
+
+
+def run_job_command(command: list[str], *, job_id: str | None = None, input: str | None = None) -> subprocess.CompletedProcess:
+    if job_id is None:
+        return subprocess.run(command, input=input, check=True, capture_output=True, text=True)
+
+    ensure_job_not_cancelled(job_id)
+    with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as stdout_file:
+        with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as stderr_file:
+            process = subprocess.Popen(
+                command,
+                stdin=subprocess.PIPE if input is not None else None,
+                stdout=stdout_file,
+                stderr=stderr_file,
+                text=True,
+                start_new_session=True,
+            )
+            register_job_process(job_id, process)
+            try:
+                if input is not None and process.stdin is not None:
+                    try:
+                        process.stdin.write(input)
+                        process.stdin.close()
+                    except BrokenPipeError:
+                        pass
+
+                while True:
+                    ensure_job_not_cancelled(job_id)
+                    try:
+                        return_code = process.wait(timeout=0.25)
+                        break
+                    except subprocess.TimeoutExpired:
+                        continue
+
+                stdout_file.seek(0)
+                stderr_file.seek(0)
+                stdout = stdout_file.read()
+                stderr = stderr_file.read()
+                ensure_job_not_cancelled(job_id)
+
+                if return_code:
+                    raise subprocess.CalledProcessError(return_code, command, output=stdout, stderr=stderr)
+
+                return subprocess.CompletedProcess(command, return_code, stdout, stderr)
+            except JobCancelled:
+                terminate_process(process)
+                raise
+            finally:
+                unregister_job_process(job_id, process)
+
+
 def run_subtitle_job(job_id: str, audio_path: Path, segments: list[dict], source_language: str, target_language: str) -> None:
     try:
+        ensure_job_not_cancelled(job_id)
         update_job(
             job_id,
             status="running",
@@ -740,13 +930,15 @@ def run_subtitle_job(job_id: str, audio_path: Path, segments: list[dict], source
         )
 
         def transcription_progress(done: int, total: int) -> None:
+            ensure_job_not_cancelled(job_id)
             update_job(
                 job_id,
                 progress=round((done / total) * 55),
                 message=f"Transcribed {done}/{total} segments.",
             )
 
-        transcribed_segments = transcribe_segments(audio_path, segments, source_language, transcription_progress)
+        transcribed_segments = transcribe_segments(audio_path, segments, source_language, transcription_progress, job_id)
+        ensure_job_not_cancelled(job_id)
         update_job(
             job_id,
             stage="translating",
@@ -756,6 +948,7 @@ def run_subtitle_job(job_id: str, audio_path: Path, segments: list[dict], source
         )
 
         def translation_progress(done: int, total: int) -> None:
+            ensure_job_not_cancelled(job_id)
             update_job(
                 job_id,
                 progress=55 + round((done / total) * 35),
@@ -768,7 +961,9 @@ def run_subtitle_job(job_id: str, audio_path: Path, segments: list[dict], source
             target_language,
             translation_progress,
             max_workers=TRANSLATION_WORKERS,
+            job_id=job_id,
         )
+        ensure_job_not_cancelled(job_id)
         update_job(
             job_id,
             status="succeeded",
@@ -777,7 +972,12 @@ def run_subtitle_job(job_id: str, audio_path: Path, segments: list[dict], source
             message="Transcription and translation completed.",
             segments=translated_segments,
         )
+    except JobCancelled:
+        mark_job_cancelled(job_id)
     except Exception as error:
+        if is_job_cancelled(job_id):
+            mark_job_cancelled(job_id)
+            return
         update_job(
             job_id,
             status="failed",
@@ -786,10 +986,12 @@ def run_subtitle_job(job_id: str, audio_path: Path, segments: list[dict], source
             message=str(error),
             error=str(error),
         )
+    finally:
+        cleanup_job_runtime(job_id)
 
 
-def slice_audio(audio_path: Path, output_path: Path, start: float, end: float) -> None:
-    subprocess.run(
+def slice_audio(audio_path: Path, output_path: Path, start: float, end: float, job_id: str | None = None) -> None:
+    run_job_command(
         [
             "ffmpeg",
             "-hide_banner",
@@ -808,13 +1010,11 @@ def slice_audio(audio_path: Path, output_path: Path, start: float, end: float) -
             "pcm_s16le",
             str(output_path),
         ],
-        check=True,
-        capture_output=True,
-        text=True,
+        job_id=job_id,
     )
 
 
-def transcribe_audio_file(audio_path: Path, language_code: str, output_dir: Path) -> str:
+def transcribe_audio_file(audio_path: Path, language_code: str, output_dir: Path, job_id: str | None = None) -> str:
     """CLI fallback: openai-whisper one file at a time."""
     whisper_cmd = shutil.which("whisper") or "whisper"
     command = [
@@ -828,7 +1028,7 @@ def transcribe_audio_file(audio_path: Path, language_code: str, output_dir: Path
     if language_code:
         command.extend(["--language", language_code])
 
-    subprocess.run(command, check=True, capture_output=True, text=True)
+    run_job_command(command, job_id=job_id)
     text_path = output_dir / f"{audio_path.stem}.txt"
     return text_path.read_text(encoding="utf-8").strip()
 

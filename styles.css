@@ -60,6 +60,16 @@ select:disabled {
   background: #eef0ec;
 }
 
+.secondary-button {
+  border-color: var(--coral);
+  color: var(--coral);
+}
+
+.secondary-button:disabled {
+  border-color: var(--line);
+  color: var(--disabled);
+}
+
 .app-shell {
   width: min(1180px, 100%);
   margin: 0 auto;
@@ -335,6 +345,12 @@ select {
 
 .progress-block {
   display: grid;
+  gap: 10px;
+}
+
+.button-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
 }
 

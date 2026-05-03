@@ -54,6 +54,9 @@ const state = {
   extractedAudio: null,
   segments: [],
   srtUrl: "",
+  subtitleJobId: "",
+  subtitleCancelRequested: false,
+  subtitleNotice: "",
   busyStep: ""
 };
 
@@ -82,6 +85,7 @@ const els = {
   segmentDetails: document.querySelector("#segmentDetails"),
   segmentTableBody: document.querySelector("#segmentTableBody"),
   generateButton: document.querySelector("#generateButton"),
+  cancelGenerateButton: document.querySelector("#cancelGenerateButton"),
   subtitleStatus: document.querySelector("#subtitleStatus"),
   subtitleProgressText: document.querySelector("#subtitleProgressText"),
   subtitleProgressBar: document.querySelector("#subtitleProgressBar"),
@@ -178,6 +182,7 @@ function bindEvents() {
   els.segmentButton.addEventListener("click", segmentAudio);
   els.toggleSegmentsButton.addEventListener("click", toggleSegmentDetails);
   els.generateButton.addEventListener("click", generateSubtitles);
+  els.cancelGenerateButton.addEventListener("click", cancelSubtitleGeneration);
 }
 
 function loadVideoFile(file) {
@@ -325,6 +330,9 @@ async function serviceSegmentAudioAdapter(audioId, onProgress) {
 async function generateSubtitles() {
   if (!canGenerate()) return;
   state.busyStep = "subtitle";
+  state.subtitleJobId = "";
+  state.subtitleCancelRequested = false;
+  state.subtitleNotice = "";
   els.subtitleStatus.textContent = "Starting subtitle generation job...";
   setProgress("subtitle", 0);
   render();
@@ -333,6 +341,9 @@ async function generateSubtitles() {
     const translatedSegments = await runSubtitleJobAdapter(state.extractedAudio, state.sourceLanguage, state.targetLanguage, state.segments, (job) => {
       els.subtitleStatus.textContent = job.message || job.stage;
       setProgress("subtitle", Math.min(90, job.progress || 0));
+    }, (job) => {
+      state.subtitleJobId = job.jobId;
+      render();
     });
     state.segments = translatedSegments;
     renderSegmentReview();
@@ -354,17 +365,43 @@ async function generateSubtitles() {
     els.downloadLink.hidden = false;
     els.subtitleStatus.textContent = "Subtitle file ready.";
     state.busyStep = "";
+    state.subtitleJobId = "";
+    state.subtitleCancelRequested = false;
     setProgress("subtitle", 100);
     render();
   } catch (error) {
-    els.subtitleStatus.textContent = error.message;
+    state.subtitleNotice = error.message;
     state.busyStep = "";
+    state.subtitleJobId = "";
+    state.subtitleCancelRequested = false;
     setProgress("subtitle", 0);
     render();
   }
 }
 
-async function runSubtitleJobAdapter(extractedAudio, sourceLanguage, targetLanguageCode, segments, onProgress) {
+async function cancelSubtitleGeneration() {
+  if (state.busyStep !== "subtitle" || !state.subtitleJobId || state.subtitleCancelRequested) return;
+
+  const jobId = state.subtitleJobId;
+  state.subtitleCancelRequested = true;
+  els.subtitleStatus.textContent = "Cancelling subtitle generation...";
+  render();
+
+  try {
+    const job = await cancelSubtitleJobAdapter(jobId);
+    state.subtitleNotice = job.message || "Subtitle generation cancelled.";
+  } catch (error) {
+    state.subtitleNotice = error.message;
+  } finally {
+    state.busyStep = "";
+    state.subtitleJobId = "";
+    state.subtitleCancelRequested = false;
+    setProgress("subtitle", 0);
+    render();
+  }
+}
+
+async function runSubtitleJobAdapter(extractedAudio, sourceLanguage, targetLanguageCode, segments, onProgress, onJobCreated) {
   if (!extractedAudio) {
     throw new Error("Audio must be extracted before subtitle generation.");
   }
@@ -387,7 +424,21 @@ async function runSubtitleJobAdapter(extractedAudio, sourceLanguage, targetLangu
     throw new Error(payload.error || "Subtitle generation job could not start.");
   }
 
+  onJobCreated(payload);
   return pollSubtitleJob(payload.jobId, onProgress);
+}
+
+async function cancelSubtitleJobAdapter(jobId) {
+  const response = await fetch(`${LOCAL_SERVICE_URL}/api/subtitle-jobs/${jobId}/cancel`, {
+    method: "POST"
+  });
+  const payload = await response.json();
+
+  if (!response.ok) {
+    throw new Error(payload.error || "Subtitle generation job could not be cancelled.");
+  }
+
+  return payload;
 }
 
 async function pollSubtitleJob(jobId, onProgress) {
@@ -407,6 +458,9 @@ async function pollSubtitleJob(jobId, onProgress) {
     }
     if (payload.status === "failed") {
       throw new Error(payload.error || payload.message || "Subtitle generation failed.");
+    }
+    if (payload.status === "cancelled") {
+      throw new Error(payload.message || "Subtitle generation cancelled.");
     }
   }
 }
@@ -507,6 +561,8 @@ function render() {
 
   els.segmentButton.disabled = !canSegment() || state.busyStep === "segmentation";
   els.generateButton.disabled = !canGenerate() || state.busyStep === "subtitle";
+  els.cancelGenerateButton.hidden = state.busyStep !== "subtitle";
+  els.cancelGenerateButton.disabled = state.subtitleCancelRequested || !state.subtitleJobId;
   renderSegmentReview();
   renderSubtitleStatus();
 }
@@ -527,6 +583,7 @@ function canGenerate() {
 }
 
 function resetOutput() {
+  cancelActiveSubtitleJobSilently();
   if (state.videoUrl) URL.revokeObjectURL(state.videoUrl);
   state.videoFile = null;
   state.videoUrl = "";
@@ -556,8 +613,13 @@ function resetSegmentation() {
 }
 
 function resetSubtitle() {
+  const cancelledActiveJob = cancelActiveSubtitleJobSilently();
+  if (cancelledActiveJob) state.busyStep = "";
   if (state.srtUrl) URL.revokeObjectURL(state.srtUrl);
   state.srtUrl = "";
+  state.subtitleJobId = "";
+  state.subtitleCancelRequested = false;
+  state.subtitleNotice = "";
   els.subtitleStatus.textContent = "Run segmentation first.";
   els.downloadLink.hidden = true;
   els.downloadLink.removeAttribute("href");
@@ -565,8 +627,21 @@ function resetSubtitle() {
   setProgress("subtitle", 0);
 }
 
+function cancelActiveSubtitleJobSilently() {
+  if (state.busyStep !== "subtitle" || !state.subtitleJobId || state.subtitleCancelRequested) return false;
+
+  state.subtitleCancelRequested = true;
+  cancelSubtitleJobAdapter(state.subtitleJobId).catch(() => {});
+  return true;
+}
+
 function renderSubtitleStatus() {
   if (state.busyStep === "subtitle" || state.srtUrl) return;
+
+  if (state.subtitleNotice) {
+    els.subtitleStatus.textContent = state.subtitleNotice;
+    return;
+  }
 
   if (canGenerate()) {
     els.subtitleStatus.textContent = "Ready to transcribe and translate.";

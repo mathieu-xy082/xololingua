@@ -1,7 +1,9 @@
 import json
 import shutil
 import subprocess
+import sys
 import tempfile
+import threading
 import time
 import unittest
 import urllib.request
@@ -213,6 +215,63 @@ class LocalServiceAudioTests(unittest.TestCase):
         self.assertEqual(snapshot["stage"], "ready")
         self.assertEqual(snapshot["segments"][0]["translatedText"], "Hello.")
 
+    def test_cancel_subtitle_job_prevents_queued_work_from_running(self):
+        job_id = "b" * 32
+        local_service.put_job(job_id, {
+            "jobId": job_id,
+            "status": "queued",
+            "stage": "queued",
+            "progress": 0,
+            "message": "",
+            "createdAt": 0,
+            "updatedAt": 0,
+            "segments": [],
+            "error": "",
+        })
+
+        local_service.cancel_subtitle_job(job_id)
+        with mock.patch.object(local_service, "transcribe_segments") as transcribe_segments:
+            local_service.run_subtitle_job(job_id, Path("/tmp/sample.wav"), [{"index": 1, "start": 0.0, "end": 1.0}], "fr", "en")
+
+        transcribe_segments.assert_not_called()
+        snapshot = local_service.job_snapshot(job_id)
+        self.assertEqual(snapshot["status"], "cancelled")
+        self.assertEqual(snapshot["stage"], "cancelled")
+
+    def test_cancel_subtitle_job_terminates_running_process(self):
+        job_id = "c" * 32
+        local_service.put_job(job_id, {
+            "jobId": job_id,
+            "status": "running",
+            "stage": "transcribing",
+            "progress": 1,
+            "message": "",
+            "createdAt": 0,
+            "updatedAt": 0,
+            "segments": [],
+            "error": "",
+        })
+
+        result = {}
+
+        def run_command():
+            try:
+                local_service.run_job_command([sys.executable, "-c", "import time; time.sleep(30)"], job_id=job_id)
+                result["status"] = "completed"
+            except local_service.JobCancelled:
+                result["status"] = "cancelled"
+
+        thread = threading.Thread(target=run_command)
+        thread.start()
+        time.sleep(0.3)
+        local_service.cancel_subtitle_job(job_id)
+        thread.join(timeout=5)
+
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(result.get("status"), "cancelled")
+        snapshot = local_service.job_snapshot(job_id)
+        self.assertEqual(snapshot["status"], "cancelled")
+
 
 @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "ffmpeg and ffprobe are required")
 class PipelineIntegrationTests(unittest.TestCase):
@@ -333,6 +392,25 @@ class PipelineIntegrationTests(unittest.TestCase):
             self.assertEqual(status["stage"], "ready")
             self.assertTrue(all("translatedText" in s for s in status["segments"]))
             self.assertEqual(status["segments"][0]["translatedText"], "Hello world.")
+
+    def test_cancel_subtitle_job_endpoint_marks_job_cancelled(self):
+        job_id = "d" * 32
+        local_service.put_job(job_id, {
+            "jobId": job_id,
+            "status": "queued",
+            "stage": "queued",
+            "progress": 0,
+            "message": "",
+            "createdAt": 0,
+            "updatedAt": 0,
+            "segments": [],
+            "error": "",
+        })
+
+        status = self._post_json(f"/api/subtitle-jobs/{job_id}/cancel", {})
+
+        self.assertEqual(status["status"], "cancelled")
+        self.assertEqual(status["stage"], "cancelled")
 
 
 if __name__ == "__main__":
