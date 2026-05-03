@@ -232,7 +232,7 @@ class LocalServiceAudioTests(unittest.TestCase):
             "backend": "faster-whisper",
             "available": True,
             "device": "cuda",
-            "model": "medium",
+            "model": "base",
             "computeType": "float16",
             "cudaDevices": 1,
         }
@@ -282,7 +282,7 @@ class LocalServiceAudioTests(unittest.TestCase):
             "backend": "faster-whisper",
             "available": True,
             "device": "cuda",
-            "model": "medium",
+            "model": "base",
             "computeType": "float16",
             "cudaDevices": 1,
         }
