@@ -66,6 +66,12 @@ argospm install translate-fr_en
 argospm install translate-en_fr
 ```
 
+Subtitle generation runs as an asynchronous local-service job. The browser starts a job, polls `/api/subtitle-jobs/<job-id>`, and stays responsive while the service transcribes and translates segments in the background. Whisper is kept sequential inside each job to avoid heavy concurrent model processes; translation can use a small bounded worker pool because segment translation is independent. Override the translation worker count with:
+
+```bash
+XOLOLINGUA_TRANSLATION_WORKERS=2 python3 local_service.py
+```
+
 On Android, connect the phone to the same network as the Ubuntu machine and open:
 
 ```text

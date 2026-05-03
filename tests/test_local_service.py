@@ -160,6 +160,54 @@ class LocalServiceAudioTests(unittest.TestCase):
             "translatedText": "Hello.",
         }])
 
+    def test_translate_segments_preserves_order_with_workers(self):
+        segments = [
+            {"index": 1, "start": 0.0, "end": 1.0, "text": "Un."},
+            {"index": 2, "start": 1.0, "end": 2.0, "text": "Deux."},
+        ]
+
+        def fake_translate(text, _source, _target):
+            return {"Un.": "One.", "Deux.": "Two."}[text]
+
+        with mock.patch.object(local_service, "translate_text", side_effect=fake_translate):
+            result = local_service.translate_segments(segments, "fr", "en", max_workers=2)
+
+        self.assertEqual([segment["translatedText"] for segment in result], ["One.", "Two."])
+
+    def test_run_subtitle_job_updates_job_to_succeeded(self):
+        job_id = "a" * 32
+        local_service.put_job(job_id, {
+            "jobId": job_id,
+            "status": "queued",
+            "stage": "queued",
+            "progress": 0,
+            "message": "",
+            "createdAt": 0,
+            "updatedAt": 0,
+            "segments": [],
+            "error": "",
+        })
+
+        with mock.patch.object(local_service, "transcribe_segments", return_value=[{
+            "index": 1,
+            "start": 0.0,
+            "end": 1.0,
+            "text": "Bonjour.",
+        }]):
+            with mock.patch.object(local_service, "translate_segments", return_value=[{
+                "index": 1,
+                "start": 0.0,
+                "end": 1.0,
+                "text": "Bonjour.",
+                "translatedText": "Hello.",
+            }]):
+                local_service.run_subtitle_job(job_id, Path("/tmp/sample.wav"), [{"index": 1, "start": 0.0, "end": 1.0}], "fr", "en")
+
+        snapshot = local_service.job_snapshot(job_id)
+        self.assertEqual(snapshot["status"], "succeeded")
+        self.assertEqual(snapshot["stage"], "ready")
+        self.assertEqual(snapshot["segments"][0]["translatedText"], "Hello.")
+
 
 if __name__ == "__main__":
     unittest.main()

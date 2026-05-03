@@ -25,10 +25,13 @@ The project has not published a first version yet.
 - Added a local translation endpoint backed by the Argos Translate CLI.
 - Added frontend translation after transcription and before SRT generation.
 - Installed and validated Argos French to English and English to French language packages.
+- Added asynchronous subtitle generation jobs with frontend polling.
+- Added bounded parallel segment translation while preserving output order.
 - Added a local service test for WAV extraction format.
 - Added a local service test for silence-based segmentation.
 - Added local service tests for transcription segment validation and text attachment.
 - Added local service tests for translation segment validation and translated text attachment.
+- Added local service tests for asynchronous job completion and ordered parallel translation.
 - Added the first supported language-pair scope:
   - English to French and French to English.
   - French to Russian and Russian to French.

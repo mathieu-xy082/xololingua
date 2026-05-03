@@ -294,23 +294,17 @@ async function serviceSegmentAudioAdapter(audioId, onProgress) {
 async function generateSubtitles() {
   if (!canGenerate()) return;
   state.busyStep = "subtitle";
-  els.subtitleStatus.textContent = "Transcribing segmented audio...";
+  els.subtitleStatus.textContent = "Starting subtitle generation job...";
   setProgress("subtitle", 0);
   render();
 
   try {
-    const transcribedSegments = await transcribeAudioAdapter(state.extractedAudio, state.sourceLanguage, state.segments, (progress) => {
-      setProgress("subtitle", Math.round(progress * 0.55));
-    });
-    state.segments = transcribedSegments;
-    renderSegmentReview();
-    els.subtitleStatus.textContent = "Translating transcribed segments...";
-
-    const translatedSegments = await translateSegmentsAdapter(state.sourceLanguage, state.targetLanguage, state.segments, (progress) => {
-      const scaledProgress = 55 + Math.round(progress * 0.35);
-      setProgress("subtitle", scaledProgress);
+    const translatedSegments = await runSubtitleJobAdapter(state.extractedAudio, state.sourceLanguage, state.targetLanguage, state.segments, (job) => {
+      els.subtitleStatus.textContent = job.message || job.stage;
+      setProgress("subtitle", Math.min(90, job.progress || 0));
     });
     state.segments = translatedSegments;
+    renderSegmentReview();
     els.subtitleStatus.textContent = "Preparing translated SRT...";
 
     const srt = await generateSrtAdapter(state.segments, state.targetLanguage, (progress) => {
@@ -339,41 +333,18 @@ async function generateSubtitles() {
   }
 }
 
-async function transcribeAudioAdapter(extractedAudio, sourceLanguage, segments, onProgress) {
+async function runSubtitleJobAdapter(extractedAudio, sourceLanguage, targetLanguageCode, segments, onProgress) {
   if (!extractedAudio) {
-    throw new Error("Audio must be extracted before transcription.");
+    throw new Error("Audio must be extracted before subtitle generation.");
   }
 
-  onProgress(5);
-  const response = await fetch(`${LOCAL_SERVICE_URL}/api/transcribe-audio`, {
+  const response = await fetch(`${LOCAL_SERVICE_URL}/api/subtitle-jobs`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
       audioId: extractedAudio.audioId,
-      languageCode: sourceLanguage.code,
-      segments
-    })
-  });
-  const payload = await response.json();
-
-  if (!response.ok) {
-    throw new Error(payload.error || "Audio transcription failed.");
-  }
-
-  onProgress(100);
-  return payload.segments;
-}
-
-async function translateSegmentsAdapter(sourceLanguage, targetLanguageCode, segments, onProgress) {
-  onProgress(5);
-  const response = await fetch(`${LOCAL_SERVICE_URL}/api/translate-segments`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
       sourceLanguage: sourceLanguage.code,
       targetLanguage: targetLanguageCode,
       segments
@@ -382,11 +353,31 @@ async function translateSegmentsAdapter(sourceLanguage, targetLanguageCode, segm
   const payload = await response.json();
 
   if (!response.ok) {
-    throw new Error(payload.error || "Segment translation failed.");
+    throw new Error(payload.error || "Subtitle generation job could not start.");
   }
 
-  onProgress(100);
-  return payload.segments;
+  return pollSubtitleJob(payload.jobId, onProgress);
+}
+
+async function pollSubtitleJob(jobId, onProgress) {
+  while (true) {
+    await delay(1200);
+    const response = await fetch(`${LOCAL_SERVICE_URL}/api/subtitle-jobs/${jobId}`);
+    const payload = await response.json();
+
+    if (!response.ok) {
+      throw new Error(payload.error || "Subtitle generation job could not be read.");
+    }
+
+    onProgress(payload);
+
+    if (payload.status === "succeeded") {
+      return payload.segments;
+    }
+    if (payload.status === "failed") {
+      throw new Error(payload.error || payload.message || "Subtitle generation failed.");
+    }
+  }
 }
 
 async function identifyLanguageAdapter(file) {

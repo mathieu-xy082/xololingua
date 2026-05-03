@@ -16,9 +16,13 @@ import subprocess
 import tempfile
 import uuid
 import os
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from threading import Lock
+from urllib.parse import urlparse
 
 
 HOST = "127.0.0.1"
@@ -33,6 +37,12 @@ WHISPER_COMMAND = os.environ.get("XOLOLINGUA_WHISPER_COMMAND", "whisper")
 WHISPER_MODEL = os.environ.get("XOLOLINGUA_WHISPER_MODEL", "base")
 WHISPER_DEVICE = os.environ.get("XOLOLINGUA_WHISPER_DEVICE", "cpu")
 ARGOS_COMMAND = os.environ.get("XOLOLINGUA_ARGOS_COMMAND", "argos-translate")
+SUBTITLE_JOB_WORKERS = int(os.environ.get("XOLOLINGUA_SUBTITLE_JOB_WORKERS", "1"))
+TRANSLATION_WORKERS = int(os.environ.get("XOLOLINGUA_TRANSLATION_WORKERS", "2"))
+
+JOBS: dict[str, dict] = {}
+JOBS_LOCK = Lock()
+JOBS_EXECUTOR = ThreadPoolExecutor(max_workers=SUBTITLE_JOB_WORKERS)
 
 
 class LocalServiceHandler(BaseHTTPRequestHandler):
@@ -44,6 +54,7 @@ class LocalServiceHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self) -> None:
+        parsed_path = urlparse(self.path)
         if self.path == "/api/health":
             self.send_json({
                 "ok": True,
@@ -56,6 +67,9 @@ class LocalServiceHandler(BaseHTTPRequestHandler):
                 "argosTranslate": bool(shutil.which(ARGOS_COMMAND)),
                 "argosCommand": ARGOS_COMMAND,
             })
+            return
+        if parsed_path.path.startswith("/api/subtitle-jobs/"):
+            self.handle_get_subtitle_job(parsed_path.path.rsplit("/", 1)[-1])
             return
 
         self.send_error_json(HTTPStatus.NOT_FOUND, "Unknown endpoint.")
@@ -72,6 +86,9 @@ class LocalServiceHandler(BaseHTTPRequestHandler):
             return
         if self.path == "/api/translate-segments":
             self.handle_translate_segments()
+            return
+        if self.path == "/api/subtitle-jobs":
+            self.handle_create_subtitle_job()
             return
 
         self.send_error_json(HTTPStatus.NOT_FOUND, "Unknown endpoint.")
@@ -254,6 +271,80 @@ class LocalServiceHandler(BaseHTTPRequestHandler):
         except subprocess.CalledProcessError as error:
             self.send_error_json(HTTPStatus.BAD_REQUEST, error.stderr.strip() or "Segment translation failed.")
 
+    def handle_create_subtitle_job(self) -> None:
+        if not shutil.which(WHISPER_COMMAND):
+            self.send_error_json(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                f"Transcription engine not found. Install Whisper CLI or set XOLOLINGUA_WHISPER_COMMAND. Tried: {WHISPER_COMMAND}.",
+            )
+            return
+        if not shutil.which(ARGOS_COMMAND):
+            self.send_error_json(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                f"Translation engine not found. Install Argos Translate or set XOLOLINGUA_ARGOS_COMMAND. Tried: {ARGOS_COMMAND}.",
+            )
+            return
+
+        length = int(self.headers.get("Content-Length", "0"))
+        if length <= 0:
+            self.send_error_json(HTTPStatus.BAD_REQUEST, "Missing JSON body.")
+            return
+
+        try:
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+        except json.JSONDecodeError:
+            self.send_error_json(HTTPStatus.BAD_REQUEST, "Invalid JSON body.")
+            return
+
+        audio_id = str(payload.get("audioId", ""))
+        if not re.fullmatch(r"[a-f0-9]{32}", audio_id):
+            self.send_error_json(HTTPStatus.BAD_REQUEST, "Invalid audio id.")
+            return
+
+        audio_path = WORK_DIR / f"{audio_id}.wav"
+        if not audio_path.exists():
+            self.send_error_json(HTTPStatus.NOT_FOUND, "Extracted audio file was not found.")
+            return
+
+        source_language = str(payload.get("sourceLanguage", ""))
+        target_language = str(payload.get("targetLanguage", ""))
+        try:
+            segments = normalize_segments(payload.get("segments", []))
+            if not source_language or not target_language:
+                raise ValueError("Source and target languages are required.")
+            if source_language == target_language:
+                raise ValueError("Source and target languages must differ.")
+        except ValueError as error:
+            self.send_error_json(HTTPStatus.BAD_REQUEST, str(error))
+            return
+
+        job_id = uuid.uuid4().hex
+        put_job(job_id, {
+            "jobId": job_id,
+            "status": "queued",
+            "stage": "queued",
+            "progress": 0,
+            "message": "Queued subtitle generation.",
+            "createdAt": time.time(),
+            "updatedAt": time.time(),
+            "segments": [],
+            "error": "",
+        })
+        JOBS_EXECUTOR.submit(run_subtitle_job, job_id, audio_path, segments, source_language, target_language)
+        self.send_json(job_snapshot(job_id), HTTPStatus.ACCEPTED)
+
+    def handle_get_subtitle_job(self, job_id: str) -> None:
+        if not re.fullmatch(r"[a-f0-9]{32}", job_id):
+            self.send_error_json(HTTPStatus.BAD_REQUEST, "Invalid job id.")
+            return
+
+        snapshot = job_snapshot(job_id)
+        if snapshot is None:
+            self.send_error_json(HTTPStatus.NOT_FOUND, "Subtitle job was not found.")
+            return
+
+        self.send_json(snapshot)
+
     def send_json(self, payload: dict, status: HTTPStatus = HTTPStatus.OK) -> None:
         body = json.dumps(payload).encode("utf-8")
         self.send_response(status)
@@ -434,13 +525,13 @@ def normalize_text_segments(payload: object) -> list[dict]:
     return segments
 
 
-def transcribe_segments(audio_path: Path, segments: list[dict], language_code: str) -> list[dict]:
+def transcribe_segments(audio_path: Path, segments: list[dict], language_code: str, progress_callback=None) -> list[dict]:
     results: list[dict] = []
     segment_dir = WORK_DIR / f"segments-{uuid.uuid4().hex}"
     segment_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        for segment in segments:
+        for completed, segment in enumerate(segments, start=1):
             segment_audio_path = segment_dir / f"segment-{segment['index']:05d}.wav"
             slice_audio(audio_path, segment_audio_path, segment["start"], segment["end"])
             text = transcribe_audio_file(segment_audio_path, language_code, segment_dir)
@@ -450,26 +541,46 @@ def transcribe_segments(audio_path: Path, segments: list[dict], language_code: s
                 "end": round(segment["end"], 3),
                 "text": text,
             })
+            if progress_callback:
+                progress_callback(completed, len(segments))
     finally:
         shutil.rmtree(segment_dir, ignore_errors=True)
 
     return results
 
 
-def translate_segments(segments: list[dict], source_language: str, target_language: str) -> list[dict]:
+def translate_segments(segments: list[dict], source_language: str, target_language: str, progress_callback=None, max_workers: int = 1) -> list[dict]:
     if not source_language or not target_language:
         raise ValueError("Source and target languages are required.")
     if source_language == target_language:
         raise ValueError("Source and target languages must differ.")
 
-    translated: list[dict] = []
-    for segment in segments:
-        translated.append({
+    translated: list[dict | None] = [None] * len(segments)
+
+    def translate_one(position: int, segment: dict) -> tuple[int, dict]:
+        return position, {
             **segment,
             "translatedText": translate_text(segment.get("text", ""), source_language, target_language),
-        })
+        }
 
-    return translated
+    if max_workers <= 1 or len(segments) <= 1:
+        for position, segment in enumerate(segments):
+            _, translated_segment = translate_one(position, segment)
+            translated[position] = translated_segment
+            if progress_callback:
+                progress_callback(position + 1, len(segments))
+    else:
+        completed = 0
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(translate_one, position, segment) for position, segment in enumerate(segments)]
+            for future in as_completed(futures):
+                position, translated_segment = future.result()
+                translated[position] = translated_segment
+                completed += 1
+                if progress_callback:
+                    progress_callback(completed, len(segments))
+
+    return [segment for segment in translated if segment is not None]
 
 
 def translate_text(text: str, source_language: str, target_language: str) -> str:
@@ -490,6 +601,85 @@ def translate_text(text: str, source_language: str, target_language: str) -> str
         text=True,
     )
     return result.stdout.strip()
+
+
+def put_job(job_id: str, values: dict) -> None:
+    with JOBS_LOCK:
+        JOBS[job_id] = values
+
+
+def update_job(job_id: str, **values) -> None:
+    with JOBS_LOCK:
+        job = JOBS[job_id]
+        job.update(values)
+        job["updatedAt"] = time.time()
+
+
+def job_snapshot(job_id: str) -> dict | None:
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+        if job is None:
+            return None
+        return dict(job)
+
+
+def run_subtitle_job(job_id: str, audio_path: Path, segments: list[dict], source_language: str, target_language: str) -> None:
+    try:
+        update_job(
+            job_id,
+            status="running",
+            stage="transcribing",
+            progress=1,
+            message="Transcribing segmented audio.",
+        )
+
+        def transcription_progress(done: int, total: int) -> None:
+            update_job(
+                job_id,
+                progress=round((done / total) * 55),
+                message=f"Transcribed {done}/{total} segments.",
+            )
+
+        transcribed_segments = transcribe_segments(audio_path, segments, source_language, transcription_progress)
+        update_job(
+            job_id,
+            stage="translating",
+            progress=55,
+            message="Translating transcribed segments.",
+            segments=transcribed_segments,
+        )
+
+        def translation_progress(done: int, total: int) -> None:
+            update_job(
+                job_id,
+                progress=55 + round((done / total) * 35),
+                message=f"Translated {done}/{total} segments.",
+            )
+
+        translated_segments = translate_segments(
+            transcribed_segments,
+            source_language,
+            target_language,
+            translation_progress,
+            max_workers=TRANSLATION_WORKERS,
+        )
+        update_job(
+            job_id,
+            status="succeeded",
+            stage="ready",
+            progress=90,
+            message="Transcription and translation completed.",
+            segments=translated_segments,
+        )
+    except Exception as error:
+        update_job(
+            job_id,
+            status="failed",
+            stage="failed",
+            progress=0,
+            message=str(error),
+            error=str(error),
+        )
 
 
 def slice_audio(audio_path: Path, output_path: Path, start: float, end: float) -> None:

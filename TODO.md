@@ -75,6 +75,7 @@
 - Add adapter contract tests for language identification, segmentation, transcription, translation, and SRT formatting.
 - Add integration tests for the transcription endpoint when a local model is available.
 - Add integration tests for installed Argos translation packages.
+- Add browser tests for asynchronous subtitle job polling and failure handling.
 - Add frontend tests for successful local-service audio extraction and local-service fallback.
 - Add frontend tests for segmentation summary and optional read-only detail view.
 - Add functional tests for silence-based segment boundaries on representative speech samples.
