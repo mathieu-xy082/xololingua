@@ -94,7 +94,8 @@ select:disabled {
 .summary-panel,
 .workflow-panel,
 .step,
-.video-card {
+.video-card,
+.segment-review {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(255, 253, 248, 0.92);
@@ -339,6 +340,79 @@ select {
   text-decoration: none;
 }
 
+.segment-review {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  box-shadow: none;
+}
+
+.segment-review[hidden] {
+  display: none;
+}
+
+.segment-review-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.segment-review-header h2 {
+  margin-bottom: 0;
+}
+
+.segment-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 0;
+}
+
+.segment-summary div {
+  display: grid;
+  gap: 4px;
+  min-height: 78px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfaf4;
+}
+
+.segment-summary dd {
+  text-align: left;
+}
+
+.segment-details {
+  max-height: 360px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  white-space: nowrap;
+}
+
+th {
+  position: sticky;
+  top: 0;
+  background: #eef3ef;
+  color: var(--accent-strong);
+  font-size: 0.82rem;
+  text-transform: uppercase;
+}
+
 @media (max-width: 840px) {
   .app-shell {
     padding: 14px;
@@ -347,8 +421,14 @@ select {
   .workspace,
   .step-grid,
   .video-card,
-  .dropzone {
+  .dropzone,
+  .segment-summary {
     grid-template-columns: 1fr;
+  }
+
+  .segment-review-header {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .summary-panel {

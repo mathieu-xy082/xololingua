@@ -17,6 +17,7 @@ The project has not published a first version yet.
 - Added a local Ubuntu development service that extracts MP4 audio to mono 16 kHz WAV with `ffmpeg`.
 - Added first-pass audio segmentation through `ffmpeg` silence detection over the extracted WAV.
 - Added frontend audio extraction and service-backed segmentation, with fallback if the local service is not running.
+- Added a read-only segmentation review with summary metrics and optional segment details.
 - Added a local service test for WAV extraction format.
 - Added a local service test for silence-based segmentation.
 - Added the first supported language-pair scope:

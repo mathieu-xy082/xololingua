@@ -125,6 +125,42 @@
               <a class="download-link" id="downloadLink" hidden>Download SRT</a>
             </article>
           </section>
+
+          <section class="segment-review" id="segmentReview" aria-labelledby="segmentReviewTitle" hidden>
+            <div class="segment-review-header">
+              <div>
+                <p class="eyebrow">Segmentation review</p>
+                <h2 id="segmentReviewTitle">Audio segments</h2>
+              </div>
+              <button id="toggleSegmentsButton" type="button" aria-expanded="false">Show details</button>
+            </div>
+            <dl class="segment-summary">
+              <div>
+                <dt>Segments</dt>
+                <dd id="segmentCountSummary">0</dd>
+              </div>
+              <div>
+                <dt>Total speech time</dt>
+                <dd id="segmentSpeechSummary">0 s</dd>
+              </div>
+              <div>
+                <dt>Average duration</dt>
+                <dd id="segmentAverageSummary">0 s</dd>
+              </div>
+            </dl>
+            <div class="segment-details" id="segmentDetails" hidden>
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">Segment</th>
+                    <th scope="col">Start</th>
+                    <th scope="col">Duration</th>
+                  </tr>
+                </thead>
+                <tbody id="segmentTableBody"></tbody>
+              </table>
+            </div>
+          </section>
         </section>
       </main>
     </div>

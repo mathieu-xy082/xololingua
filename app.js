@@ -74,6 +74,13 @@ const els = {
   segmentationStatus: document.querySelector("#segmentationStatus"),
   segmentationProgressText: document.querySelector("#segmentationProgressText"),
   segmentationProgressBar: document.querySelector("#segmentationProgressBar"),
+  segmentReview: document.querySelector("#segmentReview"),
+  segmentCountSummary: document.querySelector("#segmentCountSummary"),
+  segmentSpeechSummary: document.querySelector("#segmentSpeechSummary"),
+  segmentAverageSummary: document.querySelector("#segmentAverageSummary"),
+  toggleSegmentsButton: document.querySelector("#toggleSegmentsButton"),
+  segmentDetails: document.querySelector("#segmentDetails"),
+  segmentTableBody: document.querySelector("#segmentTableBody"),
   generateButton: document.querySelector("#generateButton"),
   subtitleStatus: document.querySelector("#subtitleStatus"),
   subtitleProgressText: document.querySelector("#subtitleProgressText"),
@@ -145,6 +152,7 @@ function bindEvents() {
     render();
   });
   els.segmentButton.addEventListener("click", segmentAudio);
+  els.toggleSegmentsButton.addEventListener("click", toggleSegmentDetails);
   els.generateButton.addEventListener("click", generateSubtitles);
 }
 
@@ -406,6 +414,7 @@ function render() {
 
   els.segmentButton.disabled = !canSegment() || state.busyStep === "segmentation";
   els.generateButton.disabled = !canGenerate() || state.busyStep === "subtitle";
+  renderSegmentReview();
 }
 
 function canSegment() {
@@ -442,6 +451,9 @@ function resetOutput() {
 
 function resetSegmentation() {
   state.segments = [];
+  els.segmentDetails.hidden = true;
+  els.toggleSegmentsButton.setAttribute("aria-expanded", "false");
+  els.toggleSegmentsButton.textContent = "Show details";
   els.segmentationStatus.textContent = canSegment()
     ? "Ready to segment speech audio."
     : "Select a different target language.";
@@ -465,6 +477,47 @@ function setProgress(kind, value) {
   const bar = kind === "segmentation" ? els.segmentationProgressBar : els.subtitleProgressBar;
   text.textContent = `${clamped}%`;
   bar.style.width = `${clamped}%`;
+}
+
+function renderSegmentReview() {
+  els.segmentReview.hidden = state.segments.length === 0;
+
+  if (state.segments.length === 0) {
+    els.segmentTableBody.replaceChildren();
+    els.segmentCountSummary.textContent = "0";
+    els.segmentSpeechSummary.textContent = "0 s";
+    els.segmentAverageSummary.textContent = "0 s";
+    return;
+  }
+
+  const totalSpeechSeconds = state.segments.reduce((total, segment) => total + Math.max(0, segment.end - segment.start), 0);
+  const averageSeconds = totalSpeechSeconds / state.segments.length;
+
+  els.segmentCountSummary.textContent = String(state.segments.length);
+  els.segmentSpeechSummary.textContent = formatDuration(totalSpeechSeconds);
+  els.segmentAverageSummary.textContent = formatDuration(averageSeconds);
+  els.segmentTableBody.replaceChildren(...state.segments.map(segmentRow));
+}
+
+function segmentRow(segment) {
+  const row = document.createElement("tr");
+  const numberCell = document.createElement("td");
+  const startCell = document.createElement("td");
+  const durationCell = document.createElement("td");
+
+  numberCell.textContent = String(segment.index);
+  startCell.textContent = formatSrtTime(segment.start).replace(",", ".");
+  durationCell.textContent = formatDuration(Math.max(0, segment.end - segment.start));
+
+  row.append(numberCell, startCell, durationCell);
+  return row;
+}
+
+function toggleSegmentDetails() {
+  const shouldShow = els.segmentDetails.hidden;
+  els.segmentDetails.hidden = !shouldShow;
+  els.toggleSegmentsButton.setAttribute("aria-expanded", String(shouldShow));
+  els.toggleSegmentsButton.textContent = shouldShow ? "Hide details" : "Show details";
 }
 
 function isMp4(file) {
