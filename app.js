@@ -24,6 +24,25 @@ const languages = [
   { code: "uk", name: "Ukrainian" }
 ];
 
+const supportedLanguagePairs = new Set([
+  "en:fr",
+  "fr:en",
+  "fr:ru",
+  "ru:fr",
+  "fr:uk",
+  "uk:fr",
+  "fr:zh",
+  "zh:fr",
+  "fr:de",
+  "de:fr",
+  "fr:es",
+  "es:fr",
+  "fr:hi",
+  "hi:fr",
+  "fr:ja",
+  "ja:fr"
+]);
+
 const state = {
   videoFile: null,
   videoUrl: "",
@@ -294,15 +313,21 @@ function render() {
   els.targetLanguageSelect.value = state.targetLanguage;
 
   [...els.targetLanguageSelect.options].forEach((option) => {
-    option.disabled = Boolean(sourceLanguage && option.value === sourceLanguage.code);
+    option.disabled = Boolean(
+      sourceLanguage &&
+      option.value &&
+      (option.value === sourceLanguage.code || !isSupportedPair(sourceLanguage.code, option.value))
+    );
   });
 
   if (!sourceLanguage) {
     els.targetStatus.textContent = "Identify the video language first.";
   } else if (!targetLanguage) {
-    els.targetStatus.textContent = "Select a target language.";
+    els.targetStatus.textContent = "Select one of the first supported target languages.";
   } else if (targetLanguage.code === sourceLanguage.code) {
     els.targetStatus.textContent = "Target language must differ from source.";
+  } else if (!isSupportedPair(sourceLanguage.code, targetLanguage.code)) {
+    els.targetStatus.textContent = "This language couple is not in the first supported scope.";
   } else {
     els.targetStatus.textContent = `Target selected: ${targetLanguage.name}.`;
   }
@@ -317,7 +342,8 @@ function canSegment() {
     state.metadataReady &&
     state.sourceLanguage &&
     state.targetLanguage &&
-    state.targetLanguage !== state.sourceLanguage.code
+    state.targetLanguage !== state.sourceLanguage.code &&
+    isSupportedPair(state.sourceLanguage.code, state.targetLanguage)
   );
 }
 
@@ -374,6 +400,10 @@ function isMp4(file) {
 
 function getLanguage(code) {
   return languages.find((language) => language.code === code) || null;
+}
+
+function isSupportedPair(sourceCode, targetCode) {
+  return supportedLanguagePairs.has(`${sourceCode}:${targetCode}`);
 }
 
 function makeSubtitleFileName(videoName, languageCode) {

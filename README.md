@@ -32,6 +32,8 @@ That is enough to run the app in the Android browser. To install it as a PWA, Ch
 
 ## Files
 
+- `CHANGELOG.md` tracks unreleased and future version changes.
+- `TODO.md` tracks implementation and test work.
 - `index.html` contains the video workflow.
 - `styles.css` contains the responsive layout and visual design.
 - `app.js` contains file validation, language selection, processing state, subtitle filename handling, and SRT generation.
