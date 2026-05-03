@@ -22,38 +22,113 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
+
+
+GPU_MODEL = os.environ.get("XOLOLINGUA_WHISPER_GPU_MODEL", "medium")
+CPU_MODEL = os.environ.get("XOLOLINGUA_WHISPER_CPU_MODEL", "base")
+GPU_COMPUTE_TYPE = os.environ.get("XOLOLINGUA_WHISPER_GPU_COMPUTE_TYPE", "float16")
+CPU_COMPUTE_TYPE = os.environ.get("XOLOLINGUA_WHISPER_CPU_COMPUTE_TYPE", "int8")
+DEVICE_CHOICE = os.environ.get("XOLOLINGUA_WHISPER_DEVICE", "auto")
 
 
 # ---------------------------------------------------------------------------
 # Runtime probe
 # ---------------------------------------------------------------------------
 
-def _probe() -> dict:
-    """Return a dict describing the best available compute backend."""
+def _probe(
+    device_choice: str = DEVICE_CHOICE,
+    gpu_model: str = GPU_MODEL,
+    cpu_model: str = CPU_MODEL,
+    gpu_compute_type: str = GPU_COMPUTE_TYPE,
+    cpu_compute_type: str = CPU_COMPUTE_TYPE,
+) -> dict:
+    """Return a descriptor for the best loadable faster-whisper runtime."""
     try:
         import ctranslate2
         cuda_count = ctranslate2.get_cuda_device_count()
     except Exception:
         cuda_count = 0
 
-    if cuda_count > 0:
-        return {
+    nvidia_smi = _nvidia_smi_status()
+    requested_device = device_choice if device_choice in {"auto", "cuda", "cpu"} else "auto"
+    diagnostics = {
+        "cudaDevices": cuda_count,
+        "nvidiaSmi": nvidia_smi["ok"],
+        "nvidiaSmiError": nvidia_smi["error"],
+        "requestedDevice": requested_device,
+    }
+
+    if requested_device != "cpu" and cuda_count > 0 and nvidia_smi["ok"]:
+        gpu_runtime = {
             "backend": "faster-whisper",
             "device": "cuda",
-            "model": "medium",
-            "computeType": "float16",
-            "cudaDevices": cuda_count,
+            "model": gpu_model,
+            "computeType": gpu_compute_type,
+            "available": True,
+            "fallbackReason": "",
+            **diagnostics,
         }
+        gpu_error = _validate_runtime(gpu_runtime)
+        if not gpu_error:
+            return gpu_runtime
+        fallback_reason = f"CUDA runtime validation failed: {gpu_error}"
+    elif requested_device == "cuda" and cuda_count <= 0:
+        fallback_reason = "CUDA was requested, but no CUDA device was reported by ctranslate2."
+    elif requested_device == "cuda" and not nvidia_smi["ok"]:
+        fallback_reason = f"CUDA was requested, but nvidia-smi failed: {nvidia_smi['error']}"
+    elif requested_device == "auto" and cuda_count <= 0:
+        fallback_reason = "No CUDA device was reported by ctranslate2."
+    elif requested_device == "auto" and not nvidia_smi["ok"]:
+        fallback_reason = f"nvidia-smi failed: {nvidia_smi['error']}"
     else:
-        return {
-            "backend": "faster-whisper",
-            "device": "cpu",
-            "model": "base",
-            "computeType": "int8",
-            "cudaDevices": 0,
-        }
+        fallback_reason = "CPU runtime requested."
+
+    cpu_runtime = {
+        "backend": "faster-whisper",
+        "device": "cpu",
+        "model": cpu_model,
+        "computeType": cpu_compute_type,
+        "available": True,
+        "fallbackReason": fallback_reason,
+        **diagnostics,
+    }
+    cpu_error = _validate_runtime(cpu_runtime)
+    if cpu_error:
+        cpu_runtime["available"] = False
+        cpu_runtime["fallbackReason"] = f"{fallback_reason} CPU runtime validation failed: {cpu_error}"
+    return cpu_runtime
+
+
+def _nvidia_smi_status() -> dict:
+    try:
+        result = subprocess.run(
+            ["nvidia-smi"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        return {"ok": True, "error": "", "output": result.stdout.strip()}
+    except Exception as exc:
+        detail = getattr(exc, "stderr", "") or str(exc)
+        return {"ok": False, "error": detail.strip(), "output": ""}
+
+
+def _validate_runtime(runtime: dict) -> str:
+    try:
+        from faster_whisper import WhisperModel
+        WhisperModel(
+            runtime["model"],
+            device=runtime["device"],
+            compute_type=runtime["computeType"],
+        )
+        return ""
+    except Exception as exc:
+        return str(exc)
 
 
 # ---------------------------------------------------------------------------
@@ -121,16 +196,31 @@ def main() -> None:
     parser.add_argument("--language", default="", help="ISO-639-1 language code (optional)")
     parser.add_argument("--segments", type=Path, help="JSON file with segment list")
     parser.add_argument("--out", type=Path, help="Output JSON file path")
+    parser.add_argument("--model", default="", help="Whisper model to load")
+    parser.add_argument("--device", choices=["auto", "cuda", "cpu"], default=DEVICE_CHOICE, help="Transcription device")
+    parser.add_argument("--compute-type", default="", help="faster-whisper compute type")
+    parser.add_argument("--gpu-model", default=GPU_MODEL, help="Preferred GPU model for probing")
+    parser.add_argument("--cpu-model", default=CPU_MODEL, help="Fallback CPU model for probing")
+    parser.add_argument("--gpu-compute-type", default=GPU_COMPUTE_TYPE, help="Preferred GPU compute type")
+    parser.add_argument("--cpu-compute-type", default=CPU_COMPUTE_TYPE, help="Fallback CPU compute type")
     args = parser.parse_args()
 
     if args.probe:
-        print(json.dumps(_probe()))
+        print(json.dumps(_probe(args.device, args.gpu_model, args.cpu_model, args.gpu_compute_type, args.cpu_compute_type)))
         return
 
     if not args.audio or not args.segments or not args.out:
         parser.error("--audio, --segments, and --out are required for transcription")
 
-    runtime = _probe()
+    if not args.model or not args.device or not args.compute_type:
+        parser.error("--model, --device, and --compute-type are required for transcription")
+
+    runtime = {
+        "backend": "faster-whisper",
+        "model": args.model,
+        "device": args.device,
+        "computeType": args.compute_type,
+    }
     segments = json.loads(args.segments.read_text(encoding="utf-8"))
     results = _transcribe(args.audio, args.language, segments, runtime)
     args.out.write_text(json.dumps(results), encoding="utf-8")

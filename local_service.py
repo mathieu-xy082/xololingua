@@ -37,6 +37,11 @@ WORK_DIR = Path(tempfile.gettempdir()) / "xololingua"
 ARGOS_COMMAND = os.environ.get("XOLOLINGUA_ARGOS_COMMAND", "argos-translate")
 SUBTITLE_JOB_WORKERS = int(os.environ.get("XOLOLINGUA_SUBTITLE_JOB_WORKERS", "1"))
 TRANSLATION_WORKERS = int(os.environ.get("XOLOLINGUA_TRANSLATION_WORKERS", "2"))
+WHISPER_DEVICE_CHOICE = os.environ.get("XOLOLINGUA_WHISPER_DEVICE", "auto")
+WHISPER_GPU_MODEL = os.environ.get("XOLOLINGUA_WHISPER_GPU_MODEL", "medium")
+WHISPER_CPU_MODEL = os.environ.get("XOLOLINGUA_WHISPER_CPU_MODEL", "base")
+WHISPER_GPU_COMPUTE_TYPE = os.environ.get("XOLOLINGUA_WHISPER_GPU_COMPUTE_TYPE", "float16")
+WHISPER_CPU_COMPUTE_TYPE = os.environ.get("XOLOLINGUA_WHISPER_CPU_COMPUTE_TYPE", "int8")
 
 # Path to the transcribe worker script (same directory as this file)
 _SERVICE_DIR = Path(__file__).parent
@@ -55,7 +60,24 @@ WHISPER_RUNTIME: dict = {
     "model": "base",
     "computeType": "int8",
     "cudaDevices": 0,
+    "nvidiaSmi": False,
+    "nvidiaSmiError": "",
+    "fallbackReason": "",
+    "requestedDevice": WHISPER_DEVICE_CHOICE,
     "available": False,
+}
+
+CPU_WHISPER_RUNTIME: dict = {
+    "backend": "faster-whisper",
+    "device": "cpu",
+    "model": WHISPER_CPU_MODEL,
+    "computeType": WHISPER_CPU_COMPUTE_TYPE,
+    "cudaDevices": 0,
+    "nvidiaSmi": False,
+    "nvidiaSmiError": "",
+    "fallbackReason": "Runtime fallback requested.",
+    "requestedDevice": WHISPER_DEVICE_CHOICE,
+    "available": True,
 }
 
 JOBS: dict[str, dict] = {}
@@ -72,7 +94,7 @@ class JobCancelled(Exception):
 
 def _detect_whisper_runtime() -> None:
     """Probe the transcribe worker for GPU availability and populate WHISPER_RUNTIME."""
-    global WHISPER_RUNTIME
+    global WHISPER_RUNTIME, CPU_WHISPER_RUNTIME
     worker_python = _WHISPER_VENV_PYTHON
     if not Path(worker_python).exists():
         print(f"[whisper] venv python not found at {worker_python}, falling back to system whisper CLI")
@@ -85,18 +107,56 @@ def _detect_whisper_runtime() -> None:
         return
     try:
         result = subprocess.run(
-            [worker_python, str(TRANSCRIBE_WORKER), "--probe"],
-            check=True, capture_output=True, text=True, timeout=30,
+            [
+                worker_python,
+                str(TRANSCRIBE_WORKER),
+                "--probe",
+                "--device", WHISPER_DEVICE_CHOICE,
+                "--gpu-model", WHISPER_GPU_MODEL,
+                "--cpu-model", WHISPER_CPU_MODEL,
+                "--gpu-compute-type", WHISPER_GPU_COMPUTE_TYPE,
+                "--cpu-compute-type", WHISPER_CPU_COMPUTE_TYPE,
+            ],
+            check=True, capture_output=True, text=True, timeout=120,
         )
         runtime = json.loads(result.stdout.strip())
-        runtime["available"] = True
         WHISPER_RUNTIME = runtime
-        device_label = f"CUDA ({runtime['cudaDevices']} GPU)" if runtime["device"] == "cuda" else "CPU"
+        CPU_WHISPER_RUNTIME = runtime if runtime.get("device") == "cpu" else _probe_cpu_whisper_runtime(worker_python)
+        device_label = f"CUDA ({runtime.get('cudaDevices', 0)} GPU)" if runtime["device"] == "cuda" else "CPU"
         print(f"[whisper] faster-whisper ready — model={runtime['model']} device={device_label} compute={runtime['computeType']}")
+        if runtime.get("fallbackReason"):
+            print(f"[whisper] fallback reason: {runtime['fallbackReason']}")
+        if runtime.get("device") == "cuda" and not CPU_WHISPER_RUNTIME.get("available"):
+            print(f"[whisper] CPU fallback unavailable: {CPU_WHISPER_RUNTIME.get('fallbackReason', 'unknown')}")
     except Exception as exc:
         print(f"[whisper] probe failed ({exc}), falling back to whisper CLI")
         WHISPER_RUNTIME = {"backend": "whisper-cli", "device": "cpu", "model": "base",
-                           "computeType": "n/a", "cudaDevices": 0, "available": bool(shutil.which("whisper"))}
+                           "computeType": "n/a", "cudaDevices": 0, "available": bool(shutil.which("whisper")),
+                           "nvidiaSmi": False, "nvidiaSmiError": "", "fallbackReason": str(exc),
+                           "requestedDevice": WHISPER_DEVICE_CHOICE}
+        CPU_WHISPER_RUNTIME = WHISPER_RUNTIME
+
+
+def _probe_cpu_whisper_runtime(worker_python: str) -> dict:
+    try:
+        result = subprocess.run(
+            [
+                worker_python,
+                str(TRANSCRIBE_WORKER),
+                "--probe",
+                "--device", "cpu",
+                "--cpu-model", WHISPER_CPU_MODEL,
+                "--cpu-compute-type", WHISPER_CPU_COMPUTE_TYPE,
+            ],
+            check=True, capture_output=True, text=True, timeout=120,
+        )
+        return json.loads(result.stdout.strip())
+    except Exception as exc:
+        return {
+            **CPU_WHISPER_RUNTIME,
+            "available": False,
+            "fallbackReason": str(exc),
+        }
 
 
 class LocalServiceHandler(BaseHTTPRequestHandler):
@@ -120,6 +180,14 @@ class LocalServiceHandler(BaseHTTPRequestHandler):
                 "whisperDevice": WHISPER_RUNTIME.get("device", "?"),
                 "whisperComputeType": WHISPER_RUNTIME.get("computeType", "?"),
                 "whisperCudaDevices": WHISPER_RUNTIME.get("cudaDevices", 0),
+                "whisperRequestedDevice": WHISPER_RUNTIME.get("requestedDevice", WHISPER_DEVICE_CHOICE),
+                "whisperFallbackReason": WHISPER_RUNTIME.get("fallbackReason", ""),
+                "whisperCpuFallbackAvailable": CPU_WHISPER_RUNTIME.get("available", False),
+                "whisperCpuFallbackModel": CPU_WHISPER_RUNTIME.get("model", WHISPER_CPU_MODEL),
+                "whisperCpuFallbackComputeType": CPU_WHISPER_RUNTIME.get("computeType", WHISPER_CPU_COMPUTE_TYPE),
+                "whisperCpuFallbackReason": CPU_WHISPER_RUNTIME.get("fallbackReason", ""),
+                "nvidiaSmi": WHISPER_RUNTIME.get("nvidiaSmi", False),
+                "nvidiaSmiError": WHISPER_RUNTIME.get("nvidiaSmiError", ""),
                 "argosTranslate": bool(shutil.which(ARGOS_COMMAND)),
                 "argosCommand": ARGOS_COMMAND,
             })
@@ -599,18 +667,19 @@ def normalize_text_segments(payload: object) -> list[dict]:
     return segments
 
 
-def transcribe_segments(audio_path: Path, segments: list[dict], language_code: str, progress_callback=None, job_id: str | None = None) -> list[dict]:
+def transcribe_segments(audio_path: Path, segments: list[dict], language_code: str, progress_callback=None, job_id: str | None = None, runtime: dict | None = None) -> list[dict]:
     """Transcribe all segments in one worker invocation (model loaded once)."""
+    selected_runtime = runtime or WHISPER_RUNTIME
     worker_python = _WHISPER_VENV_PYTHON
     use_worker = (
-        WHISPER_RUNTIME.get("backend") == "faster-whisper"
-        and WHISPER_RUNTIME.get("available")
+        selected_runtime.get("backend") == "faster-whisper"
+        and selected_runtime.get("available")
         and Path(worker_python).exists()
         and TRANSCRIBE_WORKER.exists()
     )
 
     if use_worker:
-        return _transcribe_segments_worker(audio_path, segments, language_code, progress_callback, worker_python, job_id)
+        return _transcribe_segments_worker(audio_path, segments, language_code, progress_callback, worker_python, job_id, selected_runtime)
     else:
         return _transcribe_segments_cli(audio_path, segments, language_code, progress_callback, job_id)
 
@@ -622,6 +691,7 @@ def _transcribe_segments_worker(
     progress_callback,
     worker_python: str,
     job_id: str | None,
+    runtime: dict,
 ) -> list[dict]:
     """Use transcribe_worker.py (faster-whisper, model loaded once for all segments)."""
     work_dir = WORK_DIR / f"job-{uuid.uuid4().hex}"
@@ -639,6 +709,9 @@ def _transcribe_segments_worker(
                 "--language", language_code or "",
                 "--segments", str(segments_file),
                 "--out", str(out_file),
+                "--model", runtime["model"],
+                "--device", runtime["device"],
+                "--compute-type", runtime["computeType"],
             ],
             job_id=job_id,
         )
@@ -918,6 +991,11 @@ def run_job_command(command: list[str], *, job_id: str | None = None, input: str
                 unregister_job_process(job_id, process)
 
 
+def command_error_summary(error: subprocess.CalledProcessError) -> str:
+    detail = (error.stderr or error.output or str(error)).strip()
+    return detail.splitlines()[-1] if detail else str(error)
+
+
 def run_subtitle_job(job_id: str, audio_path: Path, segments: list[dict], source_language: str, target_language: str) -> None:
     try:
         ensure_job_not_cancelled(job_id)
@@ -937,7 +1015,44 @@ def run_subtitle_job(job_id: str, audio_path: Path, segments: list[dict], source
                 message=f"Transcribed {done}/{total} segments.",
             )
 
-        transcribed_segments = transcribe_segments(audio_path, segments, source_language, transcription_progress, job_id)
+        try:
+            transcribed_segments = transcribe_segments(
+                audio_path,
+                segments,
+                source_language,
+                transcription_progress,
+                job_id,
+                dict(WHISPER_RUNTIME),
+            )
+        except subprocess.CalledProcessError as error:
+            if WHISPER_RUNTIME.get("device") != "cuda":
+                raise
+            ensure_job_not_cancelled(job_id)
+            fallback_reason = command_error_summary(error)
+            if not CPU_WHISPER_RUNTIME.get("available"):
+                raise RuntimeError(
+                    f"GPU transcription failed and CPU fallback is unavailable. "
+                    f"GPU error: {fallback_reason}. "
+                    f"CPU fallback error: {CPU_WHISPER_RUNTIME.get('fallbackReason', 'unknown')}"
+                ) from error
+            update_job(
+                job_id,
+                progress=1,
+                message=f"GPU transcription failed, retrying with CPU {CPU_WHISPER_RUNTIME.get('model', WHISPER_CPU_MODEL)}.",
+                error=fallback_reason,
+            )
+            cpu_runtime = {
+                **CPU_WHISPER_RUNTIME,
+                "fallbackReason": f"Runtime fallback after CUDA failure: {fallback_reason}",
+            }
+            transcribed_segments = transcribe_segments(
+                audio_path,
+                segments,
+                source_language,
+                transcription_progress,
+                job_id,
+                cpu_runtime,
+            )
         ensure_job_not_cancelled(job_id)
         update_job(
             job_id,

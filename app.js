@@ -130,10 +130,21 @@ async function fetchServiceStatus() {
     const model = health.whisperModel || "?";
     const device = health.whisperDevice || "?";
     const cudaCount = health.whisperCudaDevices || 0;
-    const deviceLabel = device === "cuda" ? `GPU (${cudaCount > 1 ? cudaCount + "×" : ""}CUDA)` : "CPU";
+    const fallbackReason = health.whisperFallbackReason || "";
+    const requestedDevice = health.whisperRequestedDevice || "auto";
+    const deviceLabel = device === "cuda"
+      ? `GPU (${cudaCount > 1 ? cudaCount + "×" : ""}CUDA)`
+      : requestedDevice !== "cpu" && fallbackReason
+        ? "CPU fallback"
+        : "CPU";
     els.serviceWhisperBackend.textContent = backend;
     els.serviceWhisperModel.textContent = model;
     els.serviceWhisperDevice.textContent = deviceLabel;
+    els.serviceWhisperDevice.title = fallbackReason || (
+      health.whisperCpuFallbackAvailable === false
+        ? `CPU fallback unavailable: ${health.whisperCpuFallbackReason || "unknown"}`
+        : ""
+    );
   } catch {
     els.serviceWhisperBackend.textContent = "unavailable";
     els.serviceWhisperModel.textContent = "—";

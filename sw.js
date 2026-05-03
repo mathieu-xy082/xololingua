@@ -1,4 +1,4 @@
-const CACHE_NAME = "xololingua-v4";
+const CACHE_NAME = "xololingua-v5";
 const ASSETS = [
   ".",
   "index.html",
