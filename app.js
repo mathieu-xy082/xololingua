@@ -225,24 +225,31 @@ async function segmentAudio() {
     state.extractedAudio = await extractAudioAdapter(state.videoFile, (progress) => {
       setProgress("segmentation", progress);
     });
-    els.segmentationStatus.textContent = `Audio extracted: ${formatBytes(state.extractedAudio.audioSizeBytes)} WAV. Segmenting speech audio...`;
+  } catch (extractionError) {
+    els.segmentationStatus.textContent = `${extractionError.message} Falling back to prototype segmentation.`;
+    const segments = await segmentAudioAdapter(state.duration, (progress) => {
+      const scaledProgress = 35 + Math.round(progress * 0.65);
+      setProgress("segmentation", scaledProgress);
+    });
+    finishSegmentation(segments);
+    return;
+  }
+
+  els.segmentationStatus.textContent = `Audio extracted: ${formatBytes(state.extractedAudio.audioSizeBytes)} WAV. Segmenting speech audio...`;
+  try {
     const serviceSegments = await serviceSegmentAudioAdapter(state.extractedAudio.audioId, (progress) => {
       const scaledProgress = 35 + Math.round(progress * 0.65);
       setProgress("segmentation", scaledProgress);
     });
     finishSegmentation(serviceSegments);
-    return;
-  } catch (error) {
-    state.extractedAudio = null;
-    els.segmentationStatus.textContent = `${error.message} Falling back to prototype segmentation.`;
+  } catch (segmentationError) {
+    els.segmentationStatus.textContent = `${segmentationError.message} Falling back to prototype segmentation.`;
+    const segments = await segmentAudioAdapter(state.duration, (progress) => {
+      const scaledProgress = 35 + Math.round(progress * 0.65);
+      setProgress("segmentation", scaledProgress);
+    });
+    finishSegmentation(segments);
   }
-
-  const segments = await segmentAudioAdapter(state.duration, (progress) => {
-    const scaledProgress = 35 + Math.round(progress * 0.65);
-    setProgress("segmentation", scaledProgress);
-  });
-
-  finishSegmentation(segments);
 }
 
 async function extractAudioAdapter(file, onProgress) {
@@ -491,7 +498,7 @@ function canSegment() {
 }
 
 function canGenerate() {
-  return canSegment() && state.segments.length > 0;
+  return canSegment() && state.segments.length > 0 && !!state.extractedAudio;
 }
 
 function resetOutput() {
