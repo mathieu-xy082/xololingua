@@ -300,14 +300,21 @@ async function generateSubtitles() {
 
   try {
     const transcribedSegments = await transcribeAudioAdapter(state.extractedAudio, state.sourceLanguage, state.segments, (progress) => {
-      setProgress("subtitle", Math.round(progress * 0.65));
+      setProgress("subtitle", Math.round(progress * 0.55));
     });
     state.segments = transcribedSegments;
     renderSegmentReview();
-    els.subtitleStatus.textContent = "Preparing SRT from transcribed text...";
+    els.subtitleStatus.textContent = "Translating transcribed segments...";
+
+    const translatedSegments = await translateSegmentsAdapter(state.sourceLanguage, state.targetLanguage, state.segments, (progress) => {
+      const scaledProgress = 55 + Math.round(progress * 0.35);
+      setProgress("subtitle", scaledProgress);
+    });
+    state.segments = translatedSegments;
+    els.subtitleStatus.textContent = "Preparing translated SRT...";
 
     const srt = await generateSrtAdapter(state.segments, state.targetLanguage, (progress) => {
-      const scaledProgress = 65 + Math.round(progress * 0.35);
+      const scaledProgress = 90 + Math.round(progress * 0.1);
       setProgress("subtitle", scaledProgress);
     });
     const fileName = makeSubtitleFileName(state.videoFile.name, state.targetLanguage);
@@ -359,6 +366,29 @@ async function transcribeAudioAdapter(extractedAudio, sourceLanguage, segments, 
   return payload.segments;
 }
 
+async function translateSegmentsAdapter(sourceLanguage, targetLanguageCode, segments, onProgress) {
+  onProgress(5);
+  const response = await fetch(`${LOCAL_SERVICE_URL}/api/translate-segments`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      sourceLanguage: sourceLanguage.code,
+      targetLanguage: targetLanguageCode,
+      segments
+    })
+  });
+  const payload = await response.json();
+
+  if (!response.ok) {
+    throw new Error(payload.error || "Segment translation failed.");
+  }
+
+  onProgress(100);
+  return payload.segments;
+}
+
 async function identifyLanguageAdapter(file) {
   await delay(900);
 
@@ -400,7 +430,6 @@ function finishSegmentation(segments) {
 }
 
 async function generateSrtAdapter(segments, targetLanguageCode, onProgress) {
-  const target = getLanguage(targetLanguageCode);
   const blocks = [];
 
   for (const segment of segments) {
@@ -408,7 +437,7 @@ async function generateSrtAdapter(segments, targetLanguageCode, onProgress) {
     blocks.push([
       String(segment.index),
       `${formatSrtTime(segment.start)} --> ${formatSrtTime(segment.end)}`,
-      `[${target.name}] ${segment.text || ""}`
+      segment.translatedText || segment.text || ""
     ].join("\n"));
     onProgress(Math.round((segment.index / segments.length) * 100));
   }

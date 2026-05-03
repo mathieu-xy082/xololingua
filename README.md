@@ -52,6 +52,20 @@ XOLOLINGUA_WHISPER_COMMAND=whisper XOLOLINGUA_WHISPER_MODEL=base XOLOLINGUA_WHIS
 
 If the command is not installed, subtitle generation stops with a setup error instead of generating fake text.
 
+Translation uses Argos Translate through the `argos-translate` CLI. Install the CLI with:
+
+```bash
+pipx install argostranslate --pip-args='--index-url https://pypi.org/simple'
+```
+
+Then install the language-pair packages needed by the MVP. French to English and English to French are currently validated with:
+
+```bash
+argospm update
+argospm install translate-fr_en
+argospm install translate-en_fr
+```
+
 On Android, connect the phone to the same network as the Ubuntu machine and open:
 
 ```text

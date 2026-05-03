@@ -139,6 +139,27 @@ class LocalServiceAudioTests(unittest.TestCase):
             slice_audio.assert_called_once()
             self.assertEqual(result, [{"index": 1, "start": 0.0, "end": 1.5, "text": "Bonjour."}])
 
+    def test_normalize_text_segments_preserves_text(self):
+        result = local_service.normalize_text_segments([
+            {"index": 1, "start": 0, "end": 2, "text": " Bonjour. "}
+        ])
+
+        self.assertEqual(result, [{"index": 1, "start": 0.0, "end": 2.0, "text": "Bonjour."}])
+
+    def test_translate_segments_adds_translated_text(self):
+        segments = [{"index": 1, "start": 0.0, "end": 2.0, "text": "Bonjour."}]
+
+        with mock.patch.object(local_service, "translate_text", return_value="Hello."):
+            result = local_service.translate_segments(segments, "fr", "en")
+
+        self.assertEqual(result, [{
+            "index": 1,
+            "start": 0.0,
+            "end": 2.0,
+            "text": "Bonjour.",
+            "translatedText": "Hello.",
+        }])
+
 
 if __name__ == "__main__":
     unittest.main()

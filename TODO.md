@@ -5,8 +5,8 @@
 - Replace prototype language identification with a real audio-language detection adapter.
 - Validate the installed Whisper CLI on a representative English sample.
 - Expand transcription validation beyond the first representative French sample.
-- Add real translation for transcribed segment text.
-- Replace prototype subtitle text with translated segment text in generated SRT files.
+- Install and validate Argos packages for the remaining MVP language pairs.
+- Validate translated SRT generation on French to English and English to French samples.
 - Defer segmentation quality tuning until transcription, translation, and real SRT text are functional.
 - Decide whether processing runs locally, on a backend service, or through a third-party API.
 - Keep the 2 h 30 min maximum-video-duration rule enforced before processing starts.
@@ -74,6 +74,7 @@
 - Add deterministic MP4 fixtures for short-video workflow tests.
 - Add adapter contract tests for language identification, segmentation, transcription, translation, and SRT formatting.
 - Add integration tests for the transcription endpoint when a local model is available.
+- Add integration tests for installed Argos translation packages.
 - Add frontend tests for successful local-service audio extraction and local-service fallback.
 - Add frontend tests for segmentation summary and optional read-only detail view.
 - Add functional tests for silence-based segment boundaries on representative speech samples.

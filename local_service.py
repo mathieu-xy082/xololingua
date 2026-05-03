@@ -32,6 +32,7 @@ WORK_DIR = Path(tempfile.gettempdir()) / "xololingua"
 WHISPER_COMMAND = os.environ.get("XOLOLINGUA_WHISPER_COMMAND", "whisper")
 WHISPER_MODEL = os.environ.get("XOLOLINGUA_WHISPER_MODEL", "base")
 WHISPER_DEVICE = os.environ.get("XOLOLINGUA_WHISPER_DEVICE", "cpu")
+ARGOS_COMMAND = os.environ.get("XOLOLINGUA_ARGOS_COMMAND", "argos-translate")
 
 
 class LocalServiceHandler(BaseHTTPRequestHandler):
@@ -52,6 +53,8 @@ class LocalServiceHandler(BaseHTTPRequestHandler):
                 "whisperCommand": WHISPER_COMMAND,
                 "whisperModel": WHISPER_MODEL,
                 "whisperDevice": WHISPER_DEVICE,
+                "argosTranslate": bool(shutil.which(ARGOS_COMMAND)),
+                "argosCommand": ARGOS_COMMAND,
             })
             return
 
@@ -66,6 +69,9 @@ class LocalServiceHandler(BaseHTTPRequestHandler):
             return
         if self.path == "/api/transcribe-audio":
             self.handle_transcribe_audio()
+            return
+        if self.path == "/api/translate-segments":
+            self.handle_translate_segments()
             return
 
         self.send_error_json(HTTPStatus.NOT_FOUND, "Unknown endpoint.")
@@ -211,6 +217,42 @@ class LocalServiceHandler(BaseHTTPRequestHandler):
             self.send_error_json(HTTPStatus.BAD_REQUEST, str(error))
         except subprocess.CalledProcessError as error:
             self.send_error_json(HTTPStatus.BAD_REQUEST, error.stderr.strip() or "Audio transcription failed.")
+
+    def handle_translate_segments(self) -> None:
+        if not shutil.which(ARGOS_COMMAND):
+            self.send_error_json(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                f"Translation engine not found. Install Argos Translate or set XOLOLINGUA_ARGOS_COMMAND. Tried: {ARGOS_COMMAND}.",
+            )
+            return
+
+        length = int(self.headers.get("Content-Length", "0"))
+        if length <= 0:
+            self.send_error_json(HTTPStatus.BAD_REQUEST, "Missing JSON body.")
+            return
+
+        try:
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+        except json.JSONDecodeError:
+            self.send_error_json(HTTPStatus.BAD_REQUEST, "Invalid JSON body.")
+            return
+
+        source_language = str(payload.get("sourceLanguage", ""))
+        target_language = str(payload.get("targetLanguage", ""))
+        segments_payload = payload.get("segments", [])
+
+        try:
+            segments = normalize_text_segments(segments_payload)
+            translated_segments = translate_segments(segments, source_language, target_language)
+            self.send_json({
+                "sourceLanguage": source_language,
+                "targetLanguage": target_language,
+                "segments": translated_segments,
+            })
+        except ValueError as error:
+            self.send_error_json(HTTPStatus.BAD_REQUEST, str(error))
+        except subprocess.CalledProcessError as error:
+            self.send_error_json(HTTPStatus.BAD_REQUEST, error.stderr.strip() or "Segment translation failed.")
 
     def send_json(self, payload: dict, status: HTTPStatus = HTTPStatus.OK) -> None:
         body = json.dumps(payload).encode("utf-8")
@@ -380,6 +422,18 @@ def normalize_segments(payload: object) -> list[dict]:
     return segments
 
 
+def normalize_text_segments(payload: object) -> list[dict]:
+    segments = normalize_segments(payload)
+
+    for index, segment in enumerate(segments):
+        original = payload[index] if isinstance(payload, list) else {}
+        if not isinstance(original, dict):
+            raise ValueError("Invalid segment payload.")
+        segment["text"] = str(original.get("text", "")).strip()
+
+    return segments
+
+
 def transcribe_segments(audio_path: Path, segments: list[dict], language_code: str) -> list[dict]:
     results: list[dict] = []
     segment_dir = WORK_DIR / f"segments-{uuid.uuid4().hex}"
@@ -400,6 +454,42 @@ def transcribe_segments(audio_path: Path, segments: list[dict], language_code: s
         shutil.rmtree(segment_dir, ignore_errors=True)
 
     return results
+
+
+def translate_segments(segments: list[dict], source_language: str, target_language: str) -> list[dict]:
+    if not source_language or not target_language:
+        raise ValueError("Source and target languages are required.")
+    if source_language == target_language:
+        raise ValueError("Source and target languages must differ.")
+
+    translated: list[dict] = []
+    for segment in segments:
+        translated.append({
+            **segment,
+            "translatedText": translate_text(segment.get("text", ""), source_language, target_language),
+        })
+
+    return translated
+
+
+def translate_text(text: str, source_language: str, target_language: str) -> str:
+    if not text.strip():
+        return ""
+
+    result = subprocess.run(
+        [
+            ARGOS_COMMAND,
+            "-f",
+            source_language,
+            "-t",
+            target_language,
+        ],
+        input=text,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip()
 
 
 def slice_audio(audio_path: Path, output_path: Path, start: float, end: float) -> None:

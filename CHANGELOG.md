@@ -22,9 +22,13 @@ The project has not published a first version yet.
 - Added frontend transcription before SRT generation, with a setup error when no transcription engine is installed.
 - Documented `pipx` installation for OpenAI Whisper and defaulted transcription to CPU execution.
 - Validated real Whisper transcription on a short segment from `lisoir_dnde442.mp4`.
+- Added a local translation endpoint backed by the Argos Translate CLI.
+- Added frontend translation after transcription and before SRT generation.
+- Installed and validated Argos French to English and English to French language packages.
 - Added a local service test for WAV extraction format.
 - Added a local service test for silence-based segmentation.
 - Added local service tests for transcription segment validation and text attachment.
+- Added local service tests for translation segment validation and translated text attachment.
 - Added the first supported language-pair scope:
   - English to French and French to English.
   - French to Russian and Russian to French.
@@ -41,7 +45,7 @@ The project has not published a first version yet.
 
 ### Known Limitations
 
-- Language identification and translation currently use local prototype adapters in `app.js`.
+- Language identification currently uses a local prototype adapter in `app.js`.
 - Speech segmentation is silence-based and does not yet use a speech-aware model.
 - Real speech recognition requires the configured Whisper-compatible CLI available on the local service host.
-- Translation still requires a backend or local model integration.
+- Translation currently requires installed Argos language packages for each source-target pair.
