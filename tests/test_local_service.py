@@ -135,9 +135,11 @@ class LocalServiceAudioTests(unittest.TestCase):
             audio_path.write_bytes(b"fake wav")
             segments = [{"index": 1, "start": 0.0, "end": 1.5}]
 
-            with mock.patch.object(local_service, "slice_audio") as slice_audio:
-                with mock.patch.object(local_service, "transcribe_audio_file", return_value="Bonjour."):
-                    result = local_service.transcribe_segments(audio_path, segments, "fr")
+            # Force CLI fallback so transcribe_audio_file is the code path under test
+            with mock.patch.dict(local_service.WHISPER_RUNTIME, {"backend": "whisper-cli", "available": False}):
+                with mock.patch.object(local_service, "slice_audio") as slice_audio:
+                    with mock.patch.object(local_service, "transcribe_audio_file", return_value="Bonjour."):
+                        result = local_service.transcribe_segments(audio_path, segments, "fr")
 
             slice_audio.assert_called_once()
             self.assertEqual(result, [{"index": 1, "start": 0.0, "end": 1.5, "text": "Bonjour."}])
@@ -305,14 +307,16 @@ class PipelineIntegrationTests(unittest.TestCase):
             transcribed = [dict(s, text="Bonjour le monde.") for s in segments]
             translated = [dict(s, translatedText="Hello world.") for s in transcribed]
 
-            with mock.patch.object(local_service, "transcribe_segments", return_value=transcribed):
-                with mock.patch.object(local_service, "translate_segments", return_value=translated):
-                    job = self._post_json("/api/subtitle-jobs", {
-                        "audioId": audio_id,
-                        "sourceLanguage": "fr",
-                        "targetLanguage": "en",
-                        "segments": segments,
-                    })
+            runtime_available = {"backend": "faster-whisper", "available": True, "device": "cpu", "model": "base", "computeType": "int8", "cudaDevices": 0}
+            with mock.patch.dict(local_service.WHISPER_RUNTIME, runtime_available):
+                with mock.patch.object(local_service, "transcribe_segments", return_value=transcribed):
+                    with mock.patch.object(local_service, "translate_segments", return_value=translated):
+                        job = self._post_json("/api/subtitle-jobs", {
+                            "audioId": audio_id,
+                            "sourceLanguage": "fr",
+                            "targetLanguage": "en",
+                            "segments": segments,
+                        })
 
             self.assertIn("jobId", job)
             job_id = job["jobId"]

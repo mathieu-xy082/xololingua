@@ -1,170 +1,191 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#1f6f5b">
-    <title>XoloLingua</title>
-    <link rel="manifest" href="manifest.webmanifest">
-    <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="styles.css">
-  </head>
-  <body>
-    <div class="app-shell">
-      <header class="topbar">
-        <a class="brand" href="/" aria-label="XoloLingua home">
-          <img src="assets/icon.svg" alt="" width="40" height="40">
-          <span>XoloLingua</span>
-        </a>
-        <button class="install-button" id="installButton" type="button" hidden>Install</button>
-      </header>
 
-      <main class="workspace" aria-labelledby="appTitle">
-        <section class="summary-panel">
-          <p class="eyebrow">Subtitle studio</p>
-          <h1 id="appTitle">Translate video speech into SRT subtitles.</h1>
-          <dl class="facts">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#1f6f5b">
+  <title>XoloLingua</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="XoloLingua home">
+        <img src="assets/icon.svg" alt="" width="40" height="40">
+        <span>XoloLingua</span>
+      </a>
+      <button class="install-button" id="installButton" type="button" hidden>Install</button>
+    </header>
+
+    <main class="workspace" aria-labelledby="appTitle">
+      <section class="summary-panel">
+        <p class="eyebrow">Subtitle studio</p>
+        <h1 id="appTitle">Translate video speech into SRT subtitles.</h1>
+        <dl class="facts">
+          <div>
+            <dt>Format</dt>
+            <dd>MP4</dd>
+          </div>
+          <div>
+            <dt>Maximum duration</dt>
+            <dd>2 h 30 min</dd>
+          </div>
+          <div>
+            <dt>Output</dt>
+            <dd>.srt</dd>
+          </div>
+        </dl>
+
+        <div class="service-status" id="serviceStatus" aria-label="Local service status">
+          <p class="eyebrow">Local service</p>
+          <dl class="service-facts">
             <div>
-              <dt>Format</dt>
-              <dd>MP4</dd>
+              <dt>Transcription</dt>
+              <dd id="serviceWhisperBackend">—</dd>
             </div>
             <div>
-              <dt>Maximum duration</dt>
-              <dd>2 h 30 min</dd>
+              <dt>Model</dt>
+              <dd id="serviceWhisperModel">—</dd>
             </div>
             <div>
-              <dt>Output</dt>
-              <dd>.srt</dd>
+              <dt>Device</dt>
+              <dd id="serviceWhisperDevice">—</dd>
             </div>
           </dl>
+        </div>
+      </section>
+
+      <section class="workflow-panel" aria-label="Subtitle generation workflow">
+        <section class="dropzone" id="dropzone">
+          <input id="fileInput" type="file" accept="video/mp4,.mp4">
+          <div class="drop-copy">
+            <strong>Drop an MP4 video here</strong>
+            <span>or browse from this device</span>
+          </div>
+          <button id="browseButton" type="button">Browse video</button>
         </section>
 
-        <section class="workflow-panel" aria-label="Subtitle generation workflow">
-          <section class="dropzone" id="dropzone">
-            <input id="fileInput" type="file" accept="video/mp4,.mp4">
-            <div class="drop-copy">
-              <strong>Drop an MP4 video here</strong>
-              <span>or browse from this device</span>
-            </div>
-            <button id="browseButton" type="button">Browse video</button>
-          </section>
-
-          <section class="video-card" id="videoCard" hidden>
-            <video id="videoPreview" controls preload="metadata"></video>
-            <div class="video-meta">
-              <strong id="videoName">No video selected</strong>
-              <span id="videoDetails"></span>
-            </div>
-          </section>
-
-          <section class="step-grid" aria-label="Processing steps">
-            <article class="step">
-              <div class="step-header">
-                <span class="step-number">1</span>
-                <div>
-                  <h2>Identify language</h2>
-                  <p id="languageStatus">Waiting for a valid MP4 video.</p>
-                </div>
-              </div>
-              <button id="identifyButton" type="button" disabled>Identify language</button>
-              <output class="result" id="sourceLanguageOutput">Source language: unknown</output>
-            </article>
-
-            <article class="step">
-              <div class="step-header">
-                <span class="step-number">2</span>
-                <div>
-                  <h2>Choose target</h2>
-                  <p id="targetStatus">Identify the video language first.</p>
-                </div>
-              </div>
-              <label class="field">
-                <span>Target language</span>
-                <select id="targetLanguageSelect" disabled></select>
-              </label>
-            </article>
-
-            <article class="step">
-              <div class="step-header">
-                <span class="step-number">3</span>
-                <div>
-                  <h2>Audio segmentation</h2>
-                  <p id="segmentationStatus">Select a different target language.</p>
-                </div>
-              </div>
-              <button id="segmentButton" type="button" disabled>Audio segmentation</button>
-              <div class="progress-block">
-                <div class="progress-label">
-                  <span>Segmentation</span>
-                  <strong id="segmentationProgressText">0%</strong>
-                </div>
-                <div class="progress-track">
-                  <span id="segmentationProgressBar"></span>
-                </div>
-              </div>
-            </article>
-
-            <article class="step">
-              <div class="step-header">
-                <span class="step-number">4</span>
-                <div>
-                  <h2>Generate subtitles</h2>
-                  <p id="subtitleStatus">Run segmentation first.</p>
-                </div>
-              </div>
-              <button id="generateButton" type="button" disabled>Generate subtitles</button>
-              <div class="progress-block">
-                <div class="progress-label">
-                  <span>Translation and file</span>
-                  <strong id="subtitleProgressText">0%</strong>
-                </div>
-                <div class="progress-track">
-                  <span id="subtitleProgressBar"></span>
-                </div>
-              </div>
-              <a class="download-link" id="downloadLink" hidden>Download SRT</a>
-            </article>
-          </section>
-
-          <section class="segment-review" id="segmentReview" aria-labelledby="segmentReviewTitle" hidden>
-            <div class="segment-review-header">
-              <div>
-                <p class="eyebrow">Segmentation review</p>
-                <h2 id="segmentReviewTitle">Audio segments</h2>
-              </div>
-              <button id="toggleSegmentsButton" type="button" aria-expanded="false">Show details</button>
-            </div>
-            <dl class="segment-summary">
-              <div>
-                <dt>Segments</dt>
-                <dd id="segmentCountSummary">0</dd>
-              </div>
-              <div>
-                <dt>Total speech time</dt>
-                <dd id="segmentSpeechSummary">0 s</dd>
-              </div>
-              <div>
-                <dt>Average duration</dt>
-                <dd id="segmentAverageSummary">0 s</dd>
-              </div>
-            </dl>
-            <div class="segment-details" id="segmentDetails" hidden>
-              <table>
-                <thead>
-                  <tr>
-                    <th scope="col">Segment</th>
-                    <th scope="col">Start</th>
-                    <th scope="col">Duration</th>
-                  </tr>
-                </thead>
-                <tbody id="segmentTableBody"></tbody>
-              </table>
-            </div>
-          </section>
+        <section class="video-card" id="videoCard" hidden>
+          <video id="videoPreview" controls preload="metadata"></video>
+          <div class="video-meta">
+            <strong id="videoName">No video selected</strong>
+            <span id="videoDetails"></span>
+          </div>
         </section>
-      </main>
-    </div>
 
-    <script src="app.js" type="module"></script>
-  </body>
+        <section class="step-grid" aria-label="Processing steps">
+          <article class="step">
+            <div class="step-header">
+              <span class="step-number">1</span>
+              <div>
+                <h2>Identify language</h2>
+                <p id="languageStatus">Waiting for a valid MP4 video.</p>
+              </div>
+            </div>
+            <button id="identifyButton" type="button" disabled>Identify language</button>
+            <output class="result" id="sourceLanguageOutput">Source language: unknown</output>
+          </article>
+
+          <article class="step">
+            <div class="step-header">
+              <span class="step-number">2</span>
+              <div>
+                <h2>Choose target</h2>
+                <p id="targetStatus">Identify the video language first.</p>
+              </div>
+            </div>
+            <label class="field">
+              <span>Target language</span>
+              <select id="targetLanguageSelect" disabled></select>
+            </label>
+          </article>
+
+          <article class="step">
+            <div class="step-header">
+              <span class="step-number">3</span>
+              <div>
+                <h2>Audio segmentation</h2>
+                <p id="segmentationStatus">Select a different target language.</p>
+              </div>
+            </div>
+            <button id="segmentButton" type="button" disabled>Audio segmentation</button>
+            <div class="progress-block">
+              <div class="progress-label">
+                <span>Segmentation</span>
+                <strong id="segmentationProgressText">0%</strong>
+              </div>
+              <div class="progress-track">
+                <span id="segmentationProgressBar"></span>
+              </div>
+            </div>
+          </article>
+
+          <article class="step">
+            <div class="step-header">
+              <span class="step-number">4</span>
+              <div>
+                <h2>Generate subtitles</h2>
+                <p id="subtitleStatus">Run segmentation first.</p>
+              </div>
+            </div>
+            <button id="generateButton" type="button" disabled>Generate subtitles</button>
+            <div class="progress-block">
+              <div class="progress-label">
+                <span>Translation and file</span>
+                <strong id="subtitleProgressText">0%</strong>
+              </div>
+              <div class="progress-track">
+                <span id="subtitleProgressBar"></span>
+              </div>
+            </div>
+            <a class="download-link" id="downloadLink" hidden>Download SRT</a>
+          </article>
+        </section>
+
+        <section class="segment-review" id="segmentReview" aria-labelledby="segmentReviewTitle" hidden>
+          <div class="segment-review-header">
+            <div>
+              <p class="eyebrow">Segmentation review</p>
+              <h2 id="segmentReviewTitle">Audio segments</h2>
+            </div>
+            <button id="toggleSegmentsButton" type="button" aria-expanded="false">Show details</button>
+          </div>
+          <dl class="segment-summary">
+            <div>
+              <dt>Segments</dt>
+              <dd id="segmentCountSummary">0</dd>
+            </div>
+            <div>
+              <dt>Total speech time</dt>
+              <dd id="segmentSpeechSummary">0 s</dd>
+            </div>
+            <div>
+              <dt>Average duration</dt>
+              <dd id="segmentAverageSummary">0 s</dd>
+            </div>
+          </dl>
+          <div class="segment-details" id="segmentDetails" hidden>
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Segment</th>
+                  <th scope="col">Start</th>
+                  <th scope="col">Duration</th>
+                </tr>
+              </thead>
+              <tbody id="segmentTableBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <script src="app.js" type="module"></script>
+</body>
+
 </html>

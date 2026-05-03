@@ -86,7 +86,10 @@ const els = {
   subtitleProgressText: document.querySelector("#subtitleProgressText"),
   subtitleProgressBar: document.querySelector("#subtitleProgressBar"),
   downloadLink: document.querySelector("#downloadLink"),
-  installButton: document.querySelector("#installButton")
+  installButton: document.querySelector("#installButton"),
+  serviceWhisperBackend: document.querySelector("#serviceWhisperBackend"),
+  serviceWhisperModel: document.querySelector("#serviceWhisperModel"),
+  serviceWhisperDevice: document.querySelector("#serviceWhisperDevice")
 };
 
 let deferredInstallPrompt = null;
@@ -96,6 +99,7 @@ bindEvents();
 bindInstallPrompt();
 registerServiceWorker();
 render();
+fetchServiceStatus();
 
 function populateLanguages() {
   els.targetLanguageSelect.replaceChildren();
@@ -111,6 +115,26 @@ function populateLanguages() {
     option.textContent = language.name;
     els.targetLanguageSelect.append(option);
   });
+}
+
+async function fetchServiceStatus() {
+  try {
+    const response = await fetch(`${LOCAL_SERVICE_URL}/api/health`);
+    if (!response.ok) return;
+    const health = await response.json();
+    const backend = health.whisperBackend || "whisper-cli";
+    const model = health.whisperModel || "?";
+    const device = health.whisperDevice || "?";
+    const cudaCount = health.whisperCudaDevices || 0;
+    const deviceLabel = device === "cuda" ? `GPU (${cudaCount > 1 ? cudaCount + "×" : ""}CUDA)` : "CPU";
+    els.serviceWhisperBackend.textContent = backend;
+    els.serviceWhisperModel.textContent = model;
+    els.serviceWhisperDevice.textContent = deviceLabel;
+  } catch {
+    els.serviceWhisperBackend.textContent = "unavailable";
+    els.serviceWhisperModel.textContent = "—";
+    els.serviceWhisperDevice.textContent = "—";
+  }
 }
 
 function bindEvents() {

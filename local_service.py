@@ -33,16 +33,62 @@ MIN_SEGMENT_SECONDS = 0.4
 SILENCE_NOISE = "-35dB"
 SILENCE_DURATION_SECONDS = 0.45
 WORK_DIR = Path(tempfile.gettempdir()) / "xololingua"
-WHISPER_COMMAND = os.environ.get("XOLOLINGUA_WHISPER_COMMAND", "whisper")
-WHISPER_MODEL = os.environ.get("XOLOLINGUA_WHISPER_MODEL", "base")
-WHISPER_DEVICE = os.environ.get("XOLOLINGUA_WHISPER_DEVICE", "cpu")
 ARGOS_COMMAND = os.environ.get("XOLOLINGUA_ARGOS_COMMAND", "argos-translate")
 SUBTITLE_JOB_WORKERS = int(os.environ.get("XOLOLINGUA_SUBTITLE_JOB_WORKERS", "1"))
 TRANSLATION_WORKERS = int(os.environ.get("XOLOLINGUA_TRANSLATION_WORKERS", "2"))
 
+# Path to the transcribe worker script (same directory as this file)
+_SERVICE_DIR = Path(__file__).parent
+TRANSCRIBE_WORKER = _SERVICE_DIR / "transcribe_worker.py"
+
+# Python executable inside the openai-whisper pipx venv (has faster-whisper injected)
+_WHISPER_VENV_PYTHON = os.environ.get(
+    "XOLOLINGUA_WHISPER_PYTHON",
+    str(Path.home() / ".local/share/pipx/venvs/openai-whisper/bin/python"),
+)
+
+# Runtime descriptor populated at startup by _detect_whisper_runtime()
+WHISPER_RUNTIME: dict = {
+    "backend": "unknown",
+    "device": "cpu",
+    "model": "base",
+    "computeType": "int8",
+    "cudaDevices": 0,
+    "available": False,
+}
+
 JOBS: dict[str, dict] = {}
 JOBS_LOCK = Lock()
 JOBS_EXECUTOR = ThreadPoolExecutor(max_workers=SUBTITLE_JOB_WORKERS)
+
+
+def _detect_whisper_runtime() -> None:
+    """Probe the transcribe worker for GPU availability and populate WHISPER_RUNTIME."""
+    global WHISPER_RUNTIME
+    worker_python = _WHISPER_VENV_PYTHON
+    if not Path(worker_python).exists():
+        print(f"[whisper] venv python not found at {worker_python}, falling back to system whisper CLI")
+        WHISPER_RUNTIME = {"backend": "whisper-cli", "device": "cpu", "model": "base",
+                           "computeType": "n/a", "cudaDevices": 0, "available": bool(shutil.which("whisper"))}
+        return
+    if not TRANSCRIBE_WORKER.exists():
+        print(f"[whisper] transcribe_worker.py not found at {TRANSCRIBE_WORKER}")
+        WHISPER_RUNTIME["available"] = False
+        return
+    try:
+        result = subprocess.run(
+            [worker_python, str(TRANSCRIBE_WORKER), "--probe"],
+            check=True, capture_output=True, text=True, timeout=30,
+        )
+        runtime = json.loads(result.stdout.strip())
+        runtime["available"] = True
+        WHISPER_RUNTIME = runtime
+        device_label = f"CUDA ({runtime['cudaDevices']} GPU)" if runtime["device"] == "cuda" else "CPU"
+        print(f"[whisper] faster-whisper ready — model={runtime['model']} device={device_label} compute={runtime['computeType']}")
+    except Exception as exc:
+        print(f"[whisper] probe failed ({exc}), falling back to whisper CLI")
+        WHISPER_RUNTIME = {"backend": "whisper-cli", "device": "cpu", "model": "base",
+                           "computeType": "n/a", "cudaDevices": 0, "available": bool(shutil.which("whisper"))}
 
 
 class LocalServiceHandler(BaseHTTPRequestHandler):
@@ -60,10 +106,12 @@ class LocalServiceHandler(BaseHTTPRequestHandler):
                 "ok": True,
                 "ffmpeg": bool(shutil.which("ffmpeg")),
                 "ffprobe": bool(shutil.which("ffprobe")),
-                "whisper": bool(shutil.which(WHISPER_COMMAND)),
-                "whisperCommand": WHISPER_COMMAND,
-                "whisperModel": WHISPER_MODEL,
-                "whisperDevice": WHISPER_DEVICE,
+                "whisper": WHISPER_RUNTIME.get("available", False),
+                "whisperBackend": WHISPER_RUNTIME.get("backend", "unknown"),
+                "whisperModel": WHISPER_RUNTIME.get("model", "?"),
+                "whisperDevice": WHISPER_RUNTIME.get("device", "?"),
+                "whisperComputeType": WHISPER_RUNTIME.get("computeType", "?"),
+                "whisperCudaDevices": WHISPER_RUNTIME.get("cudaDevices", 0),
                 "argosTranslate": bool(shutil.which(ARGOS_COMMAND)),
                 "argosCommand": ARGOS_COMMAND,
             })
@@ -192,10 +240,10 @@ class LocalServiceHandler(BaseHTTPRequestHandler):
             self.send_error_json(HTTPStatus.BAD_REQUEST, error.stderr.strip() or "Audio segmentation failed.")
 
     def handle_transcribe_audio(self) -> None:
-        if not shutil.which(WHISPER_COMMAND):
+        if not WHISPER_RUNTIME.get("available"):
             self.send_error_json(
                 HTTPStatus.SERVICE_UNAVAILABLE,
-                f"Transcription engine not found. Install Whisper CLI or set XOLOLINGUA_WHISPER_COMMAND. Tried: {WHISPER_COMMAND}.",
+                "Transcription engine not available. Start the service with the whisper pipx venv accessible.",
             )
             return
 
@@ -272,10 +320,10 @@ class LocalServiceHandler(BaseHTTPRequestHandler):
             self.send_error_json(HTTPStatus.BAD_REQUEST, error.stderr.strip() or "Segment translation failed.")
 
     def handle_create_subtitle_job(self) -> None:
-        if not shutil.which(WHISPER_COMMAND):
+        if not WHISPER_RUNTIME.get("available"):
             self.send_error_json(
                 HTTPStatus.SERVICE_UNAVAILABLE,
-                f"Transcription engine not found. Install Whisper CLI or set XOLOLINGUA_WHISPER_COMMAND. Tried: {WHISPER_COMMAND}.",
+                "Transcription engine not available. Start the service with the whisper pipx venv accessible.",
             )
             return
         if not shutil.which(ARGOS_COMMAND):
@@ -526,6 +574,64 @@ def normalize_text_segments(payload: object) -> list[dict]:
 
 
 def transcribe_segments(audio_path: Path, segments: list[dict], language_code: str, progress_callback=None) -> list[dict]:
+    """Transcribe all segments in one worker invocation (model loaded once)."""
+    worker_python = _WHISPER_VENV_PYTHON
+    use_worker = (
+        WHISPER_RUNTIME.get("backend") == "faster-whisper"
+        and WHISPER_RUNTIME.get("available")
+        and Path(worker_python).exists()
+        and TRANSCRIBE_WORKER.exists()
+    )
+
+    if use_worker:
+        return _transcribe_segments_worker(audio_path, segments, language_code, progress_callback, worker_python)
+    else:
+        return _transcribe_segments_cli(audio_path, segments, language_code, progress_callback)
+
+
+def _transcribe_segments_worker(
+    audio_path: Path,
+    segments: list[dict],
+    language_code: str,
+    progress_callback,
+    worker_python: str,
+) -> list[dict]:
+    """Use transcribe_worker.py (faster-whisper, model loaded once for all segments)."""
+    work_dir = WORK_DIR / f"job-{uuid.uuid4().hex}"
+    work_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        segments_file = work_dir / "segments_in.json"
+        out_file = work_dir / "segments_out.json"
+        segments_file.write_text(json.dumps(segments), encoding="utf-8")
+
+        subprocess.run(
+            [
+                worker_python,
+                str(TRANSCRIBE_WORKER),
+                "--audio", str(audio_path),
+                "--language", language_code or "",
+                "--segments", str(segments_file),
+                "--out", str(out_file),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        results = json.loads(out_file.read_text(encoding="utf-8"))
+        if progress_callback:
+            progress_callback(len(results), len(results))
+        return results
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+def _transcribe_segments_cli(
+    audio_path: Path,
+    segments: list[dict],
+    language_code: str,
+    progress_callback,
+) -> list[dict]:
+    """Fallback: openai-whisper CLI, one subprocess per segment."""
     results: list[dict] = []
     segment_dir = WORK_DIR / f"segments-{uuid.uuid4().hex}"
     segment_dir.mkdir(parents=True, exist_ok=True)
@@ -709,17 +815,15 @@ def slice_audio(audio_path: Path, output_path: Path, start: float, end: float) -
 
 
 def transcribe_audio_file(audio_path: Path, language_code: str, output_dir: Path) -> str:
+    """CLI fallback: openai-whisper one file at a time."""
+    whisper_cmd = shutil.which("whisper") or "whisper"
     command = [
-        WHISPER_COMMAND,
+        whisper_cmd,
         str(audio_path),
-        "--model",
-        WHISPER_MODEL,
-        "--device",
-        WHISPER_DEVICE,
-        "--output_format",
-        "txt",
-        "--output_dir",
-        str(output_dir),
+        "--model", "base",
+        "--device", "cpu",
+        "--output_format", "txt",
+        "--output_dir", str(output_dir),
     ]
     if language_code:
         command.extend(["--language", language_code])
@@ -731,6 +835,7 @@ def transcribe_audio_file(audio_path: Path, language_code: str, output_dir: Path
 
 def main() -> None:
     WORK_DIR.mkdir(parents=True, exist_ok=True)
+    _detect_whisper_runtime()
     server = ThreadingHTTPServer((HOST, PORT), LocalServiceHandler)
     print(f"XoloLingua local service listening on http://{HOST}:{PORT}")
     print(f"Audio work directory: {WORK_DIR}")

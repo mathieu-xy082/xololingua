@@ -166,6 +166,36 @@ p {
   border-top: 1px solid var(--line);
 }
 
+.service-status {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 2px solid var(--line);
+}
+
+.service-status .eyebrow {
+  margin-bottom: 10px;
+}
+
+.service-facts {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.service-facts div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.service-facts dd {
+  font-size: 0.85rem;
+  font-weight: 750;
+  font-family: monospace;
+}
+
 dt {
   color: var(--muted);
   font-weight: 750;
