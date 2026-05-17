@@ -1,7 +1,7 @@
 const MAX_DURATION_SECONDS = 2.5 * 60 * 60;
 const SEGMENT_SECONDS = 12;
 const LOCAL_SERVICE_URL = "http://127.0.0.1:8765";
-const APP_ASSET_VERSION = "2026-05-17-1";
+const APP_ASSET_VERSION = "2026-05-17-2";
 
 const languages = [
   { code: "en", name: "English" },
@@ -52,6 +52,7 @@ const state = {
   metadataReady: false,
   sourceLanguage: null,
   targetLanguage: "",
+  languageProgress: 0,
   extractedAudio: null,
   segments: [],
   srtUrl: "",
@@ -73,6 +74,8 @@ const els = {
   videoDetails: document.querySelector("#videoDetails"),
   identifyButton: document.querySelector("#identifyButton"),
   languageStatus: document.querySelector("#languageStatus"),
+  languageProgressText: document.querySelector("#languageProgressText"),
+  languageProgressBar: document.querySelector("#languageProgressBar"),
   sourceLanguageOutput: document.querySelector("#sourceLanguageOutput"),
   targetLanguageSelect: document.querySelector("#targetLanguageSelect"),
   targetStatus: document.querySelector("#targetStatus"),
@@ -245,16 +248,25 @@ async function identifyLanguage() {
   els.languageStatus.textContent = "Identifying main language...";
   state.sourceLanguage = null;
   state.targetLanguage = "";
+  setProgress("language", 0);
   resetSegmentation();
   render();
 
   try {
-    const detected = await identifyLanguageAdapter(state.videoFile);
+    const detected = await identifyLanguageAdapter(
+      state.videoFile,
+      (progress) => setProgress("language", progress),
+      (message) => {
+        els.languageStatus.textContent = message;
+      },
+    );
     state.extractedAudio = null;
     state.sourceLanguage = detected.language;
     els.languageStatus.textContent = "Main language identified.";
+    setProgress("language", 100);
   } catch (error) {
     els.languageStatus.textContent = error.message;
+    setProgress("language", 0);
   } finally {
     state.busyStep = "";
     render();
@@ -492,7 +504,7 @@ async function pollSubtitleJob(jobId, onProgress) {
   }
 }
 
-async function identifyLanguageAdapter(file) {
+async function identifyLanguageAdapter(file, onProgress = () => {}, onStatus = () => {}) {
   const health = await fetch(`${LOCAL_SERVICE_URL}/api/health`);
   if (!health.ok) {
     throw new Error("Local audio service is not available for language detection.");
@@ -500,24 +512,35 @@ async function identifyLanguageAdapter(file) {
 
   const formData = new FormData();
   formData.append("video", file, file.name);
-  const response = await fetch(`${LOCAL_SERVICE_URL}/api/detect-language`, {
-    method: "POST",
-    body: formData
-  });
-  const payload = await response.json();
+  onProgress(5);
+  onStatus("Uploading video for language detection...");
 
-  if (!response.ok) {
-    throw new Error(payload.error || "Language detection failed.");
-  }
+  const payload = await postFormDataJsonWithProgress(
+    `${LOCAL_SERVICE_URL}/api/detect-language`,
+    formData,
+    (uploadProgress) => {
+      const mapped = 5 + Math.round(uploadProgress * 0.3);
+      onProgress(mapped);
+      onStatus("Uploading video for language detection...");
+    },
+    (progress) => {
+      onProgress(progress);
+      if (progress < 55) {
+        onStatus("Extracting language samples...");
+      } else if (progress < 85) {
+        onStatus("Detecting language across samples...");
+      } else {
+        onStatus("Aggregating detection votes...");
+      }
+    },
+  );
 
   const language = getLanguage(payload.languageCode);
   if (!language) {
     throw new Error(`Detected unsupported language code: ${payload.languageCode || "unknown"}.`);
   }
 
-  return {
-    language,
-  };
+  return { language };
 }
 
 async function segmentAudioAdapter(duration, onProgress) {
@@ -637,12 +660,14 @@ function resetOutput() {
   state.metadataReady = false;
   state.sourceLanguage = null;
   state.targetLanguage = "";
+  state.languageProgress = 0;
   state.extractedAudio = null;
   state.busyStep = "";
   els.videoPreview.removeAttribute("src");
   els.videoPreview.load();
   els.videoCard.hidden = true;
   els.targetLanguageSelect.value = "";
+  setProgress("language", 0);
   resetSegmentation();
 }
 
@@ -706,8 +731,13 @@ function renderSubtitleStatus() {
 
 function setProgress(kind, value) {
   const clamped = Math.max(0, Math.min(100, value));
-  const text = els.segmentationProgressText;
-  const bar = els.segmentationProgressBar;
+  let text = els.segmentationProgressText;
+  let bar = els.segmentationProgressBar;
+  if (kind === "language") {
+    state.languageProgress = clamped;
+    text = els.languageProgressText;
+    bar = els.languageProgressBar;
+  }
   text.textContent = `${clamped}%`;
   bar.style.width = `${clamped}%`;
 }
@@ -743,6 +773,83 @@ function syncSubtitleProgress(job) {
 
 function clampProgress(value) {
   return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function postFormDataJsonWithProgress(url, formData, onUploadProgress = () => {}, onServerProgress = () => {}) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    let finished = false;
+    let simulatedProgress = 35;
+    let progressTimer = 0;
+
+    const stopTimer = () => {
+      if (progressTimer) {
+        window.clearInterval(progressTimer);
+        progressTimer = 0;
+      }
+    };
+
+    const fail = (error) => {
+      stopTimer();
+      if (finished) return;
+      finished = true;
+      reject(error);
+    };
+
+    xhr.open("POST", url, true);
+    xhr.responseType = "json";
+
+    xhr.upload.addEventListener("progress", (event) => {
+      if (!event.lengthComputable || event.total <= 0) return;
+      const ratio = event.loaded / event.total;
+      onUploadProgress(Math.max(0, Math.min(100, Math.round(ratio * 100))));
+    });
+
+    xhr.upload.addEventListener("load", () => {
+      simulatedProgress = Math.max(simulatedProgress, 35);
+      onServerProgress(simulatedProgress);
+      progressTimer = window.setInterval(() => {
+        simulatedProgress = Math.min(92, simulatedProgress + (simulatedProgress < 70 ? 6 : 3));
+        onServerProgress(simulatedProgress);
+      }, 700);
+    });
+
+    xhr.addEventListener("error", () => fail(new Error("Language detection request failed.")));
+    xhr.addEventListener("abort", () => fail(new Error("Language detection request was cancelled.")));
+    xhr.addEventListener("load", () => {
+      stopTimer();
+      if (finished) return;
+      finished = true;
+
+      let responseText = "";
+      try {
+        responseText = xhr.responseText || "";
+      } catch {
+        responseText = "";
+      }
+      const payload = xhr.response && typeof xhr.response === "object"
+        ? xhr.response
+        : safeJsonParse(responseText);
+
+      if (xhr.status < 200 || xhr.status >= 300) {
+        reject(new Error(payload?.error || "Language detection failed."));
+        return;
+      }
+
+      onServerProgress(100);
+      resolve(payload);
+    });
+
+    xhr.send(formData);
+  });
+}
+
+function safeJsonParse(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
 }
 
 function renderSegmentReview() {

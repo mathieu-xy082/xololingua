@@ -27,6 +27,22 @@ def detect_audio_language(audio_path: Path, runtime: dict | None = None, job_id:
     return _detect_audio_language_worker(audio_path, worker_python, job_id, selected_runtime)
 
 
+def detect_audio_languages(audio_paths: list[Path], runtime: dict | None = None, job_id: str | None = None) -> list[dict]:
+    selected_runtime = runtime or whisper_runtime.WHISPER_RUNTIME
+    worker_python = WHISPER_PYTHON
+    use_worker = (
+        selected_runtime.get("backend") == "faster-whisper"
+        and selected_runtime.get("available")
+        and Path(worker_python).exists()
+        and TRANSCRIBE_WORKER.exists()
+    )
+
+    if not use_worker:
+        raise RuntimeError("Language detection requires the faster-whisper worker runtime.")
+
+    return _detect_audio_languages_worker(audio_paths, worker_python, job_id, selected_runtime)
+
+
 def _detect_audio_language_worker(audio_path: Path, worker_python: str, job_id: str | None, runtime: dict) -> dict:
     from .jobs import run_job_command
 
@@ -44,6 +60,41 @@ def _detect_audio_language_worker(audio_path: Path, worker_python: str, job_id: 
                 "--model", runtime["model"],
                 "--device", runtime["device"],
                 "--compute-type", runtime["computeType"],
+            ],
+            job_id=job_id,
+        )
+        return json.loads(out_file.read_text(encoding="utf-8"))
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+def _detect_audio_languages_worker(audio_paths: list[Path], worker_python: str, job_id: str | None, runtime: dict) -> list[dict]:
+    from .jobs import run_job_command
+
+    work_dir = WORK_DIR / f"detect-batch-{uuid.uuid4().hex}"
+    work_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        audio_list_file = work_dir / "audio_list.json"
+        out_file = work_dir / "language_out.json"
+        audio_list_file.write_text(
+            json.dumps([str(path) for path in audio_paths]),
+            encoding="utf-8",
+        )
+        run_job_command(
+            [
+                worker_python,
+                str(TRANSCRIBE_WORKER),
+                "--detect-language",
+                "--audio-list",
+                str(audio_list_file),
+                "--out",
+                str(out_file),
+                "--model",
+                runtime["model"],
+                "--device",
+                runtime["device"],
+                "--compute-type",
+                runtime["computeType"],
             ],
             job_id=job_id,
         )

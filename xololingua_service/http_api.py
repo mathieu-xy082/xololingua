@@ -24,9 +24,9 @@ from .jobs import (
     register_job_future,
     run_subtitle_job,
 )
-from .media import extract_audio, extract_audio_clip, language_detection_windows, normalize_segments, normalize_text_segments, probe_duration, segment_audio
+from .media import extract_audio, extract_audio_clips_parallel, language_detection_windows, normalize_segments, normalize_text_segments, probe_duration, segment_audio
 from .settings import ARGOS_COMMAND, HOST, MAX_DURATION_SECONDS, PORT, WHISPER_CPU_COMPUTE_TYPE, WHISPER_CPU_MODEL, WHISPER_DEVICE_CHOICE, WORK_DIR
-from .transcription import detect_audio_language, transcribe_segments
+from .transcription import detect_audio_languages, transcribe_segments
 from .translation import translate_segments, translation_backend_available
 
 class LocalServiceHandler(BaseHTTPRequestHandler):
@@ -218,21 +218,22 @@ class LocalServiceHandler(BaseHTTPRequestHandler):
         if not clips:
             raise ValueError("Could not build language detection samples.")
 
+        clip_specs = [
+            (WORK_DIR / f"{video_path.stem}.detect-{index:02d}.wav", start, clip_duration)
+            for index, (start, clip_duration) in enumerate(clips, start=1)
+        ]
+        clip_paths = [clip_path for clip_path, _, _ in clip_specs]
         try:
-            for index, (start, clip_duration) in enumerate(clips, start=1):
-                clip_path = WORK_DIR / f"{video_path.stem}.detect-{index:02d}.wav"
-                try:
-                    extract_audio_clip(video_path, clip_path, start, clip_duration)
-                    result = detect_audio_language(clip_path, runtime)
-                finally:
-                    clip_path.unlink(missing_ok=True)
-
+            extract_audio_clips_parallel(video_path, clip_specs)
+            for result in detect_audio_languages(clip_paths, runtime):
                 language_code = str(result.get("languageCode", "")).strip()
                 if not language_code:
                     continue
                 votes[language_code] = votes.get(language_code, 0) + 1
                 probabilities[language_code] = probabilities.get(language_code, 0.0) + float(result.get("languageProbability", 0.0) or 0.0)
         finally:
+            for clip_path in clip_paths:
+                clip_path.unlink(missing_ok=True)
             video_path.unlink(missing_ok=True)
 
         if not votes:

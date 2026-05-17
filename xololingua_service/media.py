@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from .settings import MAX_SEGMENT_SECONDS, MIN_SEGMENT_SECONDS, SILENCE_DURATION_SECONDS, SILENCE_NOISE
@@ -77,7 +78,23 @@ def extract_audio_clip(video_path: Path, audio_path: Path, start: float, duratio
     )
 
 
-def language_detection_windows(duration: float, sample_count: int = 5, sample_seconds: float = 60.0) -> list[tuple[float, float]]:
+def extract_audio_clips_parallel(
+    video_path: Path,
+    clip_specs: list[tuple[Path, float, float]],
+    max_workers: int = 3,
+) -> None:
+    if not clip_specs:
+        return
+    with ThreadPoolExecutor(max_workers=max(1, min(max_workers, len(clip_specs)))) as executor:
+        futures = [
+            executor.submit(extract_audio_clip, video_path, audio_path, start, duration)
+            for audio_path, start, duration in clip_specs
+        ]
+        for future in futures:
+            future.result()
+
+
+def language_detection_windows(duration: float, sample_count: int = 5, sample_seconds: float = 30.0) -> list[tuple[float, float]]:
     if duration <= 0:
         return []
 
