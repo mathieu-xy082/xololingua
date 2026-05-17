@@ -1,7 +1,7 @@
 const MAX_DURATION_SECONDS = 2.5 * 60 * 60;
 const SEGMENT_SECONDS = 12;
 const LOCAL_SERVICE_URL = "http://127.0.0.1:8765";
-const APP_ASSET_VERSION = "2026-05-17-2";
+const APP_ASSET_VERSION = "2026-05-17-3";
 
 const languages = [
   { code: "en", name: "English" },
@@ -72,6 +72,7 @@ const els = {
   videoPreview: document.querySelector("#videoPreview"),
   videoName: document.querySelector("#videoName"),
   videoDetails: document.querySelector("#videoDetails"),
+  clearVideoButton: document.querySelector("#clearVideoButton"),
   identifyButton: document.querySelector("#identifyButton"),
   languageStatus: document.querySelector("#languageStatus"),
   languageProgressText: document.querySelector("#languageProgressText"),
@@ -193,6 +194,10 @@ function bindEvents() {
   });
 
   els.identifyButton.addEventListener("click", identifyLanguage);
+  els.clearVideoButton.addEventListener("click", () => {
+    resetOutput();
+    render();
+  });
   els.targetLanguageSelect.addEventListener("change", () => {
     state.targetLanguage = els.targetLanguageSelect.value;
     resetSegmentation();
@@ -652,7 +657,9 @@ function canGenerate() {
 }
 
 function resetOutput() {
+  const audioId = state.extractedAudio?.audioId || "";
   cancelActiveSubtitleJobSilently();
+  releaseExtractedAudioSilently(audioId);
   if (state.videoUrl) URL.revokeObjectURL(state.videoUrl);
   state.videoFile = null;
   state.videoUrl = "";
@@ -666,6 +673,7 @@ function resetOutput() {
   els.videoPreview.removeAttribute("src");
   els.videoPreview.load();
   els.videoCard.hidden = true;
+  els.fileInput.value = "";
   els.targetLanguageSelect.value = "";
   setProgress("language", 0);
   resetSegmentation();
@@ -773,6 +781,27 @@ function syncSubtitleProgress(job) {
 
 function clampProgress(value) {
   return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+async function cleanupExtractedAudioAdapter(audioId) {
+  if (!audioId) return;
+
+  const response = await fetch(`${LOCAL_SERVICE_URL}/api/release-audio`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ audioId })
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.error || "Audio cleanup failed.");
+  }
+}
+
+function releaseExtractedAudioSilently(audioId) {
+  if (!audioId) return;
+  cleanupExtractedAudioAdapter(audioId).catch(() => {});
 }
 
 function postFormDataJsonWithProgress(url, formData, onUploadProgress = () => {}, onServerProgress = () => {}) {

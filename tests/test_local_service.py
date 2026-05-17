@@ -524,6 +524,22 @@ class PipelineIntegrationTests(unittest.TestCase):
         self.assertIn("jobs", payload)
         self.assertTrue(any(job["jobId"] == job_id for job in payload["jobs"]))
 
+    def test_release_audio_endpoint_deletes_extracted_wav(self):
+        with tempfile.TemporaryDirectory() as directory:
+            mp4_path = Path(directory) / "sample.fr.mp4"
+            self._make_test_mp4(mp4_path)
+
+            extract = self._upload_mp4(mp4_path)
+            audio_id = extract["audioId"]
+            audio_path = Path(extract["audioPath"])
+            self.assertTrue(audio_path.exists())
+
+            released = self._post_json("/api/release-audio", {"audioId": audio_id})
+
+            self.assertEqual(released["audioId"], audio_id)
+            self.assertTrue(released["deleted"])
+            self.assertFalse(audio_path.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

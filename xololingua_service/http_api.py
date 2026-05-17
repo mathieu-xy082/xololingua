@@ -82,6 +82,9 @@ class LocalServiceHandler(BaseHTTPRequestHandler):
         if self.path == "/api/segment-audio":
             self.handle_segment_audio()
             return
+        if self.path == "/api/release-audio":
+            self.handle_release_audio()
+            return
         if self.path == "/api/transcribe-audio":
             self.handle_transcribe_audio()
             return
@@ -281,6 +284,34 @@ class LocalServiceHandler(BaseHTTPRequestHandler):
             })
         except subprocess.CalledProcessError as error:
             self.send_error_json(HTTPStatus.BAD_REQUEST, error.stderr.strip() or "Audio segmentation failed.")
+
+    def handle_release_audio(self) -> None:
+        length = int(self.headers.get("Content-Length", "0"))
+        if length <= 0:
+            self.send_error_json(HTTPStatus.BAD_REQUEST, "Missing JSON body.")
+            return
+
+        try:
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+        except json.JSONDecodeError:
+            self.send_error_json(HTTPStatus.BAD_REQUEST, "Invalid JSON body.")
+            return
+
+        audio_id = str(payload.get("audioId", ""))
+        if not re.fullmatch(r"[a-f0-9]{32}", audio_id):
+            self.send_error_json(HTTPStatus.BAD_REQUEST, "Invalid audio id.")
+            return
+
+        audio_path = WORK_DIR / f"{audio_id}.wav"
+        deleted = False
+        if audio_path.exists():
+            audio_path.unlink(missing_ok=True)
+            deleted = True
+
+        self.send_json({
+            "audioId": audio_id,
+            "deleted": deleted,
+        })
 
     def handle_transcribe_audio(self) -> None:
         if not whisper_runtime.WHISPER_RUNTIME.get("available"):
