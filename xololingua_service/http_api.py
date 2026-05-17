@@ -27,7 +27,7 @@ from .jobs import (
 from .media import extract_audio, extract_audio_clips_parallel, language_detection_windows, normalize_segments, normalize_text_segments, probe_duration, segment_audio
 from .settings import ARGOS_COMMAND, HOST, MAX_DURATION_SECONDS, PORT, WHISPER_CPU_COMPUTE_TYPE, WHISPER_CPU_MODEL, WHISPER_DEVICE_CHOICE, WORK_DIR
 from .transcription import detect_audio_languages, transcribe_segments
-from .translation import translate_segments, translation_backend_available
+from .translation import get_supported_pairs, translate_segments, translation_backend_available
 
 class LocalServiceHandler(BaseHTTPRequestHandler):
     server_version = "XoloLinguaLocalService/0.1"
@@ -64,6 +64,9 @@ class LocalServiceHandler(BaseHTTPRequestHandler):
             return
         if self.path == "/api/subtitle-jobs":
             self.send_json({"jobs": list_job_snapshots()})
+            return
+        if self.path == "/api/translation-pairs":
+            self.send_json({"pairs": get_supported_pairs()})
             return
         if parsed_path.path.startswith("/api/subtitle-jobs/"):
             self.handle_get_subtitle_job(parsed_path.path.rsplit("/", 1)[-1])

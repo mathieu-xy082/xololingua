@@ -105,6 +105,20 @@ def translation_backend_available() -> bool:
     return _argos_translate is not None or bool(shutil.which(ARGOS_COMMAND))
 
 
+def get_supported_pairs() -> list[dict[str, str]]:
+    """Return all translation pairs available from the installed Argos packages."""
+    if _argos_translate is None:
+        return []
+    pairs = []
+    for language in _argos_translate.get_installed_languages():
+        for translation in language.translations_from:
+            source = translation.from_lang.code
+            target = translation.to_lang.code
+            if source != target:
+                pairs.append({"source": source, "target": target})
+    return pairs
+
+
 def get_translator(source_language: str, target_language: str):
     cache_key = (source_language, target_language)
     with _TRANSLATION_CACHE_LOCK:

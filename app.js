@@ -26,24 +26,7 @@ const languages = [
   { code: "uk", name: "Ukrainian" }
 ];
 
-const supportedLanguagePairs = new Set([
-  "en:fr",
-  "fr:en",
-  "fr:ru",
-  "ru:fr",
-  "fr:uk",
-  "uk:fr",
-  "fr:zh",
-  "zh:fr",
-  "fr:de",
-  "de:fr",
-  "fr:es",
-  "es:fr",
-  "fr:hi",
-  "hi:fr",
-  "fr:ja",
-  "ja:fr"
-]);
+const supportedLanguagePairs = new Set();
 
 const state = {
   videoFile: null,
@@ -113,6 +96,7 @@ bindInstallPrompt();
 registerServiceWorker();
 render();
 fetchServiceStatus();
+fetchTranslationPairs();
 
 function populateLanguages() {
   els.targetLanguageSelect.replaceChildren();
@@ -128,6 +112,24 @@ function populateLanguages() {
     option.textContent = language.name;
     els.targetLanguageSelect.append(option);
   });
+}
+
+let _pairsFetched = false;
+
+async function fetchTranslationPairs() {
+  if (_pairsFetched) return;
+  try {
+    const response = await fetch(`${LOCAL_SERVICE_URL}/api/translation-pairs`);
+    if (!response.ok) return;
+    const data = await response.json();
+    for (const { source, target } of data.pairs) {
+      supportedLanguagePairs.add(`${source}:${target}`);
+    }
+    _pairsFetched = true;
+    render();
+  } catch {
+    // Service not reachable yet — pairs remain empty, will retry on next health check
+  }
 }
 
 async function fetchServiceStatus() {
@@ -154,6 +156,7 @@ async function fetchServiceStatus() {
         ? `CPU fallback unavailable: ${health.whisperCpuFallbackReason || "unknown"}`
         : ""
     );
+    fetchTranslationPairs();
   } catch {
     els.serviceWhisperBackend.textContent = "unavailable";
     els.serviceWhisperModel.textContent = "—";
@@ -614,10 +617,11 @@ function render() {
   els.targetLanguageSelect.value = state.targetLanguage;
 
   [...els.targetLanguageSelect.options].forEach((option) => {
+    const pairsLoaded = supportedLanguagePairs.size > 0;
     option.disabled = Boolean(
       sourceLanguage &&
       option.value &&
-      (option.value === sourceLanguage.code || !isSupportedPair(sourceLanguage.code, option.value))
+      (option.value === sourceLanguage.code || (pairsLoaded && !isSupportedPair(sourceLanguage.code, option.value)))
     );
   });
 
@@ -627,7 +631,7 @@ function render() {
     els.targetStatus.textContent = "Select one of the first supported target languages.";
   } else if (targetLanguage.code === sourceLanguage.code) {
     els.targetStatus.textContent = "Target language must differ from source.";
-  } else if (!isSupportedPair(sourceLanguage.code, targetLanguage.code)) {
+  } else if (supportedLanguagePairs.size > 0 && !isSupportedPair(sourceLanguage.code, targetLanguage.code)) {
     els.targetStatus.textContent = "This language couple is not in the first supported scope.";
   } else {
     els.targetStatus.textContent = `Target selected: ${targetLanguage.name}.`;
