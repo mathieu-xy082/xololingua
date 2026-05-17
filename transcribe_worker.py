@@ -28,7 +28,7 @@ import sys
 from pathlib import Path
 
 
-GPU_MODEL = os.environ.get("XOLOLINGUA_WHISPER_GPU_MODEL", "base")
+GPU_MODEL = os.environ.get("XOLOLINGUA_WHISPER_GPU_MODEL", "small")
 CPU_MODEL = os.environ.get("XOLOLINGUA_WHISPER_CPU_MODEL", "base")
 GPU_COMPUTE_TYPE = os.environ.get("XOLOLINGUA_WHISPER_GPU_COMPUTE_TYPE", "float16")
 CPU_COMPUTE_TYPE = os.environ.get("XOLOLINGUA_WHISPER_CPU_COMPUTE_TYPE", "int8")

@@ -46,6 +46,7 @@ The project has not published a first version yet.
 ### Changed
 
 - Batched Argos segment translation to reduce subprocess churn during subtitle generation.
+- Changed the default GPU Whisper model from `base` to `small`.
 - Split the local service implementation into focused Python modules while keeping `python3 local_service.py` as the stable entrypoint.
 - Limited target-language activation to the first supported language-pair scope while keeping the broader language list visible.
 
