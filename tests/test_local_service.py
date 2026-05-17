@@ -250,15 +250,16 @@ class LocalServiceAudioTests(unittest.TestCase):
 
         with mock.patch.dict(runtime.WHISPER_RUNTIME, cuda_runtime, clear=True):
             with mock.patch.dict(runtime.CPU_WHISPER_RUNTIME, cpu_runtime, clear=True):
-                with mock.patch.object(transcription, "transcribe_segments", side_effect=[cuda_error, transcribed]) as transcribe_segments:
-                    with mock.patch.object(translation, "translate_segments", return_value=[{
-                        "index": 1,
-                        "start": 0.0,
-                        "end": 1.0,
-                        "text": "Bonjour.",
-                        "translatedText": "Hello.",
-                    }]):
-                        local_service.run_subtitle_job(job_id, Path("/tmp/sample.wav"), [{"index": 1, "start": 0.0, "end": 1.0}], "fr", "en")
+                with mock.patch.object(runtime, "preferred_job_runtime", return_value=dict(cuda_runtime)):
+                    with mock.patch.object(transcription, "transcribe_segments", side_effect=[cuda_error, transcribed]) as transcribe_segments:
+                        with mock.patch.object(translation, "translate_segments", return_value=[{
+                            "index": 1,
+                            "start": 0.0,
+                            "end": 1.0,
+                            "text": "Bonjour.",
+                            "translatedText": "Hello.",
+                        }]):
+                            local_service.run_subtitle_job(job_id, Path("/tmp/sample.wav"), [{"index": 1, "start": 0.0, "end": 1.0}], "fr", "en")
 
         self.assertEqual(transcribe_segments.call_args_list[0].args[5]["device"], "cuda")
         self.assertEqual(transcribe_segments.call_args_list[1].args[5]["device"], "cpu")
@@ -299,8 +300,9 @@ class LocalServiceAudioTests(unittest.TestCase):
 
         with mock.patch.dict(runtime.WHISPER_RUNTIME, cuda_runtime, clear=True):
             with mock.patch.dict(runtime.CPU_WHISPER_RUNTIME, cpu_runtime, clear=True):
-                with mock.patch.object(transcription, "transcribe_segments", side_effect=cuda_error):
-                    local_service.run_subtitle_job(job_id, Path("/tmp/sample.wav"), [{"index": 1, "start": 0.0, "end": 1.0}], "fr", "en")
+                with mock.patch.object(runtime, "preferred_job_runtime", return_value=dict(cuda_runtime)):
+                    with mock.patch.object(transcription, "transcribe_segments", side_effect=cuda_error):
+                        local_service.run_subtitle_job(job_id, Path("/tmp/sample.wav"), [{"index": 1, "start": 0.0, "end": 1.0}], "fr", "en")
 
         snapshot = local_service.job_snapshot(job_id)
         self.assertEqual(snapshot["status"], "failed")

@@ -235,12 +235,19 @@ def run_subtitle_job(job_id: str, audio_path: Path, segments: list[dict], source
 
     try:
         ensure_job_not_cancelled(job_id)
+        selected_runtime = whisper_runtime.preferred_job_runtime()
+        runtime_device = selected_runtime.get("device", "cpu")
+        runtime_model = selected_runtime.get("model", WHISPER_CPU_MODEL if runtime_device == "cpu" else WHISPER_GPU_MODEL)
         update_job(
             job_id,
             status="running",
             stage="transcribing",
             progress=1,
-            message="Transcribing segmented audio.",
+            message=(
+                f"Transcribing segmented audio on "
+                f"{'GPU' if runtime_device == 'cuda' else 'CPU'} "
+                f"({runtime_model})."
+            ),
         )
 
         def transcription_progress(done: int, total: int) -> None:
@@ -258,10 +265,10 @@ def run_subtitle_job(job_id: str, audio_path: Path, segments: list[dict], source
                 source_language,
                 transcription_progress,
                 job_id,
-                dict(whisper_runtime.WHISPER_RUNTIME),
+                selected_runtime,
             )
         except subprocess.CalledProcessError as error:
-            if whisper_runtime.WHISPER_RUNTIME.get("device") != "cuda":
+            if selected_runtime.get("device") != "cuda":
                 raise
             ensure_job_not_cancelled(job_id)
             fallback_reason = command_error_summary(error)
@@ -275,7 +282,7 @@ def run_subtitle_job(job_id: str, audio_path: Path, segments: list[dict], source
                 job_id,
                 progress=1,
                 message=truncate_message(
-                    f"GPU {whisper_runtime.WHISPER_RUNTIME.get('model', WHISPER_GPU_MODEL)}/{whisper_runtime.WHISPER_RUNTIME.get('computeType', WHISPER_GPU_COMPUTE_TYPE)} "
+                    f"GPU {selected_runtime.get('model', WHISPER_GPU_MODEL)}/{selected_runtime.get('computeType', WHISPER_GPU_COMPUTE_TYPE)} "
                     f"failed: {fallback_reason}. Retrying with CPU {whisper_runtime.CPU_WHISPER_RUNTIME.get('model', WHISPER_CPU_MODEL)}."
                 ),
                 error=fallback_reason,
