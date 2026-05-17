@@ -8,6 +8,13 @@ Usage:
   python transcribe_worker.py --probe
       Detect GPU/CPU capability and print a JSON runtime descriptor.
 
+  python transcribe_worker.py --detect-language --audio <wav> --out <json_file>
+      Detect the main spoken language from a WAV file and write JSON to <out_file>.
+
+  python transcribe_worker.py --detect-language --audio-list <json_file> --out <json_file>
+      Detect the main spoken language for each WAV file listed in <json_file>.
+      Writes a JSON array of detection results to <out_file>.
+
   python transcribe_worker.py --audio <wav> --language <code> --segments <json_file> --out <json_file>
       Transcribe all segments in <json_file> using a single model load.
       Writes a JSON array of transcribed segments to <out_file>.
@@ -179,6 +186,7 @@ def _transcribe(audio_path: Path, language_code: str, segments: list[dict], runt
 
     work_dir = Path(tempfile.mkdtemp(prefix="xolo_worker_"))
     results: list[dict] = []
+    total = len(segments)
     try:
         for segment in segments:
             seg_path = work_dir / f"seg_{segment['index']:05d}.wav"
@@ -195,9 +203,65 @@ def _transcribe(audio_path: Path, language_code: str, segments: list[dict], runt
                 **segment,
                 "text": text,
             })
+            print(json.dumps({"done": len(results), "total": total}), flush=True)
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
 
+    return results
+
+
+def _detect_language(audio_path: Path, runtime: dict, sample_seconds: float = 90.0) -> dict:
+    from faster_whisper import WhisperModel
+    import tempfile, shutil
+
+    model = WhisperModel(
+        runtime["model"],
+        device=runtime["device"],
+        compute_type=runtime["computeType"],
+    )
+
+    work_dir = Path(tempfile.mkdtemp(prefix="xolo_detect_"))
+    sample_path = work_dir / "language_sample.wav"
+    try:
+        _slice_audio(audio_path, sample_path, 0.0, sample_seconds)
+        transcription_segments, info = model.transcribe(
+            str(sample_path),
+            beam_size=1,
+            vad_filter=False,
+        )
+        next(iter(transcription_segments), None)
+        return {
+            "languageCode": getattr(info, "language", "") or "",
+            "languageProbability": float(getattr(info, "language_probability", 0.0) or 0.0),
+        }
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+def _detect_languages(audio_paths: list[Path], runtime: dict) -> list[dict]:
+    from faster_whisper import WhisperModel
+
+    model = WhisperModel(
+        runtime["model"],
+        device=runtime["device"],
+        compute_type=runtime["computeType"],
+    )
+
+    results: list[dict] = []
+    for audio_path in audio_paths:
+        transcription_segments, info = model.transcribe(
+            str(audio_path),
+            beam_size=1,
+            vad_filter=False,
+        )
+        next(iter(transcription_segments), None)
+        results.append(
+            {
+                "audioPath": str(audio_path),
+                "languageCode": getattr(info, "language", "") or "",
+                "languageProbability": float(getattr(info, "language_probability", 0.0) or 0.0),
+            }
+        )
     return results
 
 
@@ -225,6 +289,8 @@ def main() -> None:
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--probe", action="store_true", help="Detect GPU/CPU runtime and print JSON")
     group.add_argument("--audio", type=Path, help="Path to mono 16kHz WAV file")
+    group.add_argument("--audio-list", type=Path, help="Path to JSON file listing mono 16kHz WAV files")
+    parser.add_argument("--detect-language", action="store_true", help="Detect the main spoken language and write JSON")
     parser.add_argument("--language", default="", help="ISO-639-1 language code (optional)")
     parser.add_argument("--segments", type=Path, help="JSON file with segment list")
     parser.add_argument("--out", type=Path, help="Output JSON file path")
@@ -241,11 +307,8 @@ def main() -> None:
         print(json.dumps(_probe(args.device, args.gpu_model, args.cpu_model, args.gpu_compute_type, args.cpu_compute_type)))
         return
 
-    if not args.audio or not args.segments or not args.out:
-        parser.error("--audio, --segments, and --out are required for transcription")
-
     if not args.model or not args.device or not args.compute_type:
-        parser.error("--model, --device, and --compute-type are required for transcription")
+        parser.error("--model, --device, and --compute-type are required")
 
     runtime = {
         "backend": "faster-whisper",
@@ -253,6 +316,25 @@ def main() -> None:
         "device": args.device,
         "computeType": args.compute_type,
     }
+
+    if args.detect_language:
+        if not args.out:
+            parser.error("--out is required for language detection")
+        if args.audio:
+            result = _detect_language(args.audio, runtime)
+            args.out.write_text(json.dumps(result), encoding="utf-8")
+            return
+        if args.audio_list:
+            audio_paths = [Path(item) for item in json.loads(args.audio_list.read_text(encoding="utf-8"))]
+            result = _detect_languages(audio_paths, runtime)
+            args.out.write_text(json.dumps(result), encoding="utf-8")
+            return
+        parser.error("--audio or --audio-list is required for language detection")
+        return
+
+    if not args.audio or not args.segments or not args.out:
+        parser.error("--audio, --segments, and --out are required for transcription")
+
     segments = json.loads(args.segments.read_text(encoding="utf-8"))
     results = _transcribe(args.audio, args.language, segments, runtime)
     args.out.write_text(json.dumps(results), encoding="utf-8")

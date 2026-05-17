@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from .settings import MAX_SEGMENT_SECONDS, MIN_SEGMENT_SECONDS, SILENCE_DURATION_SECONDS, SILENCE_NOISE
@@ -48,6 +49,68 @@ def extract_audio(video_path: Path, audio_path: Path) -> None:
         capture_output=True,
         text=True,
     )
+
+
+def extract_audio_clip(video_path: Path, audio_path: Path, start: float, duration: float) -> None:
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-y",
+            "-ss",
+            f"{max(0.0, start):.3f}",
+            "-t",
+            f"{max(0.1, duration):.3f}",
+            "-i",
+            str(video_path),
+            "-vn",
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
+            "-c:a",
+            "pcm_s16le",
+            str(audio_path),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def extract_audio_clips_parallel(
+    video_path: Path,
+    clip_specs: list[tuple[Path, float, float]],
+    max_workers: int = 3,
+) -> None:
+    if not clip_specs:
+        return
+    with ThreadPoolExecutor(max_workers=max(1, min(max_workers, len(clip_specs)))) as executor:
+        futures = [
+            executor.submit(extract_audio_clip, video_path, audio_path, start, duration)
+            for audio_path, start, duration in clip_specs
+        ]
+        for future in futures:
+            future.result()
+
+
+def language_detection_windows(duration: float, sample_count: int = 5, sample_seconds: float = 30.0) -> list[tuple[float, float]]:
+    if duration <= 0:
+        return []
+
+    clip_duration = min(sample_seconds, duration)
+    max_start = max(0.0, duration - clip_duration)
+    if max_start == 0:
+        return [(0.0, clip_duration)]
+
+    if sample_count <= 1:
+        return [(round(max_start / 2, 3), clip_duration)]
+
+    starts = [
+        round((max_start * index) / (sample_count - 1), 3)
+        for index in range(sample_count)
+    ]
+    return [(start, clip_duration) for start in starts]
 
 
 def segment_audio(audio_path: Path, duration: float) -> list[dict]:
@@ -165,4 +228,3 @@ def normalize_text_segments(payload: object) -> list[dict]:
         segment["text"] = str(original.get("text", "")).strip()
 
     return segments
-

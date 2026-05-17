@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import os
+import queue
 import signal
 import subprocess
 import tempfile
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -218,6 +220,86 @@ def run_job_command(command: list[str], *, job_id: str | None = None, input: str
                 unregister_job_process(job_id, process)
 
 
+def run_job_command_streaming(
+    command: list[str],
+    *,
+    job_id: str | None = None,
+    on_stdout_line=None,
+) -> subprocess.CompletedProcess:
+    """Like run_job_command, but calls on_stdout_line(line) for each stdout line as it arrives."""
+    if job_id is None:
+        result = subprocess.run(command, check=True, capture_output=True, text=True)
+        if on_stdout_line:
+            for line in result.stdout.splitlines():
+                on_stdout_line(line)
+        return result
+
+    ensure_job_not_cancelled(job_id)
+    line_queue: queue.Queue[str | None] = queue.Queue()
+    stderr_lines: list[str] = []
+
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    register_job_process(job_id, process)
+
+    def _read_stdout() -> None:
+        assert process.stdout is not None
+        for raw_line in process.stdout:
+            line_queue.put(raw_line.rstrip("\n"))
+        line_queue.put(None)  # sentinel: stdout closed
+
+    def _read_stderr() -> None:
+        assert process.stderr is not None
+        for raw_line in process.stderr:
+            stderr_lines.append(raw_line)
+
+    stdout_thread = threading.Thread(target=_read_stdout, daemon=True)
+    stderr_thread = threading.Thread(target=_read_stderr, daemon=True)
+    stdout_thread.start()
+    stderr_thread.start()
+
+    try:
+        while True:
+            ensure_job_not_cancelled(job_id)
+            try:
+                line = line_queue.get(timeout=0.25)
+            except queue.Empty:
+                continue
+            if line is None:
+                break  # stdout closed, process finished writing
+            if on_stdout_line:
+                on_stdout_line(line)
+
+        while True:
+            try:
+                return_code = process.wait(timeout=0.25)
+                break
+            except subprocess.TimeoutExpired:
+                ensure_job_not_cancelled(job_id)
+
+        stdout_thread.join(timeout=2)
+        stderr_thread.join(timeout=2)
+        stderr = "".join(stderr_lines)
+        ensure_job_not_cancelled(job_id)
+
+        if return_code:
+            raise subprocess.CalledProcessError(return_code, command, output="", stderr=stderr)
+
+        return subprocess.CompletedProcess(command, return_code, "", stderr)
+    except JobCancelled:
+        terminate_process(process)
+        raise
+    finally:
+        stdout_thread.join(timeout=2)
+        stderr_thread.join(timeout=2)
+        unregister_job_process(job_id, process)
+
+
 def command_error_summary(error: subprocess.CalledProcessError) -> str:
     detail = (error.stderr or error.output or str(error)).strip()
     return detail.splitlines()[-1] if detail else str(error)
@@ -235,12 +317,19 @@ def run_subtitle_job(job_id: str, audio_path: Path, segments: list[dict], source
 
     try:
         ensure_job_not_cancelled(job_id)
+        selected_runtime = whisper_runtime.preferred_job_runtime()
+        runtime_device = selected_runtime.get("device", "cpu")
+        runtime_model = selected_runtime.get("model", WHISPER_CPU_MODEL if runtime_device == "cpu" else WHISPER_GPU_MODEL)
         update_job(
             job_id,
             status="running",
             stage="transcribing",
             progress=1,
-            message="Transcribing segmented audio.",
+            message=(
+                f"Transcribing segmented audio on "
+                f"{'GPU' if runtime_device == 'cuda' else 'CPU'} "
+                f"({runtime_model})."
+            ),
         )
 
         def transcription_progress(done: int, total: int) -> None:
@@ -258,10 +347,10 @@ def run_subtitle_job(job_id: str, audio_path: Path, segments: list[dict], source
                 source_language,
                 transcription_progress,
                 job_id,
-                dict(whisper_runtime.WHISPER_RUNTIME),
+                selected_runtime,
             )
         except subprocess.CalledProcessError as error:
-            if whisper_runtime.WHISPER_RUNTIME.get("device") != "cuda":
+            if selected_runtime.get("device") != "cuda":
                 raise
             ensure_job_not_cancelled(job_id)
             fallback_reason = command_error_summary(error)
@@ -275,7 +364,7 @@ def run_subtitle_job(job_id: str, audio_path: Path, segments: list[dict], source
                 job_id,
                 progress=1,
                 message=truncate_message(
-                    f"GPU {whisper_runtime.WHISPER_RUNTIME.get('model', WHISPER_GPU_MODEL)}/{whisper_runtime.WHISPER_RUNTIME.get('computeType', WHISPER_GPU_COMPUTE_TYPE)} "
+                    f"GPU {selected_runtime.get('model', WHISPER_GPU_MODEL)}/{selected_runtime.get('computeType', WHISPER_GPU_COMPUTE_TYPE)} "
                     f"failed: {fallback_reason}. Retrying with CPU {whisper_runtime.CPU_WHISPER_RUNTIME.get('model', WHISPER_CPU_MODEL)}."
                 ),
                 error=fallback_reason,

@@ -10,6 +10,99 @@ from pathlib import Path
 from . import runtime as whisper_runtime
 from .settings import TRANSCRIBE_WORKER, WHISPER_PYTHON, WORK_DIR
 
+
+def detect_audio_language(audio_path: Path, runtime: dict | None = None, job_id: str | None = None) -> dict:
+    selected_runtime = runtime or whisper_runtime.WHISPER_RUNTIME
+    worker_python = WHISPER_PYTHON
+    use_worker = (
+        selected_runtime.get("backend") == "faster-whisper"
+        and selected_runtime.get("available")
+        and Path(worker_python).exists()
+        and TRANSCRIBE_WORKER.exists()
+    )
+
+    if not use_worker:
+        raise RuntimeError("Language detection requires the faster-whisper worker runtime.")
+
+    return _detect_audio_language_worker(audio_path, worker_python, job_id, selected_runtime)
+
+
+def detect_audio_languages(audio_paths: list[Path], runtime: dict | None = None, job_id: str | None = None) -> list[dict]:
+    selected_runtime = runtime or whisper_runtime.WHISPER_RUNTIME
+    worker_python = WHISPER_PYTHON
+    use_worker = (
+        selected_runtime.get("backend") == "faster-whisper"
+        and selected_runtime.get("available")
+        and Path(worker_python).exists()
+        and TRANSCRIBE_WORKER.exists()
+    )
+
+    if not use_worker:
+        raise RuntimeError("Language detection requires the faster-whisper worker runtime.")
+
+    return _detect_audio_languages_worker(audio_paths, worker_python, job_id, selected_runtime)
+
+
+def _detect_audio_language_worker(audio_path: Path, worker_python: str, job_id: str | None, runtime: dict) -> dict:
+    from .jobs import run_job_command
+
+    work_dir = WORK_DIR / f"detect-{uuid.uuid4().hex}"
+    work_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        out_file = work_dir / "language_out.json"
+        run_job_command(
+            [
+                worker_python,
+                str(TRANSCRIBE_WORKER),
+                "--detect-language",
+                "--audio", str(audio_path),
+                "--out", str(out_file),
+                "--model", runtime["model"],
+                "--device", runtime["device"],
+                "--compute-type", runtime["computeType"],
+            ],
+            job_id=job_id,
+        )
+        return json.loads(out_file.read_text(encoding="utf-8"))
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+def _detect_audio_languages_worker(audio_paths: list[Path], worker_python: str, job_id: str | None, runtime: dict) -> list[dict]:
+    from .jobs import run_job_command
+
+    work_dir = WORK_DIR / f"detect-batch-{uuid.uuid4().hex}"
+    work_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        audio_list_file = work_dir / "audio_list.json"
+        out_file = work_dir / "language_out.json"
+        audio_list_file.write_text(
+            json.dumps([str(path) for path in audio_paths]),
+            encoding="utf-8",
+        )
+        run_job_command(
+            [
+                worker_python,
+                str(TRANSCRIBE_WORKER),
+                "--detect-language",
+                "--audio-list",
+                str(audio_list_file),
+                "--out",
+                str(out_file),
+                "--model",
+                runtime["model"],
+                "--device",
+                runtime["device"],
+                "--compute-type",
+                runtime["computeType"],
+            ],
+            job_id=job_id,
+        )
+        return json.loads(out_file.read_text(encoding="utf-8"))
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
 def transcribe_segments(audio_path: Path, segments: list[dict], language_code: str, progress_callback=None, job_id: str | None = None, runtime: dict | None = None) -> list[dict]:
     """Transcribe all segments in one worker invocation (model loaded once)."""
     selected_runtime = runtime or whisper_runtime.WHISPER_RUNTIME
@@ -37,7 +130,7 @@ def _transcribe_segments_worker(
     runtime: dict,
 ) -> list[dict]:
     """Use transcribe_worker.py (faster-whisper, model loaded once for all segments)."""
-    from .jobs import run_job_command
+    from .jobs import run_job_command_streaming
 
     work_dir = WORK_DIR / f"job-{uuid.uuid4().hex}"
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -46,7 +139,20 @@ def _transcribe_segments_worker(
         out_file = work_dir / "segments_out.json"
         segments_file.write_text(json.dumps(segments), encoding="utf-8")
 
-        run_job_command(
+        total = len(segments)
+
+        def on_stdout_line(line: str) -> None:
+            if not progress_callback or not line.startswith("{"):
+                return
+            try:
+                msg = json.loads(line)
+                done = msg.get("done")
+                if done is not None:
+                    progress_callback(int(done), total)
+            except (json.JSONDecodeError, KeyError, TypeError):
+                pass
+
+        run_job_command_streaming(
             [
                 worker_python,
                 str(TRANSCRIBE_WORKER),
@@ -59,6 +165,7 @@ def _transcribe_segments_worker(
                 "--compute-type", runtime["computeType"],
             ],
             job_id=job_id,
+            on_stdout_line=on_stdout_line,
         )
         results = json.loads(out_file.read_text(encoding="utf-8"))
         if progress_callback:

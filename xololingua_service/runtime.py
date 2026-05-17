@@ -43,6 +43,47 @@ CPU_WHISPER_RUNTIME: dict = {
     "available": True,
 }
 
+
+def probe_whisper_runtime(device_choice: str | None = None) -> dict:
+    worker_python = WHISPER_PYTHON
+    requested_device = device_choice or WHISPER_DEVICE_CHOICE
+    result = subprocess.run(
+        [
+            worker_python,
+            str(TRANSCRIBE_WORKER),
+            "--probe",
+            "--device",
+            requested_device,
+            "--gpu-model",
+            WHISPER_GPU_MODEL,
+            "--cpu-model",
+            WHISPER_CPU_MODEL,
+            "--gpu-compute-type",
+            WHISPER_GPU_COMPUTE_TYPE,
+            "--cpu-compute-type",
+            WHISPER_CPU_COMPUTE_TYPE,
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    return json.loads(result.stdout.strip())
+
+
+def preferred_job_runtime() -> dict:
+    if WHISPER_DEVICE_CHOICE == "cpu":
+        return dict(CPU_WHISPER_RUNTIME)
+    if Path(WHISPER_PYTHON).exists() and TRANSCRIBE_WORKER.exists():
+        try:
+            runtime = probe_whisper_runtime("cuda" if WHISPER_DEVICE_CHOICE == "auto" else WHISPER_DEVICE_CHOICE)
+            if runtime.get("available"):
+                return runtime
+        except Exception:
+            pass
+    return dict(CPU_WHISPER_RUNTIME)
+
+
 def detect_whisper_runtime() -> None:
     """Probe the transcribe worker for GPU availability and populate WHISPER_RUNTIME."""
     global WHISPER_RUNTIME, CPU_WHISPER_RUNTIME
@@ -57,20 +98,7 @@ def detect_whisper_runtime() -> None:
         WHISPER_RUNTIME["available"] = False
         return
     try:
-        result = subprocess.run(
-            [
-                worker_python,
-                str(TRANSCRIBE_WORKER),
-                "--probe",
-                "--device", WHISPER_DEVICE_CHOICE,
-                "--gpu-model", WHISPER_GPU_MODEL,
-                "--cpu-model", WHISPER_CPU_MODEL,
-                "--gpu-compute-type", WHISPER_GPU_COMPUTE_TYPE,
-                "--cpu-compute-type", WHISPER_CPU_COMPUTE_TYPE,
-            ],
-            check=True, capture_output=True, text=True, timeout=120,
-        )
-        runtime = json.loads(result.stdout.strip())
+        runtime = probe_whisper_runtime()
         WHISPER_RUNTIME = runtime
         CPU_WHISPER_RUNTIME = runtime if runtime.get("device") == "cpu" else _probe_cpu_whisper_runtime(worker_python)
         device_label = f"CUDA ({runtime.get('cudaDevices', 0)} GPU)" if runtime["device"] == "cuda" else "CPU"

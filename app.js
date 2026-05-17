@@ -1,7 +1,7 @@
 const MAX_DURATION_SECONDS = 2.5 * 60 * 60;
 const SEGMENT_SECONDS = 12;
 const LOCAL_SERVICE_URL = "http://127.0.0.1:8765";
-const APP_ASSET_VERSION = "2026-05-17-1";
+const APP_ASSET_VERSION = "2026-05-17-3";
 
 const languages = [
   { code: "en", name: "English" },
@@ -26,24 +26,7 @@ const languages = [
   { code: "uk", name: "Ukrainian" }
 ];
 
-const supportedLanguagePairs = new Set([
-  "en:fr",
-  "fr:en",
-  "fr:ru",
-  "ru:fr",
-  "fr:uk",
-  "uk:fr",
-  "fr:zh",
-  "zh:fr",
-  "fr:de",
-  "de:fr",
-  "fr:es",
-  "es:fr",
-  "fr:hi",
-  "hi:fr",
-  "fr:ja",
-  "ja:fr"
-]);
+const supportedLanguagePairs = new Set();
 
 const state = {
   videoFile: null,
@@ -52,6 +35,7 @@ const state = {
   metadataReady: false,
   sourceLanguage: null,
   targetLanguage: "",
+  languageProgress: 0,
   extractedAudio: null,
   segments: [],
   srtUrl: "",
@@ -71,8 +55,11 @@ const els = {
   videoPreview: document.querySelector("#videoPreview"),
   videoName: document.querySelector("#videoName"),
   videoDetails: document.querySelector("#videoDetails"),
+  clearVideoButton: document.querySelector("#clearVideoButton"),
   identifyButton: document.querySelector("#identifyButton"),
   languageStatus: document.querySelector("#languageStatus"),
+  languageProgressText: document.querySelector("#languageProgressText"),
+  languageProgressBar: document.querySelector("#languageProgressBar"),
   sourceLanguageOutput: document.querySelector("#sourceLanguageOutput"),
   targetLanguageSelect: document.querySelector("#targetLanguageSelect"),
   targetStatus: document.querySelector("#targetStatus"),
@@ -109,6 +96,7 @@ bindInstallPrompt();
 registerServiceWorker();
 render();
 fetchServiceStatus();
+fetchTranslationPairs();
 
 function populateLanguages() {
   els.targetLanguageSelect.replaceChildren();
@@ -124,6 +112,24 @@ function populateLanguages() {
     option.textContent = language.name;
     els.targetLanguageSelect.append(option);
   });
+}
+
+let _pairsFetched = false;
+
+async function fetchTranslationPairs() {
+  if (_pairsFetched) return;
+  try {
+    const response = await fetch(`${LOCAL_SERVICE_URL}/api/translation-pairs`);
+    if (!response.ok) return;
+    const data = await response.json();
+    for (const { source, target } of data.pairs) {
+      supportedLanguagePairs.add(`${source}:${target}`);
+    }
+    _pairsFetched = true;
+    render();
+  } catch {
+    // Service not reachable yet — pairs remain empty, will retry on next health check
+  }
 }
 
 async function fetchServiceStatus() {
@@ -150,6 +156,7 @@ async function fetchServiceStatus() {
         ? `CPU fallback unavailable: ${health.whisperCpuFallbackReason || "unknown"}`
         : ""
     );
+    fetchTranslationPairs();
   } catch {
     els.serviceWhisperBackend.textContent = "unavailable";
     els.serviceWhisperModel.textContent = "—";
@@ -190,6 +197,10 @@ function bindEvents() {
   });
 
   els.identifyButton.addEventListener("click", identifyLanguage);
+  els.clearVideoButton.addEventListener("click", () => {
+    resetOutput();
+    render();
+  });
   els.targetLanguageSelect.addEventListener("change", () => {
     state.targetLanguage = els.targetLanguageSelect.value;
     resetSegmentation();
@@ -245,14 +256,29 @@ async function identifyLanguage() {
   els.languageStatus.textContent = "Identifying main language...";
   state.sourceLanguage = null;
   state.targetLanguage = "";
+  setProgress("language", 0);
   resetSegmentation();
   render();
 
-  const detected = await identifyLanguageAdapter(state.videoFile);
-  state.sourceLanguage = detected;
-  els.languageStatus.textContent = "Main language identified.";
-  state.busyStep = "";
-  render();
+  try {
+    const detected = await identifyLanguageAdapter(
+      state.videoFile,
+      (progress) => setProgress("language", progress),
+      (message) => {
+        els.languageStatus.textContent = message;
+      },
+    );
+    state.extractedAudio = null;
+    state.sourceLanguage = detected.language;
+    els.languageStatus.textContent = "Main language identified.";
+    setProgress("language", 100);
+  } catch (error) {
+    els.languageStatus.textContent = error.message;
+    setProgress("language", 0);
+  } finally {
+    state.busyStep = "";
+    render();
+  }
 }
 
 async function segmentAudio() {
@@ -260,24 +286,30 @@ async function segmentAudio() {
 
   state.busyStep = "segmentation";
   resetSubtitle();
-  state.extractedAudio = null;
+  if (!state.extractedAudio) {
+    state.extractedAudio = null;
+  }
   state.segments = [];
-  els.segmentationStatus.textContent = "Extracting audio from MP4...";
+  els.segmentationStatus.textContent = state.extractedAudio
+    ? `Audio already extracted: ${formatBytes(state.extractedAudio.audioSizeBytes)} WAV. Segmenting speech audio...`
+    : "Extracting audio from MP4...";
   setProgress("segmentation", 0);
   render();
 
-  try {
-    state.extractedAudio = await extractAudioAdapter(state.videoFile, (progress) => {
-      setProgress("segmentation", progress);
-    });
-  } catch (extractionError) {
-    els.segmentationStatus.textContent = `${extractionError.message} Falling back to prototype segmentation.`;
-    const segments = await segmentAudioAdapter(state.duration, (progress) => {
-      const scaledProgress = 35 + Math.round(progress * 0.65);
-      setProgress("segmentation", scaledProgress);
-    });
-    finishSegmentation(segments);
-    return;
+  if (!state.extractedAudio) {
+    try {
+      state.extractedAudio = await extractAudioAdapter(state.videoFile, (progress) => {
+        setProgress("segmentation", progress);
+      });
+    } catch (extractionError) {
+      els.segmentationStatus.textContent = `${extractionError.message} Falling back to prototype segmentation.`;
+      const segments = await segmentAudioAdapter(state.duration, (progress) => {
+        const scaledProgress = 35 + Math.round(progress * 0.65);
+        setProgress("segmentation", scaledProgress);
+      });
+      finishSegmentation(segments);
+      return;
+    }
   }
 
   els.segmentationStatus.textContent = `Audio extracted: ${formatBytes(state.extractedAudio.audioSizeBytes)} WAV. Segmenting speech audio...`;
@@ -480,13 +512,43 @@ async function pollSubtitleJob(jobId, onProgress) {
   }
 }
 
-async function identifyLanguageAdapter(file) {
-  await delay(900);
+async function identifyLanguageAdapter(file, onProgress = () => {}, onStatus = () => {}) {
+  const health = await fetch(`${LOCAL_SERVICE_URL}/api/health`);
+  if (!health.ok) {
+    throw new Error("Local audio service is not available for language detection.");
+  }
 
-  const lowerName = file.name.toLowerCase();
-  const match = languages.find((language) => lowerName.includes(language.name.toLowerCase()) || lowerName.includes(`.${language.code}.`));
+  const formData = new FormData();
+  formData.append("video", file, file.name);
+  onProgress(5);
+  onStatus("Uploading video for language detection...");
 
-  return match || languages.find((language) => language.code === navigator.language.slice(0, 2)) || languages[0];
+  const payload = await postFormDataJsonWithProgress(
+    `${LOCAL_SERVICE_URL}/api/detect-language`,
+    formData,
+    (uploadProgress) => {
+      const mapped = 5 + Math.round(uploadProgress * 0.3);
+      onProgress(mapped);
+      onStatus("Uploading video for language detection...");
+    },
+    (progress) => {
+      onProgress(progress);
+      if (progress < 55) {
+        onStatus("Extracting language samples...");
+      } else if (progress < 85) {
+        onStatus("Detecting language across samples...");
+      } else {
+        onStatus("Aggregating detection votes...");
+      }
+    },
+  );
+
+  const language = getLanguage(payload.languageCode);
+  if (!language) {
+    throw new Error(`Detected unsupported language code: ${payload.languageCode || "unknown"}.`);
+  }
+
+  return { language };
 }
 
 async function segmentAudioAdapter(duration, onProgress) {
@@ -555,10 +617,11 @@ function render() {
   els.targetLanguageSelect.value = state.targetLanguage;
 
   [...els.targetLanguageSelect.options].forEach((option) => {
+    const pairsLoaded = supportedLanguagePairs.size > 0;
     option.disabled = Boolean(
       sourceLanguage &&
       option.value &&
-      (option.value === sourceLanguage.code || !isSupportedPair(sourceLanguage.code, option.value))
+      (option.value === sourceLanguage.code || (pairsLoaded && !isSupportedPair(sourceLanguage.code, option.value)))
     );
   });
 
@@ -568,7 +631,7 @@ function render() {
     els.targetStatus.textContent = "Select one of the first supported target languages.";
   } else if (targetLanguage.code === sourceLanguage.code) {
     els.targetStatus.textContent = "Target language must differ from source.";
-  } else if (!isSupportedPair(sourceLanguage.code, targetLanguage.code)) {
+  } else if (supportedLanguagePairs.size > 0 && !isSupportedPair(sourceLanguage.code, targetLanguage.code)) {
     els.targetStatus.textContent = "This language couple is not in the first supported scope.";
   } else {
     els.targetStatus.textContent = `Target selected: ${targetLanguage.name}.`;
@@ -598,7 +661,9 @@ function canGenerate() {
 }
 
 function resetOutput() {
+  const audioId = state.extractedAudio?.audioId || "";
   cancelActiveSubtitleJobSilently();
+  releaseExtractedAudioSilently(audioId);
   if (state.videoUrl) URL.revokeObjectURL(state.videoUrl);
   state.videoFile = null;
   state.videoUrl = "";
@@ -606,12 +671,15 @@ function resetOutput() {
   state.metadataReady = false;
   state.sourceLanguage = null;
   state.targetLanguage = "";
+  state.languageProgress = 0;
   state.extractedAudio = null;
   state.busyStep = "";
   els.videoPreview.removeAttribute("src");
   els.videoPreview.load();
   els.videoCard.hidden = true;
+  els.fileInput.value = "";
   els.targetLanguageSelect.value = "";
+  setProgress("language", 0);
   resetSegmentation();
 }
 
@@ -675,8 +743,13 @@ function renderSubtitleStatus() {
 
 function setProgress(kind, value) {
   const clamped = Math.max(0, Math.min(100, value));
-  const text = els.segmentationProgressText;
-  const bar = els.segmentationProgressBar;
+  let text = els.segmentationProgressText;
+  let bar = els.segmentationProgressBar;
+  if (kind === "language") {
+    state.languageProgress = clamped;
+    text = els.languageProgressText;
+    bar = els.languageProgressBar;
+  }
   text.textContent = `${clamped}%`;
   bar.style.width = `${clamped}%`;
 }
@@ -712,6 +785,104 @@ function syncSubtitleProgress(job) {
 
 function clampProgress(value) {
   return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+async function cleanupExtractedAudioAdapter(audioId) {
+  if (!audioId) return;
+
+  const response = await fetch(`${LOCAL_SERVICE_URL}/api/release-audio`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ audioId })
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.error || "Audio cleanup failed.");
+  }
+}
+
+function releaseExtractedAudioSilently(audioId) {
+  if (!audioId) return;
+  cleanupExtractedAudioAdapter(audioId).catch(() => {});
+}
+
+function postFormDataJsonWithProgress(url, formData, onUploadProgress = () => {}, onServerProgress = () => {}) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    let finished = false;
+    let simulatedProgress = 35;
+    let progressTimer = 0;
+
+    const stopTimer = () => {
+      if (progressTimer) {
+        window.clearInterval(progressTimer);
+        progressTimer = 0;
+      }
+    };
+
+    const fail = (error) => {
+      stopTimer();
+      if (finished) return;
+      finished = true;
+      reject(error);
+    };
+
+    xhr.open("POST", url, true);
+    xhr.responseType = "json";
+
+    xhr.upload.addEventListener("progress", (event) => {
+      if (!event.lengthComputable || event.total <= 0) return;
+      const ratio = event.loaded / event.total;
+      onUploadProgress(Math.max(0, Math.min(100, Math.round(ratio * 100))));
+    });
+
+    xhr.upload.addEventListener("load", () => {
+      simulatedProgress = Math.max(simulatedProgress, 35);
+      onServerProgress(simulatedProgress);
+      progressTimer = window.setInterval(() => {
+        simulatedProgress = Math.min(92, simulatedProgress + (simulatedProgress < 70 ? 6 : 3));
+        onServerProgress(simulatedProgress);
+      }, 700);
+    });
+
+    xhr.addEventListener("error", () => fail(new Error("Language detection request failed.")));
+    xhr.addEventListener("abort", () => fail(new Error("Language detection request was cancelled.")));
+    xhr.addEventListener("load", () => {
+      stopTimer();
+      if (finished) return;
+      finished = true;
+
+      let responseText = "";
+      try {
+        responseText = xhr.responseText || "";
+      } catch {
+        responseText = "";
+      }
+      const payload = xhr.response && typeof xhr.response === "object"
+        ? xhr.response
+        : safeJsonParse(responseText);
+
+      if (xhr.status < 200 || xhr.status >= 300) {
+        reject(new Error(payload?.error || "Language detection failed."));
+        return;
+      }
+
+      onServerProgress(100);
+      resolve(payload);
+    });
+
+    xhr.send(formData);
+  });
+}
+
+function safeJsonParse(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
 }
 
 function renderSegmentReview() {

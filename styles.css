@@ -100,7 +100,7 @@ select:disabled {
 
 .workspace {
   display: grid;
-  grid-template-columns: minmax(280px, 0.36fr) minmax(0, 1fr);
+  grid-template-columns: 270px minmax(0, 1fr);
   gap: 20px;
   align-items: start;
 }
@@ -178,6 +178,12 @@ p {
   gap: 14px;
   padding-top: 14px;
   border-top: 1px solid var(--line);
+}
+
+.parrot-image {
+  width: 100%;
+  border-radius: 10px;
+  object-fit: cover;
 }
 
 .service-status {
@@ -288,6 +294,12 @@ video {
 
 .video-meta span {
   color: var(--muted);
+}
+
+.video-actions {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 8px;
 }
 
 .step-grid {
