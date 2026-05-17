@@ -2,14 +2,14 @@
   "name": "XoloLingua",
   "short_name": "XoloLingua",
   "description": "An installable app for preparing translated SRT subtitles from MP4 videos.",
-  "start_url": ".",
+  "start_url": "./?source=pwa",
   "scope": ".",
   "display": "standalone",
   "background_color": "#f5f2e9",
   "theme_color": "#1f6f5b",
   "icons": [
     {
-      "src": "assets/icon.svg",
+      "src": "assets/icon.svg?v=2026-05-17-1",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any maskable"

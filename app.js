@@ -1,6 +1,7 @@
 const MAX_DURATION_SECONDS = 2.5 * 60 * 60;
 const SEGMENT_SECONDS = 12;
 const LOCAL_SERVICE_URL = "http://127.0.0.1:8765";
+const APP_ASSET_VERSION = "2026-05-17-1";
 
 const languages = [
   { code: "en", name: "English" },
@@ -834,7 +835,9 @@ function bindInstallPrompt() {
 function registerServiceWorker() {
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("sw.js");
+      navigator.serviceWorker.register(`sw.js?v=${APP_ASSET_VERSION}`, {
+        updateViaCache: "none"
+      });
     });
   }
 }
