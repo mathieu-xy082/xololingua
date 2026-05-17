@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import os
+import queue
 import signal
 import subprocess
 import tempfile
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -216,6 +218,86 @@ def run_job_command(command: list[str], *, job_id: str | None = None, input: str
                 raise
             finally:
                 unregister_job_process(job_id, process)
+
+
+def run_job_command_streaming(
+    command: list[str],
+    *,
+    job_id: str | None = None,
+    on_stdout_line=None,
+) -> subprocess.CompletedProcess:
+    """Like run_job_command, but calls on_stdout_line(line) for each stdout line as it arrives."""
+    if job_id is None:
+        result = subprocess.run(command, check=True, capture_output=True, text=True)
+        if on_stdout_line:
+            for line in result.stdout.splitlines():
+                on_stdout_line(line)
+        return result
+
+    ensure_job_not_cancelled(job_id)
+    line_queue: queue.Queue[str | None] = queue.Queue()
+    stderr_lines: list[str] = []
+
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    register_job_process(job_id, process)
+
+    def _read_stdout() -> None:
+        assert process.stdout is not None
+        for raw_line in process.stdout:
+            line_queue.put(raw_line.rstrip("\n"))
+        line_queue.put(None)  # sentinel: stdout closed
+
+    def _read_stderr() -> None:
+        assert process.stderr is not None
+        for raw_line in process.stderr:
+            stderr_lines.append(raw_line)
+
+    stdout_thread = threading.Thread(target=_read_stdout, daemon=True)
+    stderr_thread = threading.Thread(target=_read_stderr, daemon=True)
+    stdout_thread.start()
+    stderr_thread.start()
+
+    try:
+        while True:
+            ensure_job_not_cancelled(job_id)
+            try:
+                line = line_queue.get(timeout=0.25)
+            except queue.Empty:
+                continue
+            if line is None:
+                break  # stdout closed, process finished writing
+            if on_stdout_line:
+                on_stdout_line(line)
+
+        while True:
+            try:
+                return_code = process.wait(timeout=0.25)
+                break
+            except subprocess.TimeoutExpired:
+                ensure_job_not_cancelled(job_id)
+
+        stdout_thread.join(timeout=2)
+        stderr_thread.join(timeout=2)
+        stderr = "".join(stderr_lines)
+        ensure_job_not_cancelled(job_id)
+
+        if return_code:
+            raise subprocess.CalledProcessError(return_code, command, output="", stderr=stderr)
+
+        return subprocess.CompletedProcess(command, return_code, "", stderr)
+    except JobCancelled:
+        terminate_process(process)
+        raise
+    finally:
+        stdout_thread.join(timeout=2)
+        stderr_thread.join(timeout=2)
+        unregister_job_process(job_id, process)
 
 
 def command_error_summary(error: subprocess.CalledProcessError) -> str:

@@ -130,7 +130,7 @@ def _transcribe_segments_worker(
     runtime: dict,
 ) -> list[dict]:
     """Use transcribe_worker.py (faster-whisper, model loaded once for all segments)."""
-    from .jobs import run_job_command
+    from .jobs import run_job_command_streaming
 
     work_dir = WORK_DIR / f"job-{uuid.uuid4().hex}"
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -139,7 +139,20 @@ def _transcribe_segments_worker(
         out_file = work_dir / "segments_out.json"
         segments_file.write_text(json.dumps(segments), encoding="utf-8")
 
-        run_job_command(
+        total = len(segments)
+
+        def on_stdout_line(line: str) -> None:
+            if not progress_callback or not line.startswith("{"):
+                return
+            try:
+                msg = json.loads(line)
+                done = msg.get("done")
+                if done is not None:
+                    progress_callback(int(done), total)
+            except (json.JSONDecodeError, KeyError, TypeError):
+                pass
+
+        run_job_command_streaming(
             [
                 worker_python,
                 str(TRANSCRIBE_WORKER),
@@ -152,6 +165,7 @@ def _transcribe_segments_worker(
                 "--compute-type", runtime["computeType"],
             ],
             job_id=job_id,
+            on_stdout_line=on_stdout_line,
         )
         results = json.loads(out_file.read_text(encoding="utf-8"))
         if progress_callback:

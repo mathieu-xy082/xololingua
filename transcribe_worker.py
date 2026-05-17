@@ -186,6 +186,7 @@ def _transcribe(audio_path: Path, language_code: str, segments: list[dict], runt
 
     work_dir = Path(tempfile.mkdtemp(prefix="xolo_worker_"))
     results: list[dict] = []
+    total = len(segments)
     try:
         for segment in segments:
             seg_path = work_dir / f"seg_{segment['index']:05d}.wav"
@@ -202,6 +203,7 @@ def _transcribe(audio_path: Path, language_code: str, segments: list[dict], runt
                 **segment,
                 "text": text,
             })
+            print(json.dumps({"done": len(results), "total": total}), flush=True)
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
 
