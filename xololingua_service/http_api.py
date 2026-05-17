@@ -27,7 +27,7 @@ from .jobs import (
 from .media import extract_audio, normalize_segments, normalize_text_segments, probe_duration, segment_audio
 from .settings import ARGOS_COMMAND, HOST, MAX_DURATION_SECONDS, PORT, WHISPER_CPU_COMPUTE_TYPE, WHISPER_CPU_MODEL, WHISPER_DEVICE_CHOICE, WORK_DIR
 from .transcription import transcribe_segments
-from .translation import translate_segments
+from .translation import translate_segments, translation_backend_available
 
 class LocalServiceHandler(BaseHTTPRequestHandler):
     server_version = "XoloLinguaLocalService/0.1"
@@ -58,7 +58,7 @@ class LocalServiceHandler(BaseHTTPRequestHandler):
                 "whisperCpuFallbackReason": whisper_runtime.CPU_WHISPER_RUNTIME.get("fallbackReason", ""),
                 "nvidiaSmi": whisper_runtime.WHISPER_RUNTIME.get("nvidiaSmi", False),
                 "nvidiaSmiError": whisper_runtime.WHISPER_RUNTIME.get("nvidiaSmiError", ""),
-                "argosTranslate": bool(shutil.which(ARGOS_COMMAND)),
+                "argosTranslate": translation_backend_available(),
                 "argosCommand": ARGOS_COMMAND,
             })
             return
@@ -238,7 +238,7 @@ class LocalServiceHandler(BaseHTTPRequestHandler):
             self.send_error_json(HTTPStatus.BAD_REQUEST, error.stderr.strip() or "Audio transcription failed.")
 
     def handle_translate_segments(self) -> None:
-        if not shutil.which(ARGOS_COMMAND):
+        if not translation_backend_available():
             self.send_error_json(
                 HTTPStatus.SERVICE_UNAVAILABLE,
                 f"Translation engine not found. Install Argos Translate or set XOLOLINGUA_ARGOS_COMMAND. Tried: {ARGOS_COMMAND}.",
@@ -280,7 +280,7 @@ class LocalServiceHandler(BaseHTTPRequestHandler):
                 "Transcription engine not available. Install dependencies with PDM and start the service with `pdm run service`.",
             )
             return
-        if not shutil.which(ARGOS_COMMAND):
+        if not translation_backend_available():
             self.send_error_json(
                 HTTPStatus.SERVICE_UNAVAILABLE,
                 f"Translation engine not found. Install Argos Translate or set XOLOLINGUA_ARGOS_COMMAND. Tried: {ARGOS_COMMAND}.",
