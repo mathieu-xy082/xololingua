@@ -1,10 +1,11 @@
 const CACHE_NAME = "xololingua-v7";
 const ASSETS = [
   ".",
-  "styles.css?v=2026-05-17-1",
-  "app.js?v=2026-05-17-1",
-  "manifest.webmanifest?v=2026-05-17-1",
-  "assets/icon.svg?v=2026-05-17-1"
+  "styles.css?v=2026-05-17-3",
+  "app.js?v=2026-05-17-3",
+  "manifest.webmanifest?v=2026-05-17-3",
+  "assets/icon.svg?v=2026-05-17-3",
+  "assets/babbel_parrot.png"
 ];
 
 self.addEventListener("install", (event) => {
