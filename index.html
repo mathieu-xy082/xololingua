@@ -136,13 +136,24 @@
               <button id="generateButton" type="button" disabled>Generate subtitles</button>
               <button class="secondary-button" id="cancelGenerateButton" type="button" hidden disabled>Cancel</button>
             </div>
-            <div class="progress-block">
-              <div class="progress-label">
-                <span>Translation and file</span>
-                <strong id="subtitleProgressText">0%</strong>
+            <div class="progress-stack">
+              <div class="progress-block">
+                <div class="progress-label">
+                  <span>Speech to text</span>
+                  <strong id="subtitleTranscriptionProgressText">0%</strong>
+                </div>
+                <div class="progress-track">
+                  <span id="subtitleTranscriptionProgressBar"></span>
+                </div>
               </div>
-              <div class="progress-track">
-                <span id="subtitleProgressBar"></span>
+              <div class="progress-block">
+                <div class="progress-label">
+                  <span>Segment translation</span>
+                  <strong id="subtitleTranslationProgressText">0%</strong>
+                </div>
+                <div class="progress-track">
+                  <span id="subtitleTranslationProgressBar"></span>
+                </div>
               </div>
             </div>
             <a class="download-link" id="downloadLink" hidden>Download SRT</a>
