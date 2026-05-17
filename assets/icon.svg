@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title>XoloLingua app icon</title>
+  <rect width="512" height="512" rx="96" fill="#1f6f5b"/>
+  <path d="M126 156c0-28 22-50 50-50h160c28 0 50 22 50 50v118c0 28-22 50-50 50h-70l-72 70c-11 11-30 3-30-13v-57h12c-28 0-50-22-50-50V156z" fill="#fffdf7"/>
+  <path d="M174 184h164v34H174v-34zm0 68h112v34H174v-34z" fill="#1f6f5b"/>
+  <circle cx="346" cy="350" r="48" fill="#d39c36"/>
+  <path d="M322 352l18 18 34-42" fill="none" stroke="#17211e" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
