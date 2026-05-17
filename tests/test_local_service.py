@@ -157,7 +157,7 @@ class LocalServiceAudioTests(unittest.TestCase):
     def test_translate_segments_adds_translated_text(self):
         segments = [{"index": 1, "start": 0.0, "end": 2.0, "text": "Bonjour."}]
 
-        with mock.patch.object(translation, "translate_text", return_value="Hello."):
+        with mock.patch.object(translation, "translate_texts", return_value=["Hello."]):
             result = local_service.translate_segments(segments, "fr", "en")
 
         self.assertEqual(result, [{
@@ -174,10 +174,10 @@ class LocalServiceAudioTests(unittest.TestCase):
             {"index": 2, "start": 1.0, "end": 2.0, "text": "Deux."},
         ]
 
-        def fake_translate(text, _source, _target):
-            return {"Un.": "One.", "Deux.": "Two."}[text]
+        def fake_translate(texts, _source, _target, _job_id=None):
+            return [{"Un.": "One.", "Deux.": "Two."}[text] for text in texts]
 
-        with mock.patch.object(translation, "translate_text", side_effect=fake_translate):
+        with mock.patch.object(translation, "translate_texts", side_effect=fake_translate):
             result = local_service.translate_segments(segments, "fr", "en", max_workers=2)
 
         self.assertEqual([segment["translatedText"] for segment in result], ["One.", "Two."])
@@ -502,6 +502,25 @@ class PipelineIntegrationTests(unittest.TestCase):
 
         self.assertEqual(status["status"], "cancelled")
         self.assertEqual(status["stage"], "cancelled")
+
+    def test_list_subtitle_jobs_endpoint_returns_jobs(self):
+        job_id = "1" * 32
+        local_service.put_job(job_id, {
+            "jobId": job_id,
+            "status": "queued",
+            "stage": "queued",
+            "progress": 0,
+            "message": "",
+            "createdAt": time.time(),
+            "updatedAt": time.time(),
+            "segments": [],
+            "error": "",
+        })
+
+        payload = self._get_json("/api/subtitle-jobs")
+
+        self.assertIn("jobs", payload)
+        self.assertTrue(any(job["jobId"] == job_id for job in payload["jobs"]))
 
 
 if __name__ == "__main__":

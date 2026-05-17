@@ -120,6 +120,18 @@ def job_snapshot(job_id: str) -> dict | None:
         return dict(job)
 
 
+def list_job_snapshots() -> list[dict]:
+    with JOBS_LOCK:
+        return [
+            dict(job)
+            for job in sorted(
+                JOBS.values(),
+                key=lambda item: item.get("createdAt", 0),
+                reverse=True,
+            )
+        ]
+
+
 def mark_job_cancelled(job_id: str) -> None:
     with JOBS_LOCK:
         job = JOBS.get(job_id)

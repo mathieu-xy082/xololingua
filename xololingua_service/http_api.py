@@ -19,6 +19,7 @@ from .jobs import (
     JOBS_EXECUTOR,
     cancel_subtitle_job,
     job_snapshot,
+    list_job_snapshots,
     put_job,
     register_job_future,
     run_subtitle_job,
@@ -60,6 +61,9 @@ class LocalServiceHandler(BaseHTTPRequestHandler):
                 "argosTranslate": bool(shutil.which(ARGOS_COMMAND)),
                 "argosCommand": ARGOS_COMMAND,
             })
+            return
+        if self.path == "/api/subtitle-jobs":
+            self.send_json({"jobs": list_job_snapshots()})
             return
         if parsed_path.path.startswith("/api/subtitle-jobs/"):
             self.handle_get_subtitle_job(parsed_path.path.rsplit("/", 1)[-1])

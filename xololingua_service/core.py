@@ -21,6 +21,7 @@ from .jobs import (
     ensure_job_not_cancelled,
     is_job_cancelled,
     job_snapshot,
+    list_job_snapshots,
     mark_job_cancelled,
     put_job,
     register_job_future,
@@ -50,4 +51,3 @@ from .transcription import (
     transcribe_segments,
 )
 from .translation import translate_segments, translate_text
-

@@ -6,6 +6,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .settings import ARGOS_COMMAND
 
+
+TRANSLATION_BATCH_SIZE = 8
+
+
 def translate_segments(segments: list[dict], source_language: str, target_language: str, progress_callback=None, max_workers: int = 1, job_id: str | None = None) -> list[dict]:
     from .jobs import JobCancelled, ensure_job_not_cancelled
 
@@ -16,32 +20,39 @@ def translate_segments(segments: list[dict], source_language: str, target_langua
 
     translated: list[dict | None] = [None] * len(segments)
 
-    def translate_one(position: int, segment: dict) -> tuple[int, dict]:
+    def translate_batch(batch: list[tuple[int, dict]]) -> list[tuple[int, dict]]:
         if job_id is not None:
             ensure_job_not_cancelled(job_id)
-            translated_text = translate_text(segment.get("text", ""), source_language, target_language, job_id)
-        else:
-            translated_text = translate_text(segment.get("text", ""), source_language, target_language)
-        return position, {
-            **segment,
-            "translatedText": translated_text,
-        }
+        texts = [segment.get("text", "") for _, segment in batch]
+        translated_texts = translate_texts(texts, source_language, target_language, job_id)
+        return [
+            (position, {**segment, "translatedText": translated_text})
+            for (position, segment), translated_text in zip(batch, translated_texts)
+        ]
 
-    if max_workers <= 1 or len(segments) <= 1:
-        for position, segment in enumerate(segments):
-            _, translated_segment = translate_one(position, segment)
-            translated[position] = translated_segment
+    batches = [
+        list(enumerate(segments))[index:index + TRANSLATION_BATCH_SIZE]
+        for index in range(0, len(segments), TRANSLATION_BATCH_SIZE)
+    ]
+
+    if max_workers <= 1 or len(batches) <= 1:
+        completed = 0
+        for batch in batches:
+            for position, translated_segment in translate_batch(batch):
+                translated[position] = translated_segment
+            completed += len(batch)
             if progress_callback:
-                progress_callback(position + 1, len(segments))
+                progress_callback(completed, len(segments))
     else:
         completed = 0
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = [executor.submit(translate_one, position, segment) for position, segment in enumerate(segments)]
+            futures = [executor.submit(translate_batch, batch) for batch in batches]
             try:
                 for future in as_completed(futures):
-                    position, translated_segment = future.result()
-                    translated[position] = translated_segment
-                    completed += 1
+                    translated_batch = future.result()
+                    for position, translated_segment in translated_batch:
+                        translated[position] = translated_segment
+                    completed += len(translated_batch)
                     if progress_callback:
                         progress_callback(completed, len(segments))
             except JobCancelled:
@@ -53,10 +64,34 @@ def translate_segments(segments: list[dict], source_language: str, target_langua
 
 
 def translate_text(text: str, source_language: str, target_language: str, job_id: str | None = None) -> str:
-    from .jobs import run_job_command
+    return translate_texts([text], source_language, target_language, job_id)[0]
 
-    if not text.strip():
-        return ""
+
+def translate_texts(texts: list[str], source_language: str, target_language: str, job_id: str | None = None) -> list[str]:
+    if not texts:
+        return []
+
+    non_empty_positions = [index for index, text in enumerate(texts) if text.strip()]
+    if not non_empty_positions:
+        return [""] * len(texts)
+
+    input_text = "\n".join(texts[index] for index in non_empty_positions)
+    translated_lines = _translate_text_block(input_text, source_language, target_language, job_id).splitlines()
+
+    if len(translated_lines) != len(non_empty_positions):
+        translated_lines = [
+            _translate_text_block(texts[index], source_language, target_language, job_id).strip()
+            for index in non_empty_positions
+        ]
+
+    translated = [""] * len(texts)
+    for position, translated_text in zip(non_empty_positions, translated_lines):
+        translated[position] = translated_text.strip()
+    return translated
+
+
+def _translate_text_block(text: str, source_language: str, target_language: str, job_id: str | None = None) -> str:
+    from .jobs import run_job_command
 
     result = run_job_command(
         [
