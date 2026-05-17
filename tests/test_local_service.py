@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest import mock
 
 import local_service
+from xololingua_service import runtime, transcription, translation
 
 
 @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "ffmpeg and ffprobe are required")
@@ -138,9 +139,9 @@ class LocalServiceAudioTests(unittest.TestCase):
             segments = [{"index": 1, "start": 0.0, "end": 1.5}]
 
             # Force CLI fallback so transcribe_audio_file is the code path under test
-            with mock.patch.dict(local_service.WHISPER_RUNTIME, {"backend": "whisper-cli", "available": False}):
-                with mock.patch.object(local_service, "slice_audio") as slice_audio:
-                    with mock.patch.object(local_service, "transcribe_audio_file", return_value="Bonjour."):
+            with mock.patch.dict(runtime.WHISPER_RUNTIME, {"backend": "whisper-cli", "available": False}):
+                with mock.patch.object(transcription, "slice_audio") as slice_audio:
+                    with mock.patch.object(transcription, "transcribe_audio_file", return_value="Bonjour."):
                         result = local_service.transcribe_segments(audio_path, segments, "fr")
 
             slice_audio.assert_called_once()
@@ -156,7 +157,7 @@ class LocalServiceAudioTests(unittest.TestCase):
     def test_translate_segments_adds_translated_text(self):
         segments = [{"index": 1, "start": 0.0, "end": 2.0, "text": "Bonjour."}]
 
-        with mock.patch.object(local_service, "translate_text", return_value="Hello."):
+        with mock.patch.object(translation, "translate_text", return_value="Hello."):
             result = local_service.translate_segments(segments, "fr", "en")
 
         self.assertEqual(result, [{
@@ -176,7 +177,7 @@ class LocalServiceAudioTests(unittest.TestCase):
         def fake_translate(text, _source, _target):
             return {"Un.": "One.", "Deux.": "Two."}[text]
 
-        with mock.patch.object(local_service, "translate_text", side_effect=fake_translate):
+        with mock.patch.object(translation, "translate_text", side_effect=fake_translate):
             result = local_service.translate_segments(segments, "fr", "en", max_workers=2)
 
         self.assertEqual([segment["translatedText"] for segment in result], ["One.", "Two."])
@@ -195,13 +196,13 @@ class LocalServiceAudioTests(unittest.TestCase):
             "error": "",
         })
 
-        with mock.patch.object(local_service, "transcribe_segments", return_value=[{
+        with mock.patch.object(transcription, "transcribe_segments", return_value=[{
             "index": 1,
             "start": 0.0,
             "end": 1.0,
             "text": "Bonjour.",
         }]):
-            with mock.patch.object(local_service, "translate_segments", return_value=[{
+            with mock.patch.object(translation, "translate_segments", return_value=[{
                 "index": 1,
                 "start": 0.0,
                 "end": 1.0,
@@ -247,10 +248,10 @@ class LocalServiceAudioTests(unittest.TestCase):
         transcribed = [{"index": 1, "start": 0.0, "end": 1.0, "text": "Bonjour."}]
         cuda_error = subprocess.CalledProcessError(1, ["worker"], stderr="CUDA failed")
 
-        with mock.patch.dict(local_service.WHISPER_RUNTIME, cuda_runtime, clear=True):
-            with mock.patch.dict(local_service.CPU_WHISPER_RUNTIME, cpu_runtime, clear=True):
-                with mock.patch.object(local_service, "transcribe_segments", side_effect=[cuda_error, transcribed]) as transcribe_segments:
-                    with mock.patch.object(local_service, "translate_segments", return_value=[{
+        with mock.patch.dict(runtime.WHISPER_RUNTIME, cuda_runtime, clear=True):
+            with mock.patch.dict(runtime.CPU_WHISPER_RUNTIME, cpu_runtime, clear=True):
+                with mock.patch.object(transcription, "transcribe_segments", side_effect=[cuda_error, transcribed]) as transcribe_segments:
+                    with mock.patch.object(translation, "translate_segments", return_value=[{
                         "index": 1,
                         "start": 0.0,
                         "end": 1.0,
@@ -296,9 +297,9 @@ class LocalServiceAudioTests(unittest.TestCase):
         }
         cuda_error = subprocess.CalledProcessError(1, ["worker"], stderr="CUDA failed")
 
-        with mock.patch.dict(local_service.WHISPER_RUNTIME, cuda_runtime, clear=True):
-            with mock.patch.dict(local_service.CPU_WHISPER_RUNTIME, cpu_runtime, clear=True):
-                with mock.patch.object(local_service, "transcribe_segments", side_effect=cuda_error):
+        with mock.patch.dict(runtime.WHISPER_RUNTIME, cuda_runtime, clear=True):
+            with mock.patch.dict(runtime.CPU_WHISPER_RUNTIME, cpu_runtime, clear=True):
+                with mock.patch.object(transcription, "transcribe_segments", side_effect=cuda_error):
                     local_service.run_subtitle_job(job_id, Path("/tmp/sample.wav"), [{"index": 1, "start": 0.0, "end": 1.0}], "fr", "en")
 
         snapshot = local_service.job_snapshot(job_id)
@@ -320,7 +321,7 @@ class LocalServiceAudioTests(unittest.TestCase):
         })
 
         local_service.cancel_subtitle_job(job_id)
-        with mock.patch.object(local_service, "transcribe_segments") as transcribe_segments:
+        with mock.patch.object(transcription, "transcribe_segments") as transcribe_segments:
             local_service.run_subtitle_job(job_id, Path("/tmp/sample.wav"), [{"index": 1, "start": 0.0, "end": 1.0}], "fr", "en")
 
         transcribe_segments.assert_not_called()
@@ -457,9 +458,9 @@ class PipelineIntegrationTests(unittest.TestCase):
             translated = [dict(s, translatedText="Hello world.") for s in transcribed]
 
             runtime_available = {"backend": "faster-whisper", "available": True, "device": "cpu", "model": "base", "computeType": "int8", "cudaDevices": 0}
-            with mock.patch.dict(local_service.WHISPER_RUNTIME, runtime_available):
-                with mock.patch.object(local_service, "transcribe_segments", return_value=transcribed):
-                    with mock.patch.object(local_service, "translate_segments", return_value=translated):
+            with mock.patch.dict(runtime.WHISPER_RUNTIME, runtime_available):
+                with mock.patch.object(transcription, "transcribe_segments", return_value=transcribed):
+                    with mock.patch.object(translation, "translate_segments", return_value=translated):
                         job = self._post_json("/api/subtitle-jobs", {
                             "audioId": audio_id,
                             "sourceLanguage": "fr",

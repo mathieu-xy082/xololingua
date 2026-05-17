@@ -44,6 +44,7 @@ The project has not published a first version yet.
 
 ### Changed
 
+- Split the local service implementation into focused Python modules while keeping `python3 local_service.py` as the stable entrypoint.
 - Limited target-language activation to the first supported language-pair scope while keeping the broader language list visible.
 
 ### Known Limitations
