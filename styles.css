@@ -348,6 +348,11 @@ select {
   gap: 10px;
 }
 
+.progress-stack {
+  display: grid;
+  gap: 14px;
+}
+
 .button-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

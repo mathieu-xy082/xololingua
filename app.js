@@ -1,6 +1,7 @@
 const MAX_DURATION_SECONDS = 2.5 * 60 * 60;
 const SEGMENT_SECONDS = 12;
 const LOCAL_SERVICE_URL = "http://127.0.0.1:8765";
+const APP_ASSET_VERSION = "2026-05-17-1";
 
 const languages = [
   { code: "en", name: "English" },
@@ -57,6 +58,8 @@ const state = {
   subtitleJobId: "",
   subtitleCancelRequested: false,
   subtitleNotice: "",
+  subtitleTranscriptionProgress: 0,
+  subtitleTranslationProgress: 0,
   busyStep: ""
 };
 
@@ -87,8 +90,10 @@ const els = {
   generateButton: document.querySelector("#generateButton"),
   cancelGenerateButton: document.querySelector("#cancelGenerateButton"),
   subtitleStatus: document.querySelector("#subtitleStatus"),
-  subtitleProgressText: document.querySelector("#subtitleProgressText"),
-  subtitleProgressBar: document.querySelector("#subtitleProgressBar"),
+  subtitleTranscriptionProgressText: document.querySelector("#subtitleTranscriptionProgressText"),
+  subtitleTranscriptionProgressBar: document.querySelector("#subtitleTranscriptionProgressBar"),
+  subtitleTranslationProgressText: document.querySelector("#subtitleTranslationProgressText"),
+  subtitleTranslationProgressBar: document.querySelector("#subtitleTranslationProgressBar"),
   downloadLink: document.querySelector("#downloadLink"),
   installButton: document.querySelector("#installButton"),
   serviceWhisperBackend: document.querySelector("#serviceWhisperBackend"),
@@ -345,13 +350,13 @@ async function generateSubtitles() {
   state.subtitleCancelRequested = false;
   state.subtitleNotice = "";
   els.subtitleStatus.textContent = "Starting subtitle generation job...";
-  setProgress("subtitle", 0);
+  setSubtitleProgress(0, 0);
   render();
 
   try {
     const translatedSegments = await runSubtitleJobAdapter(state.extractedAudio, state.sourceLanguage, state.targetLanguage, state.segments, (job) => {
       els.subtitleStatus.textContent = job.message || job.stage;
-      setProgress("subtitle", Math.min(90, job.progress || 0));
+      syncSubtitleProgress(job);
     }, (job) => {
       state.subtitleJobId = job.jobId;
       render();
@@ -361,8 +366,7 @@ async function generateSubtitles() {
     els.subtitleStatus.textContent = "Preparing translated SRT...";
 
     const srt = await generateSrtAdapter(state.segments, state.targetLanguage, (progress) => {
-      const scaledProgress = 90 + Math.round(progress * 0.1);
-      setProgress("subtitle", scaledProgress);
+      setSubtitleProgress(100, 100);
     });
     const fileName = makeSubtitleFileName(state.videoFile.name, state.targetLanguage);
     const blob = new Blob([srt], { type: "application/x-subrip;charset=utf-8" });
@@ -378,14 +382,14 @@ async function generateSubtitles() {
     state.busyStep = "";
     state.subtitleJobId = "";
     state.subtitleCancelRequested = false;
-    setProgress("subtitle", 100);
+    setSubtitleProgress(100, 100);
     render();
   } catch (error) {
     state.subtitleNotice = error.message;
     state.busyStep = "";
     state.subtitleJobId = "";
     state.subtitleCancelRequested = false;
-    setProgress("subtitle", 0);
+    setSubtitleProgress(0, 0);
     render();
   }
 }
@@ -407,7 +411,7 @@ async function cancelSubtitleGeneration() {
     state.busyStep = "";
     state.subtitleJobId = "";
     state.subtitleCancelRequested = false;
-    setProgress("subtitle", 0);
+    setSubtitleProgress(0, 0);
     render();
   }
 }
@@ -631,11 +635,13 @@ function resetSubtitle() {
   state.subtitleJobId = "";
   state.subtitleCancelRequested = false;
   state.subtitleNotice = "";
+  state.subtitleTranscriptionProgress = 0;
+  state.subtitleTranslationProgress = 0;
   els.subtitleStatus.textContent = "Run segmentation first.";
   els.downloadLink.hidden = true;
   els.downloadLink.removeAttribute("href");
   els.downloadLink.removeAttribute("download");
-  setProgress("subtitle", 0);
+  setSubtitleProgress(0, 0);
 }
 
 function cancelActiveSubtitleJobSilently() {
@@ -669,10 +675,43 @@ function renderSubtitleStatus() {
 
 function setProgress(kind, value) {
   const clamped = Math.max(0, Math.min(100, value));
-  const text = kind === "segmentation" ? els.segmentationProgressText : els.subtitleProgressText;
-  const bar = kind === "segmentation" ? els.segmentationProgressBar : els.subtitleProgressBar;
+  const text = els.segmentationProgressText;
+  const bar = els.segmentationProgressBar;
   text.textContent = `${clamped}%`;
   bar.style.width = `${clamped}%`;
+}
+
+function setSubtitleProgress(transcription, translation) {
+  state.subtitleTranscriptionProgress = clampProgress(transcription);
+  state.subtitleTranslationProgress = clampProgress(translation);
+  els.subtitleTranscriptionProgressText.textContent = `${state.subtitleTranscriptionProgress}%`;
+  els.subtitleTranscriptionProgressBar.style.width = `${state.subtitleTranscriptionProgress}%`;
+  els.subtitleTranslationProgressText.textContent = `${state.subtitleTranslationProgress}%`;
+  els.subtitleTranslationProgressBar.style.width = `${state.subtitleTranslationProgress}%`;
+}
+
+function syncSubtitleProgress(job) {
+  const rawProgress = clampProgress(job.progress || 0);
+
+  if (job.stage === "transcribing") {
+    const transcription = Math.round((rawProgress / 55) * 100);
+    setSubtitleProgress(transcription, 0);
+    return;
+  }
+
+  if (job.stage === "translating") {
+    const translation = Math.round(((rawProgress - 55) / 35) * 100);
+    setSubtitleProgress(100, translation);
+    return;
+  }
+
+  if (job.stage === "ready" || job.status === "succeeded") {
+    setSubtitleProgress(100, 100);
+  }
+}
+
+function clampProgress(value) {
+  return Math.max(0, Math.min(100, Math.round(value)));
 }
 
 function renderSegmentReview() {
@@ -796,7 +835,9 @@ function bindInstallPrompt() {
 function registerServiceWorker() {
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("sw.js");
+      navigator.serviceWorker.register(`sw.js?v=${APP_ASSET_VERSION}`, {
+        updateViaCache: "none"
+      });
     });
   }
 }

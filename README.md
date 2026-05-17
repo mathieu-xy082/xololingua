@@ -93,6 +93,7 @@ That is enough to run the app in the Android browser. To install it as a PWA, Ch
 - `index.html` contains the video workflow.
 - `styles.css` contains the responsive layout and visual design.
 - `app.js` contains file validation, language selection, processing state, subtitle filename handling, and SRT generation.
-- `local_service.py` contains the local MP4 audio extraction, segmentation, and transcription service for Ubuntu development.
+- `local_service.py` is the compatibility entrypoint for the local Ubuntu processing service.
+- `xololingua_service/` contains the service modules for runtime probing, media processing, transcription, translation, jobs, and HTTP endpoints.
 - `tests/` contains local service tests.
 - `manifest.webmanifest` and `sw.js` make the app installable and cacheable.

@@ -8,6 +8,7 @@ The project has not published a first version yet.
 
 ### Added
 
+- Added a local service endpoint to list subtitle jobs for diagnosis.
 - Created the initial installable PWA shell for Ubuntu and Android browsers.
 - Added MP4 drag-and-drop and device file browsing.
 - Added video metadata preview and 2 h 30 min maximum-duration validation.
@@ -44,6 +45,10 @@ The project has not published a first version yet.
 
 ### Changed
 
+- Batched Argos segment translation to reduce subprocess churn during subtitle generation.
+- Changed the default GPU Whisper model from `base` to `small`.
+- Switched subtitle translation to prefer the in-process Argos Python API and keep translators cached in memory.
+- Split the local service implementation into focused Python modules while keeping `python3 local_service.py` as the stable entrypoint.
 - Limited target-language activation to the first supported language-pair scope while keeping the broader language list visible.
 
 ### Known Limitations
