@@ -10,6 +10,48 @@ from pathlib import Path
 from . import runtime as whisper_runtime
 from .settings import TRANSCRIBE_WORKER, WHISPER_PYTHON, WORK_DIR
 
+
+def detect_audio_language(audio_path: Path, runtime: dict | None = None, job_id: str | None = None) -> dict:
+    selected_runtime = runtime or whisper_runtime.WHISPER_RUNTIME
+    worker_python = WHISPER_PYTHON
+    use_worker = (
+        selected_runtime.get("backend") == "faster-whisper"
+        and selected_runtime.get("available")
+        and Path(worker_python).exists()
+        and TRANSCRIBE_WORKER.exists()
+    )
+
+    if not use_worker:
+        raise RuntimeError("Language detection requires the faster-whisper worker runtime.")
+
+    return _detect_audio_language_worker(audio_path, worker_python, job_id, selected_runtime)
+
+
+def _detect_audio_language_worker(audio_path: Path, worker_python: str, job_id: str | None, runtime: dict) -> dict:
+    from .jobs import run_job_command
+
+    work_dir = WORK_DIR / f"detect-{uuid.uuid4().hex}"
+    work_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        out_file = work_dir / "language_out.json"
+        run_job_command(
+            [
+                worker_python,
+                str(TRANSCRIBE_WORKER),
+                "--detect-language",
+                "--audio", str(audio_path),
+                "--out", str(out_file),
+                "--model", runtime["model"],
+                "--device", runtime["device"],
+                "--compute-type", runtime["computeType"],
+            ],
+            job_id=job_id,
+        )
+        return json.loads(out_file.read_text(encoding="utf-8"))
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
 def transcribe_segments(audio_path: Path, segments: list[dict], language_code: str, progress_callback=None, job_id: str | None = None, runtime: dict | None = None) -> list[dict]:
     """Transcribe all segments in one worker invocation (model loaded once)."""
     selected_runtime = runtime or whisper_runtime.WHISPER_RUNTIME

@@ -24,9 +24,9 @@ from .jobs import (
     register_job_future,
     run_subtitle_job,
 )
-from .media import extract_audio, normalize_segments, normalize_text_segments, probe_duration, segment_audio
+from .media import extract_audio, extract_audio_clip, language_detection_windows, normalize_segments, normalize_text_segments, probe_duration, segment_audio
 from .settings import ARGOS_COMMAND, HOST, MAX_DURATION_SECONDS, PORT, WHISPER_CPU_COMPUTE_TYPE, WHISPER_CPU_MODEL, WHISPER_DEVICE_CHOICE, WORK_DIR
-from .transcription import transcribe_segments
+from .transcription import detect_audio_language, transcribe_segments
 from .translation import translate_segments, translation_backend_available
 
 class LocalServiceHandler(BaseHTTPRequestHandler):
@@ -76,6 +76,9 @@ class LocalServiceHandler(BaseHTTPRequestHandler):
         if self.path == "/api/extract-audio":
             self.handle_extract_audio()
             return
+        if self.path == "/api/detect-language":
+            self.handle_detect_language()
+            return
         if self.path == "/api/segment-audio":
             self.handle_segment_audio()
             return
@@ -96,14 +99,74 @@ class LocalServiceHandler(BaseHTTPRequestHandler):
         self.send_error_json(HTTPStatus.NOT_FOUND, "Unknown endpoint.")
 
     def handle_extract_audio(self) -> None:
-        if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
-            self.send_error_json(HTTPStatus.SERVICE_UNAVAILABLE, "ffmpeg and ffprobe are required.")
+        try:
+            extracted = self.extract_audio_upload()
+            self.send_json(extracted)
+        except ValueError as error:
+            self.send_error_json(HTTPStatus.BAD_REQUEST, str(error))
+        except RuntimeError as error:
+            self.send_error_json(HTTPStatus.SERVICE_UNAVAILABLE, str(error))
+        except subprocess.CalledProcessError as error:
+            self.send_error_json(HTTPStatus.BAD_REQUEST, error.stderr.strip() or "Audio extraction failed.")
+
+    def handle_detect_language(self) -> None:
+        if not whisper_runtime.WHISPER_RUNTIME.get("available"):
+            self.send_error_json(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                "Transcription engine not available. Install dependencies with PDM and start the service with `pdm run service`.",
+            )
             return
+
+        try:
+            uploaded = self.receive_video_upload()
+            detected = self.detect_language_from_video(
+                uploaded["uploadPath"],
+                uploaded["durationSeconds"],
+            )
+            self.send_json({
+                "originalFileName": uploaded["originalFileName"],
+                "durationSeconds": uploaded["durationSeconds"],
+                "languageCode": detected.get("languageCode", ""),
+                "languageProbability": detected.get("languageProbability", 0.0),
+                "languageVotes": detected.get("languageVotes", {}),
+            })
+        except ValueError as error:
+            self.send_error_json(HTTPStatus.BAD_REQUEST, str(error))
+        except RuntimeError as error:
+            self.send_error_json(HTTPStatus.SERVICE_UNAVAILABLE, str(error))
+        except subprocess.CalledProcessError as error:
+            self.send_error_json(HTTPStatus.BAD_REQUEST, error.stderr.strip() or "Language detection failed.")
+
+    def extract_audio_upload(self) -> dict:
+        uploaded = self.receive_video_upload()
+        upload_path = uploaded["uploadPath"]
+        audio_path = WORK_DIR / f"{uploaded['requestId']}.wav"
+        try:
+            extract_audio(upload_path, audio_path)
+            return {
+                "audioId": uploaded["requestId"],
+                "originalFileName": uploaded["originalFileName"],
+                "audioFileName": audio_path.name,
+                "audioPath": str(audio_path),
+                "audioSizeBytes": audio_path.stat().st_size,
+                "durationSeconds": uploaded["durationSeconds"],
+                "format": {
+                    "container": "wav",
+                    "codec": "pcm_s16le",
+                    "sampleRateHz": 16000,
+                    "channels": 1,
+                },
+            }
+        finally:
+            upload_path.unlink(missing_ok=True)
+
+    def receive_video_upload(self) -> dict:
+        if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
+            raise RuntimeError("ffmpeg and ffprobe are required.")
 
         content_type = self.headers.get("Content-Type", "")
         if "multipart/form-data" not in content_type:
-            self.send_error_json(HTTPStatus.BAD_REQUEST, "Expected multipart/form-data.")
-            return
+            raise ValueError("Expected multipart/form-data.")
 
         form = cgi.FieldStorage(
             fp=self.rfile,
@@ -115,50 +178,75 @@ class LocalServiceHandler(BaseHTTPRequestHandler):
         )
         item = form["video"] if "video" in form else None
         if item is None or not getattr(item, "filename", ""):
-            self.send_error_json(HTTPStatus.BAD_REQUEST, "Missing video file.")
-            return
+            raise ValueError("Missing video file.")
 
         original_name = Path(item.filename).name
         if not original_name.lower().endswith(".mp4"):
-            self.send_error_json(HTTPStatus.BAD_REQUEST, "Only MP4 files are supported.")
-            return
+            raise ValueError("Only MP4 files are supported.")
 
         WORK_DIR.mkdir(parents=True, exist_ok=True)
         request_id = uuid.uuid4().hex
         upload_path = WORK_DIR / f"{request_id}.mp4"
-        audio_path = WORK_DIR / f"{request_id}.wav"
+
+        with upload_path.open("wb") as destination:
+            shutil.copyfileobj(item.file, destination, length=1024 * 1024)
 
         try:
-            with upload_path.open("wb") as destination:
-                shutil.copyfileobj(item.file, destination, length=1024 * 1024)
-
             duration = probe_duration(upload_path)
-            if duration <= 0:
-                self.send_error_json(HTTPStatus.BAD_REQUEST, "Could not read video duration.")
-                return
-            if duration > MAX_DURATION_SECONDS:
-                self.send_error_json(HTTPStatus.BAD_REQUEST, "Video exceeds the 2 h 30 min limit.")
-                return
-
-            extract_audio(upload_path, audio_path)
-            self.send_json({
-                "audioId": request_id,
-                "originalFileName": original_name,
-                "audioFileName": audio_path.name,
-                "audioPath": str(audio_path),
-                "audioSizeBytes": audio_path.stat().st_size,
-                "durationSeconds": duration,
-                "format": {
-                    "container": "wav",
-                    "codec": "pcm_s16le",
-                    "sampleRateHz": 16000,
-                    "channels": 1,
-                },
-            })
-        except subprocess.CalledProcessError as error:
-            self.send_error_json(HTTPStatus.BAD_REQUEST, error.stderr.strip() or "Audio extraction failed.")
-        finally:
+        except Exception:
             upload_path.unlink(missing_ok=True)
+            raise
+        if duration <= 0:
+            upload_path.unlink(missing_ok=True)
+            raise ValueError("Could not read video duration.")
+        if duration > MAX_DURATION_SECONDS:
+            upload_path.unlink(missing_ok=True)
+            raise ValueError("Video exceeds the 2 h 30 min limit.")
+
+        return {
+            "requestId": request_id,
+            "originalFileName": original_name,
+            "uploadPath": upload_path,
+            "durationSeconds": duration,
+        }
+
+    def detect_language_from_video(self, video_path: Path, duration: float) -> dict:
+        runtime = dict(whisper_runtime.WHISPER_RUNTIME)
+        votes: dict[str, int] = {}
+        probabilities: dict[str, float] = {}
+        clips = language_detection_windows(duration)
+        if not clips:
+            raise ValueError("Could not build language detection samples.")
+
+        try:
+            for index, (start, clip_duration) in enumerate(clips, start=1):
+                clip_path = WORK_DIR / f"{video_path.stem}.detect-{index:02d}.wav"
+                try:
+                    extract_audio_clip(video_path, clip_path, start, clip_duration)
+                    result = detect_audio_language(clip_path, runtime)
+                finally:
+                    clip_path.unlink(missing_ok=True)
+
+                language_code = str(result.get("languageCode", "")).strip()
+                if not language_code:
+                    continue
+                votes[language_code] = votes.get(language_code, 0) + 1
+                probabilities[language_code] = probabilities.get(language_code, 0.0) + float(result.get("languageProbability", 0.0) or 0.0)
+        finally:
+            video_path.unlink(missing_ok=True)
+
+        if not votes:
+            raise RuntimeError("Language detection did not return any result.")
+
+        best_language = max(
+            votes,
+            key=lambda code: (votes[code], probabilities.get(code, 0.0)),
+        )
+        return {
+            "languageCode": best_language,
+            "languageProbability": probabilities.get(best_language, 0.0) / votes[best_language],
+            "languageVotes": votes,
+        }
 
     def handle_segment_audio(self) -> None:
         length = int(self.headers.get("Content-Length", "0"))

@@ -248,11 +248,17 @@ async function identifyLanguage() {
   resetSegmentation();
   render();
 
-  const detected = await identifyLanguageAdapter(state.videoFile);
-  state.sourceLanguage = detected;
-  els.languageStatus.textContent = "Main language identified.";
-  state.busyStep = "";
-  render();
+  try {
+    const detected = await identifyLanguageAdapter(state.videoFile);
+    state.extractedAudio = null;
+    state.sourceLanguage = detected.language;
+    els.languageStatus.textContent = "Main language identified.";
+  } catch (error) {
+    els.languageStatus.textContent = error.message;
+  } finally {
+    state.busyStep = "";
+    render();
+  }
 }
 
 async function segmentAudio() {
@@ -260,24 +266,30 @@ async function segmentAudio() {
 
   state.busyStep = "segmentation";
   resetSubtitle();
-  state.extractedAudio = null;
+  if (!state.extractedAudio) {
+    state.extractedAudio = null;
+  }
   state.segments = [];
-  els.segmentationStatus.textContent = "Extracting audio from MP4...";
+  els.segmentationStatus.textContent = state.extractedAudio
+    ? `Audio already extracted: ${formatBytes(state.extractedAudio.audioSizeBytes)} WAV. Segmenting speech audio...`
+    : "Extracting audio from MP4...";
   setProgress("segmentation", 0);
   render();
 
-  try {
-    state.extractedAudio = await extractAudioAdapter(state.videoFile, (progress) => {
-      setProgress("segmentation", progress);
-    });
-  } catch (extractionError) {
-    els.segmentationStatus.textContent = `${extractionError.message} Falling back to prototype segmentation.`;
-    const segments = await segmentAudioAdapter(state.duration, (progress) => {
-      const scaledProgress = 35 + Math.round(progress * 0.65);
-      setProgress("segmentation", scaledProgress);
-    });
-    finishSegmentation(segments);
-    return;
+  if (!state.extractedAudio) {
+    try {
+      state.extractedAudio = await extractAudioAdapter(state.videoFile, (progress) => {
+        setProgress("segmentation", progress);
+      });
+    } catch (extractionError) {
+      els.segmentationStatus.textContent = `${extractionError.message} Falling back to prototype segmentation.`;
+      const segments = await segmentAudioAdapter(state.duration, (progress) => {
+        const scaledProgress = 35 + Math.round(progress * 0.65);
+        setProgress("segmentation", scaledProgress);
+      });
+      finishSegmentation(segments);
+      return;
+    }
   }
 
   els.segmentationStatus.textContent = `Audio extracted: ${formatBytes(state.extractedAudio.audioSizeBytes)} WAV. Segmenting speech audio...`;
@@ -481,12 +493,31 @@ async function pollSubtitleJob(jobId, onProgress) {
 }
 
 async function identifyLanguageAdapter(file) {
-  await delay(900);
+  const health = await fetch(`${LOCAL_SERVICE_URL}/api/health`);
+  if (!health.ok) {
+    throw new Error("Local audio service is not available for language detection.");
+  }
 
-  const lowerName = file.name.toLowerCase();
-  const match = languages.find((language) => lowerName.includes(language.name.toLowerCase()) || lowerName.includes(`.${language.code}.`));
+  const formData = new FormData();
+  formData.append("video", file, file.name);
+  const response = await fetch(`${LOCAL_SERVICE_URL}/api/detect-language`, {
+    method: "POST",
+    body: formData
+  });
+  const payload = await response.json();
 
-  return match || languages.find((language) => language.code === navigator.language.slice(0, 2)) || languages[0];
+  if (!response.ok) {
+    throw new Error(payload.error || "Language detection failed.");
+  }
+
+  const language = getLanguage(payload.languageCode);
+  if (!language) {
+    throw new Error(`Detected unsupported language code: ${payload.languageCode || "unknown"}.`);
+  }
+
+  return {
+    language,
+  };
 }
 
 async function segmentAudioAdapter(duration, onProgress) {
