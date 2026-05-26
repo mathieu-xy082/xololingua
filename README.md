@@ -203,3 +203,34 @@ Then open <http://localhost:4173> in Chrome on Android. Using `localhost` also p
 - Translation is limited to Argos language-pair packages installed on the service host.
 - There is no hosted processing backend; the browser must be able to reach the local service.
 - Browser UI tests and representative end-to-end media fixtures are still planned.
+
+## TODO — Migration vers une architecture 100 % client
+
+L'objectif est d'éliminer la dépendance au service Python local (`local_service.py`) afin que la PWA fonctionne sans aucune installation, directement dans le navigateur, et soit déployable sur un hébergeur statique.
+
+### Étape 1 — Extraction audio côté client
+- Remplacer l'appel `POST /api/extract-audio` (ffmpeg Python) par une extraction dans le navigateur
+- Utiliser la **WebCodecs API** (native, sans dépendance) pour décoder la vidéo MP4 et extraire les trames audio, ou **`ffmpeg.wasm`** comme fallback pour les formats non couverts
+- Produire un buffer PCM mono 16 kHz exploitable par les étapes suivantes
+
+### Étape 2 — Détection d'activité vocale et découpage en segments (VAD)
+- Remplacer l'appel `POST /api/segment-audio` (détection de silence ffmpeg) par une VAD dans le navigateur
+- Intégrer **Silero VAD** via [`@ricky0123/vad-web`](https://github.com/ricky0123/vad) (WASM) ou équivalent
+- Produire la liste de segments `{start, end}` sans aucun serveur
+
+### Étape 3 — Transcription locale via WebGPU avec fallback WASM/CPU
+- Remplacer la transcription `faster-whisper` (subprocess Python) par [`transformers.js`](https://huggingface.co/docs/transformers.js) (Xenova/Hugging Face)
+- Charger un modèle Whisper directement dans un **Web Worker**
+- Utiliser le backend **WebGPU** si disponible, WASM/CPU sinon (géré automatiquement par `transformers.js`)
+- Couvrir également la détection de la langue source (actuellement `POST /api/detect-language`)
+
+### Étape 4 — Traduction locale ou cloud selon le contexte
+- **Option locale** : charger des modèles Helsinki-NLP via `transformers.js` dans le navigateur (aucun serveur)
+- **Option cloud** : permettre à l'utilisateur de configurer un service externe (ex. LibreTranslate, DeepL) pour les paires de langues non couvertes localement
+
+### Étape 5 — Suppression ou mise en mode optionnel du service Python
+- Une fois les étapes 1 à 4 implémentées, le service Python (`local_service.py`, `xololingua_service/`) devient optionnel
+- Conserver le service comme backend avancé (GPU dédié, modèles plus grands) mais ne plus en faire un prérequis
+- Déployer la PWA sur un hébergeur statique (GitHub Pages, Netlify, etc.)
+
+
