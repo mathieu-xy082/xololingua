@@ -1,60 +1,117 @@
 # XoloLingua
 
-XoloLingua is an installable Progressive Web App for preparing translated `.srt` subtitles from MP4 videos. It runs in a browser on Ubuntu and Android and can be installed from Chrome or Chromium as a standalone app.
+XoloLingua is a local-first Progressive Web App that creates translated `.srt` subtitles from MP4 videos. The browser provides the workflow and subtitle download, while a Python service extracts and segments audio, identifies the spoken language, transcribes speech, and translates the resulting text.
 
-The current implementation provides the browser workflow, MP4 validation, 2 h 30 min duration validation, target language selection, progress tracking, subtitle filename handling, and valid SRT file generation. The language identification, speech segmentation, and translation functions are adapter functions in `app.js`; they currently run in local prototype mode and are ready to be replaced by a real speech/translation backend.
+The application is currently under development and has not published its first release. It targets Chrome or Chromium on Ubuntu and can also run on Android through USB port forwarding.
 
-## Run Locally
+## Features
 
-Install PDM if it is not already available:
+- Drag-and-drop MP4 selection and video preview.
+- Validation of file type and the 2 h 30 min duration limit.
+- Whisper-based spoken-language identification and transcription, with CUDA support and a CPU fallback.
+- Silence-based audio segmentation with a review of segment timings.
+- Offline translation using locally installed Argos Translate language packages.
+- Asynchronous subtitle jobs with progress reporting and cancellation.
+- Downloadable, translated SRT output.
+- Installable and cacheable PWA shell.
+
+## Screenshots
+
+<p align="center">
+  <img src="resources/im0_welcome_screen.png" alt="XoloLingua welcome screen" width="720">
+</p>
+
+<table>
+  <tr>
+    <td><img src="resources/im1_step1_find_language.png" alt="Step 1: identify the video's spoken language"></td>
+    <td><img src="resources/im2_step2_select_target.png" alt="Step 2: select the target language"></td>
+  </tr>
+  <tr>
+    <td align="center"><em>Identify the spoken language</em></td>
+    <td align="center"><em>Select a target language</em></td>
+  </tr>
+  <tr>
+    <td><img src="resources/im3_step3_audio_segmentation.png" alt="Step 3: segment the video's audio"></td>
+    <td><img src="resources/im4_step4_speech_to_text.png" alt="Step 4: transcribe speech to text"></td>
+  </tr>
+  <tr>
+    <td align="center"><em>Segment and review the audio</em></td>
+    <td align="center"><em>Transcribe the speech</em></td>
+  </tr>
+  <tr>
+    <td><img src="resources/im5_step4_translation.png" alt="Translate the transcribed segments"></td>
+    <td><img src="resources/im6_output_screen.png" alt="Download the generated SRT subtitle file"></td>
+  </tr>
+  <tr>
+    <td align="center"><em>Translate the segments</em></td>
+    <td align="center"><em>Download the SRT file</em></td>
+  </tr>
+</table>
+
+## Technology Stack
+
+| Area | Technology |
+| --- | --- |
+| Web application | HTML5, CSS, and vanilla JavaScript |
+| PWA support | Web App Manifest and Service Worker |
+| Local API | Python 3.12 standard-library HTTP server |
+| Media processing | FFmpeg and FFprobe |
+| Speech recognition | `faster-whisper` / CTranslate2, on CUDA or CPU |
+| Translation | Argos Translate, using its Python API with a CLI fallback |
+| Packaging and commands | PDM |
+| Tests | Python `unittest` |
+
+## Architecture
+
+```text
+Chrome / Chromium (PWA, port 4173)
+        |
+        | HTTP / JSON and MP4 upload
+        v
+Local Python service (port 8765)
+        |
+        +-- FFmpeg: audio extraction and segmentation
+        +-- faster-whisper: language detection and transcription
+        +-- Argos Translate: offline segment translation
+        +-- SRT generation returned to the browser
+```
+
+Processing takes place on the machine running the local service. Uploaded media and extracted audio are stored temporarily under `/tmp/xololingua` rather than sent to a hosted XoloLingua backend.
+
+## Build and Run Locally
+
+### Prerequisites
+
+- Ubuntu with Python 3.12 or newer.
+- Chrome or Chromium.
+- `ffmpeg` and `ffprobe`.
+- PDM, installed through `pipx`.
+- Optional: an NVIDIA CUDA-capable GPU. CPU transcription is supported but slower.
+
+Install the system tools on Ubuntu:
 
 ```bash
+sudo apt update
+sudo apt install ffmpeg pipx
+pipx ensurepath
 pipx install pdm
 ```
 
-Then install the project dependencies from this directory:
+After `pipx ensurepath`, start a new shell if `pdm` is not found.
+
+### Install the Project
 
 ```bash
+git clone https://gitlab.com/android-app-games/xololingua.git
+cd xololingua
 pdm install
 ```
 
-Start the browser app:
+PDM creates the project environment and installs `faster-whisper`, Argos Translate, and the required Python dependencies from `pyproject.toml` and `pdm.lock`.
 
-```bash
-pdm run web
-```
+### Install Translation Models
 
-Then open:
-
-```text
-http://localhost:4173
-```
-
-For audio extraction and first-pass silence-based segmentation, start the local processing service in a second terminal:
-
-```bash
-pdm run service
-```
-
-The service listens on:
-
-```text
-http://127.0.0.1:8765
-```
-
-It requires `ffmpeg` and `ffprobe`, which are available from the Ubuntu package `ffmpeg`. Extracted audio is normalized to mono 16 kHz PCM WAV under `/tmp/xololingua`, then segmented from detected silence boundaries.
-
-Transcription uses `faster-whisper` from the PDM environment. The service probes CUDA at startup, defaults to the `base` model on GPU, and keeps a CPU `base/int8` fallback. You can override the selected runtime:
-
-```bash
-XOLOLINGUA_WHISPER_DEVICE=cpu pdm run service
-XOLOLINGUA_WHISPER_GPU_MODEL=medium pdm run service
-XOLOLINGUA_WHISPER_GPU_COMPUTE_TYPE=int8_float16 pdm run service
-```
-
-If the PDM-managed transcription dependencies are unavailable, subtitle generation stops with a setup error instead of generating fake text.
-
-Translation uses Argos Translate through the `argos-translate` CLI installed in the PDM environment. Install the language-pair packages needed by the MVP:
+Argos translation packages are installed separately. For the French/English pair:
 
 ```bash
 pdm run argospm update
@@ -62,38 +119,77 @@ pdm run argospm install translate-fr_en
 pdm run argospm install translate-en_fr
 ```
 
-Subtitle generation runs as an asynchronous local-service job. The browser starts a job, polls `/api/subtitle-jobs/<job-id>`, and stays responsive while the service transcribes and translates segments in the background. Whisper is kept sequential inside each job to avoid heavy concurrent model processes; translation can use a small bounded worker pool because segment translation is independent. Override the translation worker count with:
+Install the equivalent Argos packages for any other language pairs you want to expose. The application reads the installed pairs from the local service.
+
+### Start the Application
+
+Start the processing service:
 
 ```bash
-XOLOLINGUA_TRANSLATION_WORKERS=2 pdm run service
+pdm run service
 ```
 
-Run the local service tests with:
+In a second terminal, start the web application:
+
+```bash
+pdm run web
+```
+
+Open <http://localhost:4173>. The local service health information should appear at the top of the application; its API listens on <http://127.0.0.1:8765>.
+
+### Configure Whisper
+
+The service probes CUDA at startup and falls back to the CPU when necessary. Defaults are `small/float16` on the GPU and `base/int8` on the CPU. Override them with environment variables:
+
+```bash
+XOLOLINGUA_WHISPER_DEVICE=cpu pdm run service
+XOLOLINGUA_WHISPER_GPU_MODEL=medium pdm run service
+XOLOLINGUA_WHISPER_GPU_COMPUTE_TYPE=int8_float16 pdm run service
+XOLOLINGUA_WHISPER_CPU_MODEL=small pdm run service
+```
+
+Translation uses two workers by default. Adjust the bounded worker pool when needed:
+
+```bash
+XOLOLINGUA_TRANSLATION_WORKERS=1 pdm run service
+```
+
+## Run the Tests
+
+Run the unit and HTTP integration tests:
 
 ```bash
 pdm run test
 ```
 
-On Android, connect the phone to the same network as the Ubuntu machine and open:
+Tests that require FFmpeg are skipped automatically when `ffmpeg` or `ffprobe` is unavailable. Whisper and Argos are mocked in the HTTP pipeline test, so the test suite does not require a GPU or downloaded language models.
 
-```text
-http://<ubuntu-machine-ip>:4173
+## Android
+
+The frontend currently addresses the processing service at `127.0.0.1:8765`. For the complete workflow on an Android device, connect it over USB, enable USB debugging, and forward both application ports:
+
+```bash
+adb reverse tcp:4173 tcp:4173
+adb reverse tcp:8765 tcp:8765
 ```
 
-That is enough to run the app in the Android browser. To install it as a PWA, Chrome needs a secure context. Use one of these options:
+Then open <http://localhost:4173> in Chrome on Android. Using `localhost` also provides the secure context required to install the PWA. Merely opening the Ubuntu machine's LAN address will display the frontend but will not connect it to the processing service with the current fixed service URL.
 
-- Host it through HTTPS.
-- Connect the phone over USB and forward the port with `adb reverse tcp:4173 tcp:4173`, then open `http://localhost:4173` on the phone.
-- Use `localhost` directly on Ubuntu.
+## Repository Layout
 
-## Files
+- `index.html`, `styles.css`, and `app.js`: browser application and workflow.
+- `manifest.webmanifest` and `sw.js`: PWA installation and caching.
+- `local_service.py`: stable entrypoint for the local processing service.
+- `xololingua_service/`: HTTP API, media processing, runtime selection, transcription, translation, and background jobs.
+- `transcribe_worker.py`: isolated faster-whisper worker process.
+- `tests/`: service unit and HTTP integration tests.
+- `resources/`: README screenshots.
+- `CHANGELOG.md`: unreleased product changes.
+- `TODO.md`: remaining implementation and validation work.
 
-- `CHANGELOG.md` tracks unreleased and future version changes.
-- `TODO.md` tracks implementation and test work.
-- `index.html` contains the video workflow.
-- `styles.css` contains the responsive layout and visual design.
-- `app.js` contains file validation, language selection, processing state, subtitle filename handling, and SRT generation.
-- `local_service.py` is the compatibility entrypoint for the local Ubuntu processing service.
-- `xololingua_service/` contains the service modules for runtime probing, media processing, transcription, translation, jobs, and HTTP endpoints.
-- `tests/` contains local service tests.
-- `manifest.webmanifest` and `sw.js` make the app installable and cacheable.
+## Current Limitations
+
+- Speech segmentation is based on silence detection rather than a speech-aware model.
+- Translation is limited to Argos language-pair packages installed on the service host.
+- There is no hosted processing backend; the browser must be able to reach the local service.
+- Browser UI tests and representative end-to-end media fixtures are still planned.
