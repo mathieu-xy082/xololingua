@@ -3,3 +3,4 @@ __pycache__/
 .pytest_cache/
 .venv/
 .pdm-python
+.tmp_external_resources
