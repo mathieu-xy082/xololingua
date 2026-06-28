@@ -59,7 +59,61 @@ class GetSupportedPairsTests(unittest.TestCase):
             {"source": "en", "target": "fr"},
             {"source": "en", "target": "de"},
             {"source": "fr", "target": "en"},
+            {"source": "fr", "target": "de"},
         ])
+
+    def test_get_supported_pairs_includes_english_pivot_pairs(self):
+        def make_lang(code, targets):
+            lang = mock.MagicMock()
+            lang.code = code
+            lang.translations_from = []
+            for target in targets:
+                tr = mock.MagicMock()
+                tr.from_lang.code = code
+                tr.to_lang.code = target
+                lang.translations_from.append(tr)
+            return lang
+
+        langs = [
+            make_lang("fr", ["en"]),
+            make_lang("en", ["ru", "uk"]),
+        ]
+
+        with mock.patch.object(translation, "_argos_translate") as argos_mock:
+            argos_mock.get_installed_languages.return_value = langs
+            result = translation.get_supported_pairs()
+
+        self.assertCountEqual(result, [
+            {"source": "fr", "target": "en"},
+            {"source": "en", "target": "ru"},
+            {"source": "en", "target": "uk"},
+            {"source": "fr", "target": "ru"},
+            {"source": "fr", "target": "uk"},
+        ])
+
+    def test_argos_python_translator_can_translate_through_english_pivot(self):
+        fr = mock.MagicMock(code="fr")
+        en = mock.MagicMock(code="en")
+        ru = mock.MagicMock(code="ru")
+
+        fr_en = mock.MagicMock()
+        fr_en.translate.return_value = "Hello."
+        en_ru = mock.MagicMock()
+        en_ru.translate.return_value = "Привет."
+
+        fr.get_translation.side_effect = lambda target: fr_en if target.code == "en" else None
+        en.get_translation.side_effect = lambda target: en_ru if target.code == "ru" else None
+        ru.get_translation.return_value = None
+
+        with mock.patch.object(translation, "_argos_translate") as argos_mock:
+            argos_mock.get_installed_languages.return_value = [fr, en, ru]
+            translator = translation._build_argos_python_translator("fr", "ru")
+
+        if translator is None:
+            self.fail("Expected an English-pivot translator.")
+        self.assertEqual(translator("Bonjour.", "fr", "ru"), "Привет.")
+        fr_en.translate.assert_called_once_with("Bonjour.")
+        en_ru.translate.assert_called_once_with("Hello.")
 
 
 class TranslateSegmentsTests(unittest.TestCase):

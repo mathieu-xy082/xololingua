@@ -10,6 +10,7 @@ from .settings import ARGOS_COMMAND
 
 
 TRANSLATION_BATCH_SIZE = 8
+PIVOT_LANGUAGE = "en"
 _TRANSLATION_CACHE_LOCK = threading.Lock()
 _TRANSLATION_CACHE: dict[tuple[str, str], object] = {}
 
@@ -106,17 +107,30 @@ def translation_backend_available() -> bool:
 
 
 def get_supported_pairs() -> list[dict[str, str]]:
-    """Return all translation pairs available from the installed Argos packages."""
+    """Return direct and English-pivot translation pairs available from Argos."""
     if _argos_translate is None:
         return []
-    pairs = []
+
+    direct_pairs = set()
     for language in _argos_translate.get_installed_languages():
         for translation in language.translations_from:
             source = translation.from_lang.code
             target = translation.to_lang.code
             if source != target:
-                pairs.append({"source": source, "target": target})
-    return pairs
+                direct_pairs.add((source, target))
+
+    pairs = set(direct_pairs)
+    into_pivot = {source for source, target in direct_pairs if target == PIVOT_LANGUAGE}
+    from_pivot = {target for source, target in direct_pairs if source == PIVOT_LANGUAGE}
+    for source in into_pivot:
+        for target in from_pivot:
+            if source != target:
+                pairs.add((source, target))
+
+    return [
+        {"source": source, "target": target}
+        for source, target in sorted(pairs)
+    ]
 
 
 def get_translator(source_language: str, target_language: str):
@@ -135,6 +149,26 @@ def get_translator(source_language: str, target_language: str):
 
 
 def _build_argos_python_translator(source_language: str, target_language: str):
+    direct_translator = _build_direct_argos_python_translator(source_language, target_language)
+    if direct_translator is not None:
+        return direct_translator
+
+    if source_language == PIVOT_LANGUAGE or target_language == PIVOT_LANGUAGE:
+        return None
+
+    source_to_pivot = _build_direct_argos_python_translator(source_language, PIVOT_LANGUAGE)
+    pivot_to_target = _build_direct_argos_python_translator(PIVOT_LANGUAGE, target_language)
+    if source_to_pivot is None or pivot_to_target is None:
+        return None
+
+    def run(text: str, _source_language: str, _target_language: str, job_id: str | None = None) -> str:
+        pivot_text = source_to_pivot(text, source_language, PIVOT_LANGUAGE, job_id)
+        return pivot_to_target(pivot_text, PIVOT_LANGUAGE, target_language, job_id)
+
+    return run
+
+
+def _build_direct_argos_python_translator(source_language: str, target_language: str):
     if _argos_translate is None:
         return None
 
