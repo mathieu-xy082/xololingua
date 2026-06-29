@@ -41,16 +41,25 @@ class TargetLanguageBacklogTests(unittest.TestCase):
 
         self.assertSetEqual(documented_targets, catalog_targets)
 
-    def test_missing_languages_use_expected_english_pivot_package(self):
+    def _missing_language_rows(self) -> list[list[str]]:
         backlog = BACKLOG.read_text(encoding="utf-8")
         section = backlog.split("## Missing target languages", 1)[1].split("\n## ", 1)[0]
+        return [
+            [cell.strip() for cell in line.strip("|").split("|")]
+            for line in section.splitlines()
+            if line.startswith("|") and "---" not in line and "Priority" not in line
+        ]
 
-        for line in section.splitlines():
-            if not line.startswith("|") or "---" in line or "Priority" in line:
-                continue
-            cells = [cell.strip() for cell in line.strip("|").split("|")]
-            code = cells[1]
-            expected_package = cells[3].strip("`")
+    def test_missing_language_priorities_are_contiguous(self):
+        priorities = [int(row[0]) for row in self._missing_language_rows()]
+        expected_priorities = list(range(1, len(priorities) + 1))
+
+        self.assertEqual(priorities, expected_priorities)
+
+    def test_missing_languages_use_expected_english_pivot_package(self):
+        for row in self._missing_language_rows():
+            code = row[1]
+            expected_package = row[3].strip("`")
             self.assertEqual(expected_package, f"translate-en_{code}")
 
 
