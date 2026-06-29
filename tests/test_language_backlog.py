@@ -16,7 +16,20 @@ ROOT = Path(__file__).resolve().parents[1]
 APP_JS = ROOT / "app.js"
 BACKLOG = ROOT / "docs" / "missing-target-languages.md"
 SOURCE_LANGUAGE = "fr"
-PREPARED_TARGETS = {"ru", "uk", "zh", "de", "es", "hi", "ja", "ar"}
+PREPARED_TARGETS = {
+    "ru",
+    "uk",
+    "zh",
+    "de",
+    "es",
+    "hi",
+    "ja",
+    "ar",
+    "bn",
+    "pt",
+    "ur",
+    "id",
+}
 
 
 class TargetLanguageBacklogTests(unittest.TestCase):
