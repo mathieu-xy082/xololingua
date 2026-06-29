@@ -62,7 +62,7 @@ class GetSupportedPairsTests(unittest.TestCase):
             {"source": "fr", "target": "de"},
         ])
 
-    def test_get_supported_pairs_includes_english_pivot_pairs(self):
+    def test_get_supported_pairs_includes_priority_english_pivot_pairs(self):
         def make_lang(code, targets):
             lang = mock.MagicMock()
             lang.code = code
@@ -76,7 +76,7 @@ class GetSupportedPairsTests(unittest.TestCase):
 
         langs = [
             make_lang("fr", ["en"]),
-            make_lang("en", ["ru", "uk"]),
+            make_lang("en", ["ru", "uk", "zh", "de"]),
         ]
 
         with mock.patch.object(translation, "_argos_translate") as argos_mock:
@@ -87,8 +87,12 @@ class GetSupportedPairsTests(unittest.TestCase):
             {"source": "fr", "target": "en"},
             {"source": "en", "target": "ru"},
             {"source": "en", "target": "uk"},
+            {"source": "en", "target": "zh"},
+            {"source": "en", "target": "de"},
             {"source": "fr", "target": "ru"},
             {"source": "fr", "target": "uk"},
+            {"source": "fr", "target": "zh"},
+            {"source": "fr", "target": "de"},
         ])
 
     def test_argos_python_translator_can_translate_through_english_pivot(self):

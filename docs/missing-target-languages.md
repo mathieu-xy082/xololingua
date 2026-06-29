@@ -18,6 +18,14 @@ Update rule: when a language is added and the end-to-end video workflow succeeds
   - English to target translation (`en -> <code>`)
   - generated SRT download from the browser workflow
 
+## Prepared package validations
+
+These languages are still in the missing-language table until the full browser video workflow generates and verifies a `.srt`, but their Argos package discovery/install and French-to-target pivot-pair exposure have been checked locally.
+
+| Date | Codes | Expected pivot packages | Local validation |
+| --- | --- | --- | --- |
+| 2026-06-29 | ru, uk, zh, de | `translate-en_ru`, `translate-en_uk`, `translate-en_zh`, `translate-en_de` | `argospm search` found all four packages; `argospm install` completed for all four; `translation.get_supported_pairs()` exposes `fr -> ru`, `fr -> uk`, `fr -> zh`, and `fr -> de` via the English pivot. |
+
 ## Already available for the reference French video
 
 | Code | Language | Notes |
