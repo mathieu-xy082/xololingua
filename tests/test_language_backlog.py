@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 APP_JS = ROOT / "app.js"
 BACKLOG = ROOT / "docs" / "missing-target-languages.md"
 SOURCE_LANGUAGE = "fr"
+PREPARED_TARGETS = {"ru", "uk", "zh", "de", "es", "hi", "ja", "ar"}
 
 
 class TargetLanguageBacklogTests(unittest.TestCase):
@@ -61,6 +62,18 @@ class TargetLanguageBacklogTests(unittest.TestCase):
             code = row[1]
             expected_package = row[3].strip("`")
             self.assertEqual(expected_package, f"translate-en_{code}")
+
+    def test_prepared_targets_stay_in_backlog_until_e2e_validation(self):
+        missing_codes = {row[1] for row in self._missing_language_rows()}
+
+        self.assertLessEqual(PREPARED_TARGETS, missing_codes)
+
+    def test_prepared_validation_rows_document_expected_packages(self):
+        backlog = BACKLOG.read_text(encoding="utf-8")
+        section = backlog.split("## Prepared package validations", 1)[1].split("\n## ", 1)[0]
+
+        for code in PREPARED_TARGETS:
+            self.assertIn(f"translate-en_{code}", section)
 
 
 if __name__ == "__main__":
