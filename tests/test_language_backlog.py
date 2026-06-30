@@ -38,6 +38,7 @@ PACKAGE_INDEX_BLOCKED_TARGETS = {
     "te",
     "ta",
 }
+LATEST_PRIORITY_BATCH = ["mr", "te", "tr", "ta", "it"]
 
 
 class TargetLanguageBacklogTests(unittest.TestCase):
@@ -107,6 +108,16 @@ class TargetLanguageBacklogTests(unittest.TestCase):
 
         for code in PACKAGE_INDEX_BLOCKED_TARGETS:
             self.assertIn(f"translate-en_{code}", section)
+
+    def test_latest_priority_batch_documents_package_state(self):
+        backlog = BACKLOG.read_text(encoding="utf-8")
+        section = backlog.split("## Latest priority-batch probe", 1)[1].split("\n## ", 1)[0]
+
+        for code in LATEST_PRIORITY_BATCH:
+            self.assertIn(f"translate-en_{code}", section)
+
+        self.assertIn("no English-pivot packages for `mr`, `te`, or `ta`", section)
+        self.assertIn("expose `en -> tr`, `en -> it`, `fr -> tr`, and `fr -> it`", section)
 
 if __name__ == "__main__":
     unittest.main()

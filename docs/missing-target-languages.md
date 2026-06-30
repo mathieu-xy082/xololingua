@@ -29,6 +29,14 @@ These languages are still in the missing-language table until the full browser v
 | 2026-06-29 | bn, pt, ur, id | `translate-en_bn`, `translate-en_pt`, `translate-en_ur`, `translate-en_id` | Argos package index exposes all four packages; local install completed for all four with `AvailablePackage.install()`; installed direct pairs expose `en -> bn`, `en -> pt`, `en -> ur`, and `en -> id`, and the English-pivot composition exposes `fr -> bn`, `fr -> pt`, `fr -> ur`, and `fr -> id`. Full browser video `.srt` validation is still pending before removal from the missing-language table. |
 | 2026-06-30 | sw, tr, it | `translate-en_sw`, `translate-en_tr`, `translate-en_it` | Argos package index exposes all three packages; local install completed for all three with `AvailablePackage.install()`; installed direct pairs expose `en -> sw`, `en -> tr`, and `en -> it`, and the English-pivot composition exposes `fr -> sw`, `fr -> tr`, and `fr -> it`. Full browser video `.srt` validation is still pending before removal from the missing-language table. |
 
+## Latest priority-batch probe
+
+This table records the most recent backlog slice checked by the scheduled language-validation job. It does not remove languages from the missing-language table; only the browser video workflow can do that after a verified `.srt` is generated.
+
+| Date | Codes | Expected pivot packages | Local validation |
+| --- | --- | --- | --- |
+| 2026-06-30 | mr, te, tr, ta, it | `translate-en_mr`, `translate-en_te`, `translate-en_tr`, `translate-en_ta`, `translate-en_it` | `argostranslate.package.update_package_index()` completed. The package index still has no English-pivot packages for `mr`, `te`, or `ta`; locally installed packages expose `en -> tr`, `en -> it`, `fr -> tr`, and `fr -> it`, so Turkish and Italian remain prepared but not E2E-validated. |
+
 ## Package-index blockers
 
 These languages remain in priority order, but the current Argos package index does not expose the expected English-pivot package yet.
