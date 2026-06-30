@@ -7,6 +7,7 @@ progressively.
 
 from __future__ import annotations
 
+import os
 import re
 import unittest
 from pathlib import Path
@@ -38,7 +39,8 @@ PACKAGE_INDEX_BLOCKED_TARGETS = {
     "te",
     "ta",
 }
-LATEST_PRIORITY_BATCH = ["mr", "te", "tr", "ta", "it"]
+LATEST_PRIORITY_BATCH = ["ru", "uk", "zh", "de"]
+LOCAL_ARGOS_VALIDATION_ENV = "XOLOLINGUA_VALIDATE_LOCAL_ARGOS"
 
 
 class TargetLanguageBacklogTests(unittest.TestCase):
@@ -115,9 +117,27 @@ class TargetLanguageBacklogTests(unittest.TestCase):
 
         for code in LATEST_PRIORITY_BATCH:
             self.assertIn(f"translate-en_{code}", section)
+            self.assertIn(f"fr -> {code}", section)
 
-        self.assertIn("no English-pivot packages for `mr`, `te`, or `ta`", section)
-        self.assertIn("expose `en -> tr`, `en -> it`, `fr -> tr`, and `fr -> it`", section)
+        self.assertIn("package index exposes all four expected packages", section)
+        self.assertIn("local Argos validation test", section)
+
+    @unittest.skipUnless(
+        os.environ.get(LOCAL_ARGOS_VALIDATION_ENV) == "1",
+        f"set {LOCAL_ARGOS_VALIDATION_ENV}=1 to check locally installed Argos packages",
+    )
+    def test_first_priority_batch_is_exposed_by_local_argos_when_enabled(self):
+        from xololingua_service import translation
+
+        pairs = {
+            (pair["source"], pair["target"])
+            for pair in translation.get_supported_pairs()
+        }
+
+        for code in LATEST_PRIORITY_BATCH:
+            with self.subTest(code=code):
+                self.assertIn(("en", code), pairs)
+                self.assertIn(("fr", code), pairs)
 
 if __name__ == "__main__":
     unittest.main()
