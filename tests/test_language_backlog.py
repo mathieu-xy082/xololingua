@@ -42,7 +42,7 @@ PACKAGE_INDEX_BLOCKED_TARGETS = {
 LATEST_PRIORITY_BATCH = ["sw", "mr", "te", "tr", "ta", "it"]
 LATEST_PRIORITY_AVAILABLE_TARGETS = {"sw", "tr", "it"}
 LATEST_PRIORITY_PACKAGE_INDEX_BLOCKED_TARGETS = {"mr", "te", "ta"}
-TRANSLATOR_SMOKE_TARGETS = {"ru", "uk", "zh", "de"}
+TRANSLATOR_SMOKE_TARGETS = {"ru", "uk", "zh", "de", "es", "hi", "ja", "ar"}
 LOCAL_ARGOS_VALIDATION_ENV = "XOLOLINGUA_VALIDATE_LOCAL_ARGOS"
 
 
@@ -166,7 +166,7 @@ class TargetLanguageBacklogTests(unittest.TestCase):
         os.environ.get(LOCAL_ARGOS_VALIDATION_ENV) == "1",
         f"set {LOCAL_ARGOS_VALIDATION_ENV}=1 to smoke-test locally installed Argos translators",
     )
-    def test_first_four_priority_targets_translate_through_english_pivot_when_enabled(self):
+    def test_smoke_validated_priority_targets_translate_through_english_pivot_when_enabled(self):
         from xololingua_service import translation
 
         source_text = "Bonjour tout le monde."
