@@ -1,3 +1,4 @@
+.tmp_external_resources
 __pycache__/
 *.py[cod]
 .pytest_cache/

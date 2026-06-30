@@ -1,7 +1,10 @@
+import { createBackendClient } from "./frontend/backend_client.js";
+
 const MAX_DURATION_SECONDS = 2.5 * 60 * 60;
 const SEGMENT_SECONDS = 12;
 const LOCAL_SERVICE_URL = "http://127.0.0.1:8765";
 const APP_ASSET_VERSION = "2026-05-17-3";
+const backendClient = createBackendClient({ baseUrl: LOCAL_SERVICE_URL });
 
 const languages = [
   { code: "en", name: "English" },
@@ -329,29 +332,7 @@ async function segmentAudio() {
 }
 
 async function extractAudioAdapter(file, onProgress) {
-  onProgress(5);
-
-  const health = await fetch(`${LOCAL_SERVICE_URL}/api/health`);
-  if (!health.ok) {
-    throw new Error("Local audio service is not available.");
-  }
-
-  const formData = new FormData();
-  formData.append("video", file, file.name);
-  onProgress(15);
-
-  const response = await fetch(`${LOCAL_SERVICE_URL}/api/extract-audio`, {
-    method: "POST",
-    body: formData
-  });
-  const payload = await response.json();
-
-  if (!response.ok) {
-    throw new Error(payload.error || "Audio extraction failed.");
-  }
-
-  onProgress(35);
-  return payload;
+  return backendClient.extractAudio(file, onProgress);
 }
 
 async function serviceSegmentAudioAdapter(audioId, onProgress) {
