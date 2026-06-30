@@ -35,7 +35,7 @@ This table records the most recent backlog slice checked by the scheduled langua
 
 | Date | Codes | Expected pivot packages | Local validation |
 | --- | --- | --- | --- |
-| 2026-06-30 | ru, uk, zh, de | `translate-en_ru`, `translate-en_uk`, `translate-en_zh`, `translate-en_de` | `argostranslate.package.update_package_index()` completed; the package index exposes all four expected packages. The local Argos validation test confirms installed direct pairs `en -> ru`, `en -> uk`, `en -> zh`, and `en -> de`, plus English-pivot composition for `fr -> ru`, `fr -> uk`, `fr -> zh`, and `fr -> de`. Full browser video `.srt` validation is still pending before removal from the missing-language table. |
+| 2026-06-30 | sw, mr, te, tr, ta, it | `translate-en_sw`, `translate-en_mr`, `translate-en_te`, `translate-en_tr`, `translate-en_ta`, `translate-en_it` | `argostranslate.package.update_package_index()` completed. The package index exposes `translate-en_sw`, `translate-en_tr`, and `translate-en_it`; those packages are installed locally and `translation.get_supported_pairs()` exposes direct pairs `en -> sw`, `en -> tr`, and `en -> it`, plus English-pivot composition for `fr -> sw`, `fr -> tr`, and `fr -> it`. The same package-index probe still does not expose `translate-en_mr`, `translate-en_te`, or `translate-en_ta`, so `fr -> mr`, `fr -> te`, and `fr -> ta` remain blocked locally. Full browser video `.srt` validation is still pending before removal from the missing-language table. |
 
 ## Package-index blockers
 

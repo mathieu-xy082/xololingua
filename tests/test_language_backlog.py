@@ -39,7 +39,9 @@ PACKAGE_INDEX_BLOCKED_TARGETS = {
     "te",
     "ta",
 }
-LATEST_PRIORITY_BATCH = ["ru", "uk", "zh", "de"]
+LATEST_PRIORITY_BATCH = ["sw", "mr", "te", "tr", "ta", "it"]
+LATEST_PRIORITY_AVAILABLE_TARGETS = {"sw", "tr", "it"}
+LATEST_PRIORITY_PACKAGE_INDEX_BLOCKED_TARGETS = {"mr", "te", "ta"}
 LOCAL_ARGOS_VALIDATION_ENV = "XOLOLINGUA_VALIDATE_LOCAL_ARGOS"
 
 
@@ -117,10 +119,17 @@ class TargetLanguageBacklogTests(unittest.TestCase):
 
         for code in LATEST_PRIORITY_BATCH:
             self.assertIn(f"translate-en_{code}", section)
+
+        for code in LATEST_PRIORITY_AVAILABLE_TARGETS:
+            self.assertIn(f"en -> {code}", section)
             self.assertIn(f"fr -> {code}", section)
 
-        self.assertIn("package index exposes all four expected packages", section)
-        self.assertIn("local Argos validation test", section)
+        for code in LATEST_PRIORITY_PACKAGE_INDEX_BLOCKED_TARGETS:
+            self.assertIn(f"translate-en_{code}", section)
+            self.assertIn(f"fr -> {code}", section)
+            self.assertIn("remain blocked locally", section)
+
+        self.assertIn("The package index exposes `translate-en_sw`, `translate-en_tr`, and `translate-en_it`", section)
 
     @unittest.skipUnless(
         os.environ.get(LOCAL_ARGOS_VALIDATION_ENV) == "1",
@@ -134,10 +143,15 @@ class TargetLanguageBacklogTests(unittest.TestCase):
             for pair in translation.get_supported_pairs()
         }
 
-        for code in LATEST_PRIORITY_BATCH:
+        for code in LATEST_PRIORITY_AVAILABLE_TARGETS:
             with self.subTest(code=code):
                 self.assertIn(("en", code), pairs)
                 self.assertIn(("fr", code), pairs)
+
+        for code in LATEST_PRIORITY_PACKAGE_INDEX_BLOCKED_TARGETS:
+            with self.subTest(code=code):
+                self.assertNotIn(("en", code), pairs)
+                self.assertNotIn(("fr", code), pairs)
 
 if __name__ == "__main__":
     unittest.main()
