@@ -76,14 +76,14 @@ class GetSupportedPairsTests(unittest.TestCase):
 
         langs = [
             make_lang("fr", ["en"]),
-            make_lang("en", ["ru", "uk", "zh", "de", "es", "hi", "ja", "ar", "bn", "pt", "ur", "id"]),
+            make_lang("en", ["ru", "uk", "zh", "de", "es", "hi", "ja", "ar", "bn", "pt", "ur", "id", "sw", "tr", "it"]),
         ]
 
         with mock.patch.object(translation, "_argos_translate") as argos_mock:
             argos_mock.get_installed_languages.return_value = langs
             result = translation.get_supported_pairs()
 
-        expected_targets = ["ru", "uk", "zh", "de", "es", "hi", "ja", "ar", "bn", "pt", "ur", "id"]
+        expected_targets = ["ru", "uk", "zh", "de", "es", "hi", "ja", "ar", "bn", "pt", "ur", "id", "sw", "tr", "it"]
         self.assertCountEqual(
             result,
             [{"source": "fr", "target": "en"}]

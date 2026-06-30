@@ -29,6 +29,14 @@ PREPARED_TARGETS = {
     "pt",
     "ur",
     "id",
+    "sw",
+    "tr",
+    "it",
+}
+PACKAGE_INDEX_BLOCKED_TARGETS = {
+    "mr",
+    "te",
+    "ta",
 }
 
 
@@ -88,6 +96,17 @@ class TargetLanguageBacklogTests(unittest.TestCase):
         for code in PREPARED_TARGETS:
             self.assertIn(f"translate-en_{code}", section)
 
+    def test_package_index_blockers_stay_in_backlog_until_package_exists(self):
+        missing_codes = {row[1] for row in self._missing_language_rows()}
+
+        self.assertLessEqual(PACKAGE_INDEX_BLOCKED_TARGETS, missing_codes)
+
+    def test_package_index_blockers_document_expected_packages(self):
+        backlog = BACKLOG.read_text(encoding="utf-8")
+        section = backlog.split("## Package-index blockers", 1)[1].split("\n## ", 1)[0]
+
+        for code in PACKAGE_INDEX_BLOCKED_TARGETS:
+            self.assertIn(f"translate-en_{code}", section)
 
 if __name__ == "__main__":
     unittest.main()

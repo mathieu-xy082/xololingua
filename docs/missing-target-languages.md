@@ -27,6 +27,15 @@ These languages are still in the missing-language table until the full browser v
 | 2026-06-29 | ru, uk, zh, de | `translate-en_ru`, `translate-en_uk`, `translate-en_zh`, `translate-en_de` | `argospm search` found all four packages; `argospm install` completed for all four; `translation.get_supported_pairs()` exposes `fr -> ru`, `fr -> uk`, `fr -> zh`, and `fr -> de` via the English pivot. |
 | 2026-06-29 | es, hi, ja, ar | `translate-en_es`, `translate-en_hi`, `translate-en_ja`, `translate-en_ar` | `argospm search` found all four packages; `argospm install` completed for all four; `translation.get_supported_pairs()` exposes `fr -> es`, `fr -> hi`, `fr -> ja`, and `fr -> ar` via the English pivot. Full browser video `.srt` validation is still pending before removal from the missing-language table. |
 | 2026-06-29 | bn, pt, ur, id | `translate-en_bn`, `translate-en_pt`, `translate-en_ur`, `translate-en_id` | Argos package index exposes all four packages; local install completed for all four with `AvailablePackage.install()`; installed direct pairs expose `en -> bn`, `en -> pt`, `en -> ur`, and `en -> id`, and the English-pivot composition exposes `fr -> bn`, `fr -> pt`, `fr -> ur`, and `fr -> id`. Full browser video `.srt` validation is still pending before removal from the missing-language table. |
+| 2026-06-30 | sw, tr, it | `translate-en_sw`, `translate-en_tr`, `translate-en_it` | Argos package index exposes all three packages; local install completed for all three with `AvailablePackage.install()`; installed direct pairs expose `en -> sw`, `en -> tr`, and `en -> it`, and the English-pivot composition exposes `fr -> sw`, `fr -> tr`, and `fr -> it`. Full browser video `.srt` validation is still pending before removal from the missing-language table. |
+
+## Package-index blockers
+
+These languages remain in priority order, but the current Argos package index does not expose the expected English-pivot package yet.
+
+| Date | Codes | Expected pivot packages | Local validation |
+| --- | --- | --- | --- |
+| 2026-06-30 | mr, te, ta | `translate-en_mr`, `translate-en_te`, `translate-en_ta` | `argospm update` completed, but neither `argospm search` nor `package.get_available_packages()` found English-to-target packages for these codes. `translation.get_supported_pairs()` therefore does not expose `fr -> mr`, `fr -> te`, or `fr -> ta` locally yet. |
 
 ## Already available for the reference French video
 
