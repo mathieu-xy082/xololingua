@@ -42,6 +42,7 @@ PACKAGE_INDEX_BLOCKED_TARGETS = {
 LATEST_PRIORITY_BATCH = ["sw", "mr", "te", "tr", "ta", "it"]
 LATEST_PRIORITY_AVAILABLE_TARGETS = {"sw", "tr", "it"}
 LATEST_PRIORITY_PACKAGE_INDEX_BLOCKED_TARGETS = {"mr", "te", "ta"}
+TRANSLATOR_SMOKE_TARGETS = {"ru", "uk", "zh", "de"}
 LOCAL_ARGOS_VALIDATION_ENV = "XOLOLINGUA_VALIDATE_LOCAL_ARGOS"
 
 
@@ -131,6 +132,14 @@ class TargetLanguageBacklogTests(unittest.TestCase):
 
         self.assertIn("The package index exposes `translate-en_sw`, `translate-en_tr`, and `translate-en_it`", section)
 
+    def test_translator_smoke_validations_document_expected_packages(self):
+        backlog = BACKLOG.read_text(encoding="utf-8")
+        section = backlog.split("## Translator smoke validations", 1)[1].split("\n## ", 1)[0]
+
+        for code in TRANSLATOR_SMOKE_TARGETS:
+            self.assertIn(f"translate-en_{code}", section)
+            self.assertIn(f"fr -> {code}", section)
+
     @unittest.skipUnless(
         os.environ.get(LOCAL_ARGOS_VALIDATION_ENV) == "1",
         f"set {LOCAL_ARGOS_VALIDATION_ENV}=1 to check locally installed Argos packages",
@@ -152,6 +161,21 @@ class TargetLanguageBacklogTests(unittest.TestCase):
             with self.subTest(code=code):
                 self.assertNotIn(("en", code), pairs)
                 self.assertNotIn(("fr", code), pairs)
+
+    @unittest.skipUnless(
+        os.environ.get(LOCAL_ARGOS_VALIDATION_ENV) == "1",
+        f"set {LOCAL_ARGOS_VALIDATION_ENV}=1 to smoke-test locally installed Argos translators",
+    )
+    def test_first_four_priority_targets_translate_through_english_pivot_when_enabled(self):
+        from xololingua_service import translation
+
+        source_text = "Bonjour tout le monde."
+        for code in sorted(TRANSLATOR_SMOKE_TARGETS):
+            with self.subTest(code=code):
+                translated = translation.translate_text(source_text, "fr", code)
+
+                self.assertTrue(translated.strip())
+                self.assertNotEqual(translated, source_text)
 
 if __name__ == "__main__":
     unittest.main()
