@@ -42,7 +42,23 @@ PACKAGE_INDEX_BLOCKED_TARGETS = {
 LATEST_PRIORITY_BATCH = ["sw", "mr", "te", "tr", "ta", "it"]
 LATEST_PRIORITY_AVAILABLE_TARGETS = {"sw", "tr", "it"}
 LATEST_PRIORITY_PACKAGE_INDEX_BLOCKED_TARGETS = {"mr", "te", "ta"}
-TRANSLATOR_SMOKE_TARGETS = {"ru", "uk", "zh", "de", "es", "hi", "ja", "ar", "bn", "pt", "ur", "id"}
+TRANSLATOR_SMOKE_TARGETS = {
+    "ru",
+    "uk",
+    "zh",
+    "de",
+    "es",
+    "hi",
+    "ja",
+    "ar",
+    "bn",
+    "pt",
+    "ur",
+    "id",
+    "sw",
+    "tr",
+    "it",
+}
 LOCAL_ARGOS_VALIDATION_ENV = "XOLOLINGUA_VALIDATE_LOCAL_ARGOS"
 
 
