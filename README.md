@@ -164,6 +164,16 @@ pdm run test
 
 Tests that require FFmpeg are skipped automatically when `ffmpeg` or `ffprobe` is unavailable. Whisper and Argos are mocked in the HTTP pipeline test, so the test suite does not require a GPU or downloaded language models.
 
+Slow E2E validators are opt-in because they use the real reference video and local models:
+
+```bash
+pdm run api-e2e --target en
+XOLOLINGUA_VALIDATE_API_E2E=1 XOLOLINGUA_API_E2E_TARGET=en pdm run test
+pdm run browser-e2e --target en
+```
+
+The API E2E validator auto-starts `pdm run service` when needed, uploads `/root/android-app-games/resources/lisoir_dnde442.mp4`, detects French, extracts and segments audio, creates/polls a subtitle job, and writes a verified `.srt` artifact under `tmp/e2e-validations/`.
+
 ## Android
 
 The frontend currently addresses the processing service at `127.0.0.1:8765`. For the complete workflow on an Android device, connect it over USB, enable USB debugging, and forward both application ports:

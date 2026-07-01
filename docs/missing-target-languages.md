@@ -29,6 +29,14 @@ These languages are still in the missing-language table until the full browser v
 | 2026-06-29 | bn, pt, ur, id | `translate-en_bn`, `translate-en_pt`, `translate-en_ur`, `translate-en_id` | Argos package index exposes all four packages; local install completed for all four with `AvailablePackage.install()`; installed direct pairs expose `en -> bn`, `en -> pt`, `en -> ur`, and `en -> id`, and the English-pivot composition exposes `fr -> bn`, `fr -> pt`, `fr -> ur`, and `fr -> id`. Full browser video `.srt` validation is still pending before removal from the missing-language table. |
 | 2026-06-30 | sw, tr, it | `translate-en_sw`, `translate-en_tr`, `translate-en_it` | Argos package index exposes all three packages; local install completed for all three with `AvailablePackage.install()`; installed direct pairs expose `en -> sw`, `en -> tr`, and `en -> it`, and the English-pivot composition exposes `fr -> sw`, `fr -> tr`, and `fr -> it`. Full browser video `.srt` validation is still pending before removal from the missing-language table. |
 
+## API E2E video validations
+
+These validations run the real local HTTP API against `/root/android-app-games/resources/lisoir_dnde442.mp4`: language detection, audio extraction, segmentation, subtitle job creation/polling, and verified SRT artifact generation. They are stronger than translator smoke tests but are reported separately from the strict browser-download gate.
+
+| Date | Code | Command | Artifact | Result |
+| --- | --- | --- | --- | --- |
+| 2026-07-01 | en | `pdm run api-e2e --target en` | `tmp/e2e-validations/lisoir_dnde442.fr-en.srt` (17,904 bytes) | Passed: detected French source, generated non-empty SRT with timestamp arrows through the API subtitle-job workflow. |
+
 ## Translator smoke validations
 
 These checks prove that the installed package chain can do a real French-to-target text translation through the English pivot. They are stronger than pair discovery, but they still do not replace the required browser video `.srt` workflow.

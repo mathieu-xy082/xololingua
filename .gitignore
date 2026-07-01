@@ -4,3 +4,4 @@ __pycache__/
 .venv/
 .pdm-python
 .tmp_external_resources
+tmp/
