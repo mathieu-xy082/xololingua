@@ -34,6 +34,9 @@ PREPARED_TARGETS = {
     "tr",
     "it",
 }
+API_E2E_VALIDATED_TARGETS = {
+    "ru",
+}
 PACKAGE_INDEX_BLOCKED_TARGETS = {
     "mr",
     "te",
@@ -109,7 +112,8 @@ class TargetLanguageBacklogTests(unittest.TestCase):
     def test_prepared_targets_stay_in_backlog_until_e2e_validation(self):
         missing_codes = {row[1] for row in self._missing_language_rows()}
 
-        self.assertLessEqual(PREPARED_TARGETS, missing_codes)
+        self.assertLessEqual(PREPARED_TARGETS - API_E2E_VALIDATED_TARGETS, missing_codes)
+        self.assertTrue(API_E2E_VALIDATED_TARGETS.isdisjoint(missing_codes))
 
     def test_prepared_validation_rows_document_expected_packages(self):
         backlog = BACKLOG.read_text(encoding="utf-8")
