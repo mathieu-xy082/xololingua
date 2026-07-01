@@ -1,0 +1,38 @@
+export function detectClientTranscriptionCapabilities(environment = globalThis) {
+  const transformersJs = typeof environment?.Worker === "function"
+    && Boolean(environment?.transformers?.pipeline || environment?.transformersJs);
+  const webGpu = Boolean(environment?.navigator?.gpu);
+
+  return {
+    transformersJs,
+    webGpu,
+    strategy: transformersJs ? "transformers.js" : "unavailable",
+  };
+}
+
+export function createClientTranscriber({
+  environment = globalThis,
+  transformerWorker,
+} = {}) {
+  return {
+    capabilities: detectClientTranscriptionCapabilities(environment),
+
+    async transcribeAudio(request, onProgress = () => {}) {
+      if (typeof transformerWorker !== "function") {
+        throw new Error("Browser transcription requires transformers.js in a Web Worker or a configured transcription fallback.");
+      }
+
+      const result = await transformerWorker(request, onProgress);
+      return {
+        strategy: "transformers.js",
+        language: result.language || request.sourceLanguage || "unknown",
+        segments: (result.segments || []).map((segment, index) => ({
+          index: segment.index || index + 1,
+          start: segment.start,
+          end: segment.end,
+          text: segment.text || "",
+        })),
+      };
+    },
+  };
+}
