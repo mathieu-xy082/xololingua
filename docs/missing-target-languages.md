@@ -44,6 +44,7 @@ These validations run the real local HTTP API against `/root/android-app-games/r
 | 2026-07-02 | hi | `pdm run api-e2e --target hi` | `tmp/e2e-validations/lisoir_dnde442.fr-hi.srt` (38,815 bytes) | Passed: detected French source, generated 88 SRT blocks with timestamp arrows through the API subtitle-job workflow. |
 | 2026-07-02 | ja | `pdm run api-e2e --target ja` | `tmp/e2e-validations/lisoir_dnde442.fr-ja.srt` (21,049 bytes) | Passed: detected French source, generated 88 SRT blocks with timestamp arrows through the API subtitle-job workflow. |
 | 2026-07-02 | ar | `pdm run api-e2e --target ar` | `tmp/e2e-validations/lisoir_dnde442.fr-ar.srt` (23,716 bytes) | Passed: detected French source, generated 88 SRT blocks with timestamp arrows through the API subtitle-job workflow. |
+| 2026-07-02 | bn | `pdm run api-e2e --target bn` | `tmp/e2e-validations/lisoir_dnde442.fr-bn.srt` (35,737 bytes) | Passed: detected French source, generated 88 SRT blocks with timestamp arrows through the API subtitle-job workflow. |
 
 ## Translator smoke validations
 
@@ -85,21 +86,21 @@ These languages remain in priority order, but the current Argos package index do
 | uk | Ukrainian | API E2E generated and verified `tmp/e2e-validations/lisoir_dnde442.fr-uk.srt`; strict browser-download validation still pending. |
 | zh | Chinese | API E2E generated and verified `tmp/e2e-validations/lisoir_dnde442.fr-zh.srt`; strict browser-download validation still pending. |
 | de | German | API E2E generated and verified `tmp/e2e-validations/lisoir_dnde442.fr-de.srt`; strict browser-download validation still pending. |
+| bn | Bengali | API E2E generated and verified `tmp/e2e-validations/lisoir_dnde442.fr-bn.srt`; strict browser-download validation still pending. |
 
 ## Missing target languages
 
 | Priority | Code | Language | Expected pivot package | Notes |
 | --- | --- | --- | --- | --- |
-| 1 | bn | Bengali | `translate-en_bn` | Present in the UI language catalogue; not in first MVP couples yet. |
-| 2 | pt | Portuguese | `translate-en_pt` | Present in the UI language catalogue; not in first MVP couples yet. |
-| 3 | ur | Urdu | `translate-en_ur` | Present in the UI language catalogue; not in first MVP couples yet. |
-| 4 | id | Indonesian | `translate-en_id` | Present in the UI language catalogue; not in first MVP couples yet. |
-| 5 | sw | Swahili | `translate-en_sw` | Present in the UI language catalogue; not in first MVP couples yet. |
-| 6 | mr | Marathi | `translate-en_mr` | Present in the UI language catalogue; not in first MVP couples yet. |
-| 7 | te | Telugu | `translate-en_te` | Present in the UI language catalogue; not in first MVP couples yet. |
-| 8 | tr | Turkish | `translate-en_tr` | Present in the UI language catalogue; not in first MVP couples yet. |
-| 9 | ta | Tamil | `translate-en_ta` | Present in the UI language catalogue; not in first MVP couples yet. |
-| 10 | it | Italian | `translate-en_it` | Present in the UI language catalogue; not in first MVP couples yet. |
+| 1 | pt | Portuguese | `translate-en_pt` | Present in the UI language catalogue; not in first MVP couples yet. |
+| 2 | ur | Urdu | `translate-en_ur` | Present in the UI language catalogue; not in first MVP couples yet. |
+| 3 | id | Indonesian | `translate-en_id` | Present in the UI language catalogue; not in first MVP couples yet. |
+| 4 | sw | Swahili | `translate-en_sw` | Present in the UI language catalogue; not in first MVP couples yet. |
+| 5 | mr | Marathi | `translate-en_mr` | Present in the UI language catalogue; not in first MVP couples yet. |
+| 6 | te | Telugu | `translate-en_te` | Present in the UI language catalogue; not in first MVP couples yet. |
+| 7 | tr | Turkish | `translate-en_tr` | Present in the UI language catalogue; not in first MVP couples yet. |
+| 8 | ta | Tamil | `translate-en_ta` | Present in the UI language catalogue; not in first MVP couples yet. |
+| 9 | it | Italian | `translate-en_it` | Present in the UI language catalogue; not in first MVP couples yet. |
 
 ## Validation checklist for each language
 
