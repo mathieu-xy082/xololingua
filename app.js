@@ -336,23 +336,7 @@ async function extractAudioAdapter(file, onProgress) {
 }
 
 async function serviceSegmentAudioAdapter(audioId, onProgress) {
-  onProgress(10);
-
-  const response = await fetch(`${LOCAL_SERVICE_URL}/api/segment-audio`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({ audioId })
-  });
-  const payload = await response.json();
-
-  if (!response.ok) {
-    throw new Error(payload.error || "Audio segmentation failed.");
-  }
-
-  onProgress(100);
-  return payload.segments;
+  return backendClient.segmentAudio(audioId, onProgress);
 }
 
 async function generateSubtitles() {
