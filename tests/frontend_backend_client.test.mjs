@@ -103,3 +103,51 @@ test("segmentAudio posts an extracted audio id and returns service segments", as
   assert.deepEqual(calls[0].options.headers, { "Content-Type": "application/json" });
   assert.equal(calls[0].options.body, JSON.stringify({ audioId: "audio-123" }));
 });
+
+test("getHealth returns service health from the configured backend URL", async () => {
+  const calls = [];
+  const client = createBackendClient({
+    baseUrl: "http://service.test/",
+    fetchImpl: async (url, options = {}) => {
+      calls.push({ url, options });
+      return jsonResponse(true, {
+        whisperBackend: "faster-whisper",
+        whisperModel: "base",
+        whisperDevice: "cpu",
+      });
+    },
+    FormDataImpl: FakeFormData,
+  });
+
+  const health = await client.getHealth();
+
+  assert.deepEqual(health, {
+    whisperBackend: "faster-whisper",
+    whisperModel: "base",
+    whisperDevice: "cpu",
+  });
+  assert.deepEqual(calls, [{ url: "http://service.test/api/health", options: {} }]);
+});
+
+test("getTranslationPairs returns configured service language pairs", async () => {
+  const client = createBackendClient({
+    baseUrl: "http://service.test/",
+    fetchImpl: async (url) => {
+      assert.equal(url, "http://service.test/api/translation-pairs");
+      return jsonResponse(true, {
+        pairs: [
+          { source: "fr", target: "en" },
+          { source: "en", target: "fr" },
+        ],
+      });
+    },
+    FormDataImpl: FakeFormData,
+  });
+
+  const pairs = await client.getTranslationPairs();
+
+  assert.deepEqual(pairs, [
+    { source: "fr", target: "en" },
+    { source: "en", target: "fr" },
+  ]);
+});

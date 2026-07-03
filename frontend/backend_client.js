@@ -15,7 +15,26 @@ export function createBackendClient({
   const normalizedBaseUrl = String(baseUrl).replace(/\/+$/, "");
   const endpoint = (path) => `${normalizedBaseUrl}${path}`;
 
+  async function readJson(response, fallbackError) {
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || fallbackError);
+    }
+    return payload;
+  }
+
   return {
+    async getHealth() {
+      const response = await fetchImpl(endpoint("/api/health"));
+      return readJson(response, "Local service health could not be read.");
+    },
+
+    async getTranslationPairs() {
+      const response = await fetchImpl(endpoint("/api/translation-pairs"));
+      const payload = await readJson(response, "Translation pairs could not be read.");
+      return payload.pairs || [];
+    },
+
     async extractAudio(file, onProgress = () => {}) {
       onProgress(5);
 
