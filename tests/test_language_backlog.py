@@ -45,6 +45,7 @@ API_E2E_VALIDATED_TARGETS = {
     "ar",
     "bn",
     "pt",
+    "ur",
 }
 PACKAGE_INDEX_BLOCKED_TARGETS = {
     "mr",

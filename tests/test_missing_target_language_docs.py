@@ -12,11 +12,11 @@ DOC = ROOT / "docs" / "missing-target-languages.md"
 
 
 class MissingTargetLanguageDocsTests(unittest.TestCase):
-    def test_zh_api_e2e_validation_is_recorded_as_available_not_missing(self):
+    def assert_api_e2e_language_is_available_not_missing(self, code: str, language: str, date: str) -> None:
         text = DOC.read_text(encoding="utf-8")
 
-        self.assertIn("| 2026-07-01 | zh | `pdm run api-e2e --target zh` |", text)
-        self.assertIn("| zh | Chinese | API E2E generated and verified", text)
+        self.assertIn(f"| {date} | {code} | `pdm run api-e2e --target {code}", text)
+        self.assertIn(f"| {code} | {language} | API E2E generated and verified", text)
 
         missing_section = re.search(
             r"## Missing target languages\n\n(?P<table>.*?)(?:\n\n## |\Z)",
@@ -25,7 +25,13 @@ class MissingTargetLanguageDocsTests(unittest.TestCase):
         )
         self.assertIsNotNone(missing_section)
         assert missing_section is not None
-        self.assertNotRegex(missing_section.group("table"), r"\|\s*\d+\s*\|\s*zh\s*\|")
+        self.assertNotRegex(missing_section.group("table"), rf"\|\s*\d+\s*\|\s*{code}\s*\|")
+
+    def test_zh_api_e2e_validation_is_recorded_as_available_not_missing(self):
+        self.assert_api_e2e_language_is_available_not_missing("zh", "Chinese", "2026-07-01")
+
+    def test_ur_api_e2e_validation_is_recorded_as_available_not_missing(self):
+        self.assert_api_e2e_language_is_available_not_missing("ur", "Urdu", "2026-07-03")
 
 
 if __name__ == "__main__":
