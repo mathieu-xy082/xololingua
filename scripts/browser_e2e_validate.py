@@ -177,7 +177,7 @@ def run_browser_workflow(args: argparse.Namespace) -> Path:
     with sync_playwright() as p:
         log_step("Launching Chromium")
         browser = p.chromium.launch(headless=not args.headed, slow_mo=args.slow_mo_ms)
-        context = browser.new_context(accept_downloads=True)
+        context = browser.new_context(accept_downloads=True, service_workers="block")
         page = context.new_page()
         page.set_default_timeout(30_000)
 
