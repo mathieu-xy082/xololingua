@@ -80,5 +80,33 @@ export function createBackendClient({
       onProgress(100);
       return payload.segments;
     },
+
+    async createSubtitleJob({ extractedAudio, sourceLanguage, targetLanguage, segments }) {
+      const response = await fetchImpl(endpoint("/api/subtitle-jobs"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          audioId: extractedAudio.audioId,
+          sourceLanguage: sourceLanguage.code,
+          targetLanguage,
+          segments,
+        }),
+      });
+      return readJson(response, "Subtitle generation job could not start.");
+    },
+
+    async getSubtitleJob(jobId) {
+      const response = await fetchImpl(endpoint(`/api/subtitle-jobs/${jobId}`));
+      return readJson(response, "Subtitle generation job could not be read.");
+    },
+
+    async cancelSubtitleJob(jobId) {
+      const response = await fetchImpl(endpoint(`/api/subtitle-jobs/${jobId}/cancel`), {
+        method: "POST",
+      });
+      return readJson(response, "Subtitle generation job could not be cancelled.");
+    },
   };
 }

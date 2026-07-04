@@ -151,3 +151,56 @@ test("getTranslationPairs returns configured service language pairs", async () =
     { source: "en", target: "fr" },
   ]);
 });
+
+test("createSubtitleJob posts extracted audio and selected language details", async () => {
+  const calls = [];
+  const client = createBackendClient({
+    baseUrl: "http://service.test/",
+    fetchImpl: async (url, options = {}) => {
+      calls.push({ url, options });
+      return jsonResponse(true, { jobId: "job-123", stage: "queued" });
+    },
+    FormDataImpl: FakeFormData,
+  });
+
+  const job = await client.createSubtitleJob({
+    extractedAudio: { audioId: "audio-123" },
+    sourceLanguage: { code: "fr" },
+    targetLanguage: "en",
+    segments: [{ index: 1, start: 0, end: 1.5 }],
+  });
+
+  assert.deepEqual(job, { jobId: "job-123", stage: "queued" });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "http://service.test/api/subtitle-jobs");
+  assert.equal(calls[0].options.method, "POST");
+  assert.deepEqual(calls[0].options.headers, { "Content-Type": "application/json" });
+  assert.equal(calls[0].options.body, JSON.stringify({
+    audioId: "audio-123",
+    sourceLanguage: "fr",
+    targetLanguage: "en",
+    segments: [{ index: 1, start: 0, end: 1.5 }],
+  }));
+});
+
+test("getSubtitleJob and cancelSubtitleJob use the configured backend URL", async () => {
+  const calls = [];
+  const client = createBackendClient({
+    baseUrl: "http://service.test/",
+    fetchImpl: async (url, options = {}) => {
+      calls.push({ url, options });
+      return jsonResponse(true, { jobId: "job-123", stage: "cancelled" });
+    },
+    FormDataImpl: FakeFormData,
+  });
+
+  const job = await client.getSubtitleJob("job-123");
+  const cancelled = await client.cancelSubtitleJob("job-123");
+
+  assert.deepEqual(job, { jobId: "job-123", stage: "cancelled" });
+  assert.deepEqual(cancelled, { jobId: "job-123", stage: "cancelled" });
+  assert.deepEqual(calls, [
+    { url: "http://service.test/api/subtitle-jobs/job-123", options: {} },
+    { url: "http://service.test/api/subtitle-jobs/job-123/cancel", options: { method: "POST" } },
+  ]);
+});
