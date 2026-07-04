@@ -30,6 +30,20 @@ class ApiE2EScriptTests(unittest.TestCase):
         pyproject = PYPROJECT.read_text(encoding="utf-8")
         self.assertIn('api-e2e = "python scripts/api_e2e_validate.py"', pyproject)
 
+    def test_api_e2e_default_artifact_dir_is_outside_repository(self):
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("api_e2e_validate", SCRIPT)
+        self.assertIsNotNone(spec)
+        assert spec is not None
+        module = importlib.util.module_from_spec(spec)
+        self.assertIsNotNone(spec.loader)
+        assert spec.loader is not None
+        spec.loader.exec_module(module)
+
+        self.assertNotIn(ROOT, module.DEFAULT_OUTPUT_DIR.parents)
+        self.assertEqual(module.DEFAULT_OUTPUT_DIR.name, "e2e-validations")
+
     def test_api_e2e_validator_rejects_non_srt_artifacts(self):
         import importlib.util
 

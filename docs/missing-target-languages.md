@@ -7,6 +7,8 @@ Update rule: when a language is added and a real end-to-end video workflow gener
 ## Current assumptions
 
 - The reference end-to-end fixture is `/root/android-app-games/resources/lisoir_dnde442.mp4`.
+- New API E2E artifacts default to `~/.cache/xololingua/e2e-validations/`; override with `XOLOLINGUA_API_E2E_OUTPUT_DIR` when a run needs an explicit artifact location.
+- New browser E2E downloads default to `~/.cache/xololingua/browser-e2e-downloads/`; override with `XOLOLINGUA_BROWSER_E2E_DOWNLOAD_DIR` when a run needs an explicit download location.
 - The reference video is detected as French (`fr`).
 - The only currently installed and validated Argos packages are:
   - `translate-fr_en`

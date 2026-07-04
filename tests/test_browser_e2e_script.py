@@ -33,6 +33,18 @@ class BrowserE2EScriptTests(unittest.TestCase):
             re.compile(r'^browser-e2e\s*=\s*"python scripts/browser_e2e_validate\.py"$', re.MULTILINE),
         )
 
+    def test_browser_e2e_default_download_dir_is_outside_repository(self):
+        spec = importlib.util.spec_from_file_location("browser_e2e_validate", SCRIPT)
+        self.assertIsNotNone(spec)
+        assert spec is not None
+        module = importlib.util.module_from_spec(spec)
+        self.assertIsNotNone(spec.loader)
+        assert spec.loader is not None
+        spec.loader.exec_module(module)
+
+        self.assertNotIn(ROOT, module.DEFAULT_DOWNLOAD_DIR.parents)
+        self.assertEqual(module.DEFAULT_DOWNLOAD_DIR.name, "browser-e2e-downloads")
+
     def test_browser_e2e_validator_rejects_timestamp_only_downloads(self):
         spec = importlib.util.spec_from_file_location("browser_e2e_validate", SCRIPT)
         self.assertIsNotNone(spec)

@@ -10,6 +10,7 @@ its SRT content.
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import shutil
 import subprocess
@@ -26,7 +27,12 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_VIDEO = Path("/root/android-app-games/resources/lisoir_dnde442.mp4")
 DEFAULT_FRONTEND_URL = "http://127.0.0.1:4173"
 DEFAULT_SERVICE_URL = "http://127.0.0.1:8765"
-DEFAULT_DOWNLOAD_DIR = ROOT / "tmp" / "browser-e2e-downloads"
+DEFAULT_DOWNLOAD_DIR = Path(
+    os.environ.get(
+        "XOLOLINGUA_BROWSER_E2E_DOWNLOAD_DIR",
+        Path.home() / ".cache" / "xololingua" / "browser-e2e-downloads",
+    )
+)
 
 
 class ManagedProcess:

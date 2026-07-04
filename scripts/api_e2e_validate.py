@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -24,7 +25,12 @@ from typing import Iterable
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_VIDEO = Path("/root/android-app-games/resources/lisoir_dnde442.mp4")
 DEFAULT_SERVICE_URL = "http://127.0.0.1:8765"
-DEFAULT_OUTPUT_DIR = ROOT / "tmp" / "e2e-validations"
+DEFAULT_OUTPUT_DIR = Path(
+    os.environ.get(
+        "XOLOLINGUA_API_E2E_OUTPUT_DIR",
+        Path.home() / ".cache" / "xololingua" / "e2e-validations",
+    )
+)
 TERMINAL_JOB_STATUSES = {"succeeded", "failed", "cancelled"}
 
 
