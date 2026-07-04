@@ -126,13 +126,12 @@ For each target language, keep the change small and repeatable:
 
 1. Confirm the Argos package name exists and can be installed.
 2. Install the package locally with `pdm run argospm install <package>`.
-3. Run `pdm run test`.
-4. Start the backend with `pdm run service`.
-5. Start the frontend with `pdm run web`.
-6. Load `/root/android-app-games/resources/lisoir_dnde442.mp4` through the browser workflow.
-7. Identify source language and confirm French.
-8. Select the new target language.
-9. Run audio segmentation.
-10. Generate subtitles and confirm the `.srt` download link appears.
+3. Confirm `translation.get_supported_pairs()` exposes `fr -> <code>` through the English pivot.
+4. Run `pdm run test`.
+5. Run the API E2E server workflow on `/root/android-app-games/resources/lisoir_dnde442.mp4` with `pdm run api-e2e --target <code> --min-srt-blocks 80`.
+6. Verify the API E2E output is a non-empty `.srt` with timestamp arrows, subtitle text, and the expected block count.
+7. Record the command, artifact path, size or block count, and result in `API E2E video validations`.
+8. Move the code to `Already available for the reference French video` only after the verified non-empty `.srt` exists.
+9. Remove the validated language from the missing-language table only after that API E2E gate passes.
+10. Optionally run representative browser-download validation for workflow reassurance; record it separately and do not use it as the per-language removal gate.
 11. Save any issue discovered as a focused follow-up task.
-12. Remove the validated language from this file.

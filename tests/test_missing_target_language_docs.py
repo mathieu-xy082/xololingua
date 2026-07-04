@@ -52,6 +52,16 @@ class MissingTargetLanguageDocsTests(unittest.TestCase):
         for code in ("mr", "te", "ta"):
             self.assertRegex(missing_section.group("table"), rf"\|\s*\d+\s*\|\s*{code}\s*\|")
 
+    def test_validation_checklist_names_api_e2e_as_removal_gate(self):
+        text = DOC.read_text(encoding="utf-8")
+        checklist = text.split("## Validation checklist for each language", 1)[1]
+
+        self.assertIn("Run the API E2E server workflow", checklist)
+        self.assertIn("verified non-empty `.srt`", checklist)
+        self.assertIn("Remove the validated language", checklist)
+        self.assertNotIn("Load `/root/android-app-games/resources/lisoir_dnde442.mp4` through the browser workflow", checklist)
+        self.assertNotIn("Remove the validated language from this file", checklist)
+
 
 if __name__ == "__main__":
     unittest.main()
