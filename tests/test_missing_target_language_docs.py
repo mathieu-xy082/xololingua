@@ -62,6 +62,13 @@ class MissingTargetLanguageDocsTests(unittest.TestCase):
         self.assertNotIn("Load `/root/android-app-games/resources/lisoir_dnde442.mp4` through the browser workflow", checklist)
         self.assertNotIn("Remove the validated language from this file", checklist)
 
+    def test_prepared_package_notes_do_not_name_browser_as_language_removal_gate(self):
+        text = DOC.read_text(encoding="utf-8")
+        prepared_section = text.split("## Prepared package validations", 1)[1].split("## API E2E video validations", 1)[0]
+
+        self.assertIn("API E2E", prepared_section)
+        self.assertNotIn("full browser video workflow generates and verifies a `.srt`", prepared_section)
+
 
 if __name__ == "__main__":
     unittest.main()

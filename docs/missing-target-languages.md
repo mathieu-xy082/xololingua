@@ -23,7 +23,7 @@ Update rule: when a language is added and the API E2E server workflow on a real 
 
 ## Prepared package validations
 
-These languages are still in the missing-language table until the full browser video workflow generates and verifies a `.srt`, but their Argos package discovery/install and French-to-target pivot-pair exposure have been checked locally.
+These languages are still in the missing-language table until the API E2E server workflow on a real video generates and verifies a non-empty `.srt`, but their Argos package discovery/install and French-to-target pivot-pair exposure have been checked locally. Browser-download validation is representative reassurance only.
 
 | Date | Codes | Expected pivot packages | Local validation |
 | --- | --- | --- | --- |
