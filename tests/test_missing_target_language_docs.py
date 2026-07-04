@@ -33,6 +33,9 @@ class MissingTargetLanguageDocsTests(unittest.TestCase):
     def test_ur_api_e2e_validation_is_recorded_as_available_not_missing(self):
         self.assert_api_e2e_language_is_available_not_missing("ur", "Urdu", "2026-07-03")
 
+    def test_it_api_e2e_validation_is_recorded_as_available_not_missing(self):
+        self.assert_api_e2e_language_is_available_not_missing("it", "Italian", "2026-07-04")
+
 
 if __name__ == "__main__":
     unittest.main()
