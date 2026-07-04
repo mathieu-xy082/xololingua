@@ -78,6 +78,7 @@ These languages remain in priority order, but the current Argos package index do
 | Date | Codes | Expected pivot packages | Local validation |
 | --- | --- | --- | --- |
 | 2026-06-30 | mr, te, ta | `translate-en_mr`, `translate-en_te`, `translate-en_ta` | `argospm update` completed, but neither `argospm search` nor `package.get_available_packages()` found English-to-target packages for these codes. `translation.get_supported_pairs()` therefore does not expose `fr -> mr`, `fr -> te`, or `fr -> ta` locally yet. |
+| 2026-07-04 | mr, te, ta | `translate-en_mr`, `translate-en_te`, `translate-en_ta` | `argostranslate.package.update_package_index()` completed; `package.get_available_packages()` still does not expose `translate-en_mr`, `translate-en_te`, or `translate-en_ta`. A live `translation.get_supported_pairs()` probe returned `fr -> mr: False`, `fr -> te: False`, and `fr -> ta: False`, so `fr -> mr`, `fr -> te`, and `fr -> ta` remain blocked locally. |
 
 ## Already available for the reference French video
 

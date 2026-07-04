@@ -36,6 +36,22 @@ class MissingTargetLanguageDocsTests(unittest.TestCase):
     def test_it_api_e2e_validation_is_recorded_as_available_not_missing(self):
         self.assert_api_e2e_language_is_available_not_missing("it", "Italian", "2026-07-04")
 
+    def test_current_package_index_blockers_keep_unavailable_languages_missing(self):
+        text = DOC.read_text(encoding="utf-8")
+        self.assertIn("| 2026-07-04 | mr, te, ta |", text)
+        self.assertIn("`translate-en_mr`, `translate-en_te`, `translate-en_ta`", text)
+        self.assertIn("`fr -> mr`, `fr -> te`, and `fr -> ta` remain blocked", text)
+
+        missing_section = re.search(
+            r"## Missing target languages\n\n(?P<table>.*?)(?:\n\n## |\Z)",
+            text,
+            re.S,
+        )
+        self.assertIsNotNone(missing_section)
+        assert missing_section is not None
+        for code in ("mr", "te", "ta"):
+            self.assertRegex(missing_section.group("table"), rf"\|\s*\d+\s*\|\s*{code}\s*\|")
+
 
 if __name__ == "__main__":
     unittest.main()
