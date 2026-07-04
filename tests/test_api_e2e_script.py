@@ -47,6 +47,23 @@ class ApiE2EScriptTests(unittest.TestCase):
             with self.assertRaises(AssertionError):
                 module.validate_srt(bad_srt, min_blocks=1)
 
+    def test_api_e2e_validator_rejects_timestamp_only_artifacts(self):
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("api_e2e_validate", SCRIPT)
+        self.assertIsNotNone(spec)
+        assert spec is not None
+        module = importlib.util.module_from_spec(spec)
+        self.assertIsNotNone(spec.loader)
+        assert spec.loader is not None
+        spec.loader.exec_module(module)
+
+        with tempfile.TemporaryDirectory() as directory:
+            bad_srt = Path(directory) / "timestamp-only.srt"
+            bad_srt.write_text("1\n00:00:00,000 --> 00:00:01,000\n\n", encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, "subtitle text"):
+                module.validate_srt(bad_srt, min_blocks=1)
+
     @unittest.skipUnless(
         os.environ.get("XOLOLINGUA_VALIDATE_API_E2E") == "1",
         "set XOLOLINGUA_VALIDATE_API_E2E=1 to run the slow real video API E2E validation",

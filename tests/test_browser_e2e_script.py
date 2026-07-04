@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import ast
+import importlib.util
 import re
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -30,6 +32,21 @@ class BrowserE2EScriptTests(unittest.TestCase):
             pyproject,
             re.compile(r'^browser-e2e\s*=\s*"python scripts/browser_e2e_validate\.py"$', re.MULTILINE),
         )
+
+    def test_browser_e2e_validator_rejects_timestamp_only_downloads(self):
+        spec = importlib.util.spec_from_file_location("browser_e2e_validate", SCRIPT)
+        self.assertIsNotNone(spec)
+        assert spec is not None
+        module = importlib.util.module_from_spec(spec)
+        self.assertIsNotNone(spec.loader)
+        assert spec.loader is not None
+        spec.loader.exec_module(module)
+
+        with tempfile.TemporaryDirectory() as directory:
+            bad_srt = Path(directory) / "timestamp-only.srt"
+            bad_srt.write_text("1\n00:00:00,000 --> 00:00:01,000\n\n", encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, "subtitle text"):
+                module.validate_srt(bad_srt, min_blocks=1)
 
 
 if __name__ == "__main__":

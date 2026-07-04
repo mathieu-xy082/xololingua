@@ -143,6 +143,18 @@ def validate_srt(path: Path, min_blocks: int) -> None:
         raise AssertionError(f"Expected at least {min_blocks} SRT block(s), got {len(blocks)} in {path}")
     if not re.search(r"^1\s*$", text, re.MULTILINE):
         raise AssertionError(f"Downloaded SRT does not contain a first subtitle block: {path}")
+    has_subtitle_text = False
+    for block in blocks:
+        lines = [line.strip() for line in block.splitlines() if line.strip()]
+        cue_text_lines = [
+            line for line in lines
+            if not line.isdigit() and "-->" not in line
+        ]
+        if any(cue_text_lines):
+            has_subtitle_text = True
+            break
+    if not has_subtitle_text:
+        raise AssertionError(f"Downloaded SRT has no subtitle text: {path}")
 
 
 def log_step(message: str) -> None:
