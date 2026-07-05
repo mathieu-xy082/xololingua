@@ -83,6 +83,14 @@ class MissingTargetLanguageDocsTests(unittest.TestCase):
         self.assertIn("7-day retention cleanup", assumptions)
         self.assertIn("--cleanup-retention-days", assumptions)
 
+    def test_current_assumptions_do_not_understate_validated_argos_packages(self):
+        text = DOC.read_text(encoding="utf-8")
+        assumptions = text.split("## Current assumptions", 1)[1].split("## Prepared package validations", 1)[0]
+
+        self.assertNotIn("The only currently installed and validated Argos packages are", assumptions)
+        self.assertIn("Baseline Argos packages for the French fixture include", assumptions)
+        self.assertIn("Additional installed target packages are tracked below", assumptions)
+
 
 if __name__ == "__main__":
     unittest.main()
