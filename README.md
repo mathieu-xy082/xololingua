@@ -172,7 +172,7 @@ XOLOLINGUA_VALIDATE_API_E2E=1 XOLOLINGUA_API_E2E_TARGET=en pdm run test
 pdm run browser-e2e --target en
 ```
 
-The API E2E validator auto-starts `pdm run service` when needed, uploads `/root/android-app-games/resources/lisoir_dnde442.mp4`, detects French, extracts and segments audio, creates/polls a subtitle job, and writes a verified `.srt` artifact under `tmp/e2e-validations/`.
+The API E2E validator auto-starts `pdm run service` when needed, uploads `/root/android-app-games/resources/lisoir_dnde442.mp4`, detects French, extracts and segments audio, creates/polls a subtitle job, and writes a verified `.srt` artifact under `~/.cache/xololingua/e2e-validations/` by default. Override that location with `XOLOLINGUA_API_E2E_OUTPUT_DIR` when a run needs an explicit artifact directory.
 
 ## Android
 

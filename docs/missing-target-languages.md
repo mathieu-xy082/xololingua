@@ -7,7 +7,7 @@ Update rule: when a language is added and the API E2E server workflow on a real 
 ## Current assumptions
 
 - The reference end-to-end fixture is `/root/android-app-games/resources/lisoir_dnde442.mp4`.
-- New API E2E artifacts default to `~/.cache/xololingua/e2e-validations/`; override with `XOLOLINGUA_API_E2E_OUTPUT_DIR` when a run needs an explicit artifact location.
+- New API E2E artifacts default to `~/.cache/xololingua/e2e-validations/`; override with `XOLOLINGUA_API_E2E_OUTPUT_DIR` when a run needs an explicit artifact location. The API E2E validator applies 7-day retention cleanup for old generated `.srt` artifacts in that directory by default; use `--cleanup-retention-days 0` to disable it for forensic reruns.
 - New browser E2E downloads default to `~/.cache/xololingua/browser-e2e-downloads/`; override with `XOLOLINGUA_BROWSER_E2E_DOWNLOAD_DIR` when a run needs an explicit download location.
 - The reference video is detected as French (`fr`).
 - The only currently installed and validated Argos packages are:
@@ -38,22 +38,22 @@ These validations run the real local HTTP API against `/root/android-app-games/r
 
 | Date | Code | Command | Artifact | Result |
 | --- | --- | --- | --- | --- |
-| 2026-07-01 | en | `pdm run api-e2e --target en` | `tmp/e2e-validations/lisoir_dnde442.fr-en.srt` (17,904 bytes) | Passed: detected French source, generated non-empty SRT with timestamp arrows through the API subtitle-job workflow. |
-| 2026-07-01 | ru | `pdm run api-e2e --target ru` | `tmp/e2e-validations/lisoir_dnde442.fr-ru.srt` (29,552 bytes) | Passed: detected French source, generated non-empty SRT with timestamp arrows through the API subtitle-job workflow. |
-| 2026-07-01 | uk | `pdm run api-e2e --target uk` | `tmp/e2e-validations/lisoir_dnde442.fr-uk.srt` (27,406 bytes) | Passed: detected French source, generated 88 SRT blocks with timestamp arrows through the API subtitle-job workflow. |
-| 2026-07-01 | zh | `pdm run api-e2e --target zh` | `tmp/e2e-validations/lisoir_dnde442.fr-zh.srt` (15,058 bytes) | Passed: detected French source, generated 88 SRT blocks with timestamp arrows through the API subtitle-job workflow. |
-| 2026-07-02 | de | `pdm run api-e2e --target de` | `tmp/e2e-validations/lisoir_dnde442.fr-de.srt` (19,941 bytes) | Passed: detected French source, generated 88 SRT blocks with timestamp arrows through the API subtitle-job workflow. |
-| 2026-07-02 | es | `pdm run api-e2e --target es` | `tmp/e2e-validations/lisoir_dnde442.fr-es.srt` (18,907 bytes) | Passed: detected French source, generated 88 SRT blocks with timestamp arrows through the API subtitle-job workflow. |
-| 2026-07-02 | hi | `pdm run api-e2e --target hi` | `tmp/e2e-validations/lisoir_dnde442.fr-hi.srt` (38,815 bytes) | Passed: detected French source, generated 88 SRT blocks with timestamp arrows through the API subtitle-job workflow. |
-| 2026-07-02 | ja | `pdm run api-e2e --target ja` | `tmp/e2e-validations/lisoir_dnde442.fr-ja.srt` (21,049 bytes) | Passed: detected French source, generated 88 SRT blocks with timestamp arrows through the API subtitle-job workflow. |
-| 2026-07-02 | ar | `pdm run api-e2e --target ar` | `tmp/e2e-validations/lisoir_dnde442.fr-ar.srt` (23,716 bytes) | Passed: detected French source, generated 88 SRT blocks with timestamp arrows through the API subtitle-job workflow. |
-| 2026-07-02 | bn | `pdm run api-e2e --target bn` | `tmp/e2e-validations/lisoir_dnde442.fr-bn.srt` (35,737 bytes) | Passed: detected French source, generated 88 SRT blocks with timestamp arrows through the API subtitle-job workflow. |
-| 2026-07-03 | pt | `pdm run api-e2e --target pt --min-srt-blocks 80` | `tmp/e2e-validations/lisoir_dnde442.fr-pt.srt` (18,419 bytes) | Passed: detected French source, generated 88 SRT blocks with timestamp arrows through the API subtitle-job workflow. |
-| 2026-07-03 | ur | `pdm run api-e2e --target ur --min-srt-blocks 80` | `tmp/e2e-validations/lisoir_dnde442.fr-ur.srt` (25,907 bytes) | Passed: detected French source, generated 88 SRT blocks with timestamp arrows through the API subtitle-job workflow. |
-| 2026-07-03 | id | `pdm run api-e2e --target id --min-srt-blocks 80` | `tmp/e2e-validations/lisoir_dnde442.fr-id.srt` (18,378 bytes) | Passed: detected French source, generated 88 SRT blocks with timestamp arrows through the API subtitle-job workflow. |
-| 2026-07-03 | sw | `pdm run api-e2e --target sw --min-srt-blocks 80` | `tmp/e2e-validations/lisoir_dnde442.fr-sw.srt` (17,777 bytes) | Passed: detected French source, generated 88 SRT blocks with timestamp arrows through the API subtitle-job workflow. |
-| 2026-07-03 | tr | `pdm run api-e2e --target tr --min-srt-blocks 80` | `tmp/e2e-validations/lisoir_dnde442.fr-tr.srt` (17,839 bytes) | Passed: detected French source, generated 88 SRT blocks with timestamp arrows through the API subtitle-job workflow. |
-| 2026-07-04 | it | `pdm run api-e2e --target it --min-srt-blocks 80` | `tmp/e2e-validations/lisoir_dnde442.fr-it.srt` (18,634 bytes) | Passed: detected French source, generated 88 SRT blocks with timestamp arrows through the API subtitle-job workflow. |
+| 2026-07-01 | en | `pdm run api-e2e --target en` | `~/.cache/xololingua/e2e-validations/lisoir_dnde442.fr-en.srt` (17,904 bytes) | Passed: detected French source, generated non-empty SRT with timestamp arrows through the API subtitle-job workflow. |
+| 2026-07-01 | ru | `pdm run api-e2e --target ru` | `~/.cache/xololingua/e2e-validations/lisoir_dnde442.fr-ru.srt` (29,552 bytes) | Passed: detected French source, generated non-empty SRT with timestamp arrows through the API subtitle-job workflow. |
+| 2026-07-01 | uk | `pdm run api-e2e --target uk` | `~/.cache/xololingua/e2e-validations/lisoir_dnde442.fr-uk.srt` (27,406 bytes) | Passed: detected French source, generated 88 SRT blocks with timestamp arrows through the API subtitle-job workflow. |
+| 2026-07-01 | zh | `pdm run api-e2e --target zh` | `~/.cache/xololingua/e2e-validations/lisoir_dnde442.fr-zh.srt` (15,058 bytes) | Passed: detected French source, generated 88 SRT blocks with timestamp arrows through the API subtitle-job workflow. |
+| 2026-07-02 | de | `pdm run api-e2e --target de` | `~/.cache/xololingua/e2e-validations/lisoir_dnde442.fr-de.srt` (19,941 bytes) | Passed: detected French source, generated 88 SRT blocks with timestamp arrows through the API subtitle-job workflow. |
+| 2026-07-02 | es | `pdm run api-e2e --target es` | `~/.cache/xololingua/e2e-validations/lisoir_dnde442.fr-es.srt` (18,907 bytes) | Passed: detected French source, generated 88 SRT blocks with timestamp arrows through the API subtitle-job workflow. |
+| 2026-07-02 | hi | `pdm run api-e2e --target hi` | `~/.cache/xololingua/e2e-validations/lisoir_dnde442.fr-hi.srt` (38,815 bytes) | Passed: detected French source, generated 88 SRT blocks with timestamp arrows through the API subtitle-job workflow. |
+| 2026-07-02 | ja | `pdm run api-e2e --target ja` | `~/.cache/xololingua/e2e-validations/lisoir_dnde442.fr-ja.srt` (21,049 bytes) | Passed: detected French source, generated 88 SRT blocks with timestamp arrows through the API subtitle-job workflow. |
+| 2026-07-02 | ar | `pdm run api-e2e --target ar` | `~/.cache/xololingua/e2e-validations/lisoir_dnde442.fr-ar.srt` (23,716 bytes) | Passed: detected French source, generated 88 SRT blocks with timestamp arrows through the API subtitle-job workflow. |
+| 2026-07-02 | bn | `pdm run api-e2e --target bn` | `~/.cache/xololingua/e2e-validations/lisoir_dnde442.fr-bn.srt` (35,737 bytes) | Passed: detected French source, generated 88 SRT blocks with timestamp arrows through the API subtitle-job workflow. |
+| 2026-07-03 | pt | `pdm run api-e2e --target pt --min-srt-blocks 80` | `~/.cache/xololingua/e2e-validations/lisoir_dnde442.fr-pt.srt` (18,419 bytes) | Passed: detected French source, generated 88 SRT blocks with timestamp arrows through the API subtitle-job workflow. |
+| 2026-07-03 | ur | `pdm run api-e2e --target ur --min-srt-blocks 80` | `~/.cache/xololingua/e2e-validations/lisoir_dnde442.fr-ur.srt` (25,907 bytes) | Passed: detected French source, generated 88 SRT blocks with timestamp arrows through the API subtitle-job workflow. |
+| 2026-07-03 | id | `pdm run api-e2e --target id --min-srt-blocks 80` | `~/.cache/xololingua/e2e-validations/lisoir_dnde442.fr-id.srt` (18,378 bytes) | Passed: detected French source, generated 88 SRT blocks with timestamp arrows through the API subtitle-job workflow. |
+| 2026-07-03 | sw | `pdm run api-e2e --target sw --min-srt-blocks 80` | `~/.cache/xololingua/e2e-validations/lisoir_dnde442.fr-sw.srt` (17,777 bytes) | Passed: detected French source, generated 88 SRT blocks with timestamp arrows through the API subtitle-job workflow. |
+| 2026-07-03 | tr | `pdm run api-e2e --target tr --min-srt-blocks 80` | `~/.cache/xololingua/e2e-validations/lisoir_dnde442.fr-tr.srt` (17,839 bytes) | Passed: detected French source, generated 88 SRT blocks with timestamp arrows through the API subtitle-job workflow. |
+| 2026-07-04 | it | `pdm run api-e2e --target it --min-srt-blocks 80` | `~/.cache/xololingua/e2e-validations/lisoir_dnde442.fr-it.srt` (18,634 bytes) | Passed: detected French source, generated 88 SRT blocks with timestamp arrows through the API subtitle-job workflow. |
 
 ## Representative browser-download validations
 
@@ -90,27 +90,28 @@ These languages are abandoned for the moment because the current Argos package i
 | --- | --- | --- | --- |
 | 2026-06-30 | mr, te, ta | `translate-en_mr`, `translate-en_te`, `translate-en_ta` | `argospm update` completed, but neither `argospm search` nor `package.get_available_packages()` found English-to-target packages for these codes. `translation.get_supported_pairs()` therefore does not expose `fr -> mr`, `fr -> te`, or `fr -> ta` locally yet. |
 | 2026-07-04 | mr, te, ta | `translate-en_mr`, `translate-en_te`, `translate-en_ta` | `argostranslate.package.update_package_index()` completed; `package.get_available_packages()` still does not expose `translate-en_mr`, `translate-en_te`, or `translate-en_ta`. A live `translation.get_supported_pairs()` probe returned `fr -> mr: False`, `fr -> te: False`, and `fr -> ta: False`, so `fr -> mr`, `fr -> te`, and `fr -> ta` remain blocked locally. |
+| 2026-07-05 | mr, te, ta | `translate-en_mr`, `translate-en_te`, `translate-en_ta` | `argostranslate.package.update_package_index()` completed again; `package.get_available_packages()` still reports `translate-en_mr: False`, `translate-en_te: False`, and `translate-en_ta: False`. A live `translation.get_supported_pairs()` probe still returned `fr -> mr: False`, `fr -> te: False`, and `fr -> ta: False`, so these three languages remain local Argos-index blockers and are not API E2E candidates yet. |
 
 ## Already available for the reference French video
 
 | Code | Language | Notes |
 | --- | --- | --- |
 | en | English | Installed and validated as the first French target. |
-| ar | Arabic | API E2E generated and verified `tmp/e2e-validations/lisoir_dnde442.fr-ar.srt`; API E2E branch gate passed; browser-download validation is representative only. |
-| ja | Japanese | API E2E generated and verified `tmp/e2e-validations/lisoir_dnde442.fr-ja.srt`; API E2E branch gate passed; browser-download validation is representative only. |
-| hi | Hindi | API E2E generated and verified `tmp/e2e-validations/lisoir_dnde442.fr-hi.srt`; API E2E branch gate passed; browser-download validation is representative only. |
-| es | Spanish | API E2E generated and verified `tmp/e2e-validations/lisoir_dnde442.fr-es.srt`; API E2E branch gate passed; browser-download validation is representative only. |
-| ru | Russian | API E2E generated and verified `tmp/e2e-validations/lisoir_dnde442.fr-ru.srt`; API E2E branch gate passed; browser-download validation is representative only. |
-| uk | Ukrainian | API E2E generated and verified `tmp/e2e-validations/lisoir_dnde442.fr-uk.srt`; API E2E branch gate passed; browser-download validation is representative only. |
-| zh | Chinese | API E2E generated and verified `tmp/e2e-validations/lisoir_dnde442.fr-zh.srt`; API E2E branch gate passed; browser-download validation is representative only. |
-| de | German | API E2E generated and verified `tmp/e2e-validations/lisoir_dnde442.fr-de.srt`; API E2E branch gate passed; browser-download validation is representative only. |
-| bn | Bengali | API E2E generated and verified `tmp/e2e-validations/lisoir_dnde442.fr-bn.srt`; API E2E branch gate passed; browser-download validation is representative only. |
-| pt | Portuguese | API E2E generated and verified `tmp/e2e-validations/lisoir_dnde442.fr-pt.srt`; API E2E branch gate passed; browser-download validation is representative only. |
-| ur | Urdu | API E2E generated and verified `tmp/e2e-validations/lisoir_dnde442.fr-ur.srt`; API E2E branch gate passed; browser-download validation is representative only. |
-| id | Indonesian | API E2E generated and verified `tmp/e2e-validations/lisoir_dnde442.fr-id.srt`; API E2E branch gate passed; browser-download validation is representative only. |
-| sw | Swahili | API E2E generated and verified `tmp/e2e-validations/lisoir_dnde442.fr-sw.srt`; API E2E branch gate passed; browser-download validation is representative only. |
-| tr | Turkish | API E2E generated and verified `tmp/e2e-validations/lisoir_dnde442.fr-tr.srt`; API E2E branch gate passed; browser-download validation is representative only. |
-| it | Italian | API E2E generated and verified `tmp/e2e-validations/lisoir_dnde442.fr-it.srt`; API E2E branch gate passed; browser-download validation is representative only. |
+| ar | Arabic | API E2E generated and verified `~/.cache/xololingua/e2e-validations/lisoir_dnde442.fr-ar.srt`; API E2E branch gate passed; browser-download validation is representative only. |
+| ja | Japanese | API E2E generated and verified `~/.cache/xololingua/e2e-validations/lisoir_dnde442.fr-ja.srt`; API E2E branch gate passed; browser-download validation is representative only. |
+| hi | Hindi | API E2E generated and verified `~/.cache/xololingua/e2e-validations/lisoir_dnde442.fr-hi.srt`; API E2E branch gate passed; browser-download validation is representative only. |
+| es | Spanish | API E2E generated and verified `~/.cache/xololingua/e2e-validations/lisoir_dnde442.fr-es.srt`; API E2E branch gate passed; browser-download validation is representative only. |
+| ru | Russian | API E2E generated and verified `~/.cache/xololingua/e2e-validations/lisoir_dnde442.fr-ru.srt`; API E2E branch gate passed; browser-download validation is representative only. |
+| uk | Ukrainian | API E2E generated and verified `~/.cache/xololingua/e2e-validations/lisoir_dnde442.fr-uk.srt`; API E2E branch gate passed; browser-download validation is representative only. |
+| zh | Chinese | API E2E generated and verified `~/.cache/xololingua/e2e-validations/lisoir_dnde442.fr-zh.srt`; API E2E branch gate passed; browser-download validation is representative only. |
+| de | German | API E2E generated and verified `~/.cache/xololingua/e2e-validations/lisoir_dnde442.fr-de.srt`; API E2E branch gate passed; browser-download validation is representative only. |
+| bn | Bengali | API E2E generated and verified `~/.cache/xololingua/e2e-validations/lisoir_dnde442.fr-bn.srt`; API E2E branch gate passed; browser-download validation is representative only. |
+| pt | Portuguese | API E2E generated and verified `~/.cache/xololingua/e2e-validations/lisoir_dnde442.fr-pt.srt`; API E2E branch gate passed; browser-download validation is representative only. |
+| ur | Urdu | API E2E generated and verified `~/.cache/xololingua/e2e-validations/lisoir_dnde442.fr-ur.srt`; API E2E branch gate passed; browser-download validation is representative only. |
+| id | Indonesian | API E2E generated and verified `~/.cache/xololingua/e2e-validations/lisoir_dnde442.fr-id.srt`; API E2E branch gate passed; browser-download validation is representative only. |
+| sw | Swahili | API E2E generated and verified `~/.cache/xololingua/e2e-validations/lisoir_dnde442.fr-sw.srt`; API E2E branch gate passed; browser-download validation is representative only. |
+| tr | Turkish | API E2E generated and verified `~/.cache/xololingua/e2e-validations/lisoir_dnde442.fr-tr.srt`; API E2E branch gate passed; browser-download validation is representative only. |
+| it | Italian | API E2E generated and verified `~/.cache/xololingua/e2e-validations/lisoir_dnde442.fr-it.srt`; API E2E branch gate passed; browser-download validation is representative only. |
 
 ## Missing target languages
 
