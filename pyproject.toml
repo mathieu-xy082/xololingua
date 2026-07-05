@@ -18,7 +18,9 @@ requires = ["pdm-backend"]
 build-backend = "pdm.backend"
 
 [dependency-groups]
-test = []
+test = [
+  "playwright>=1.45",
+]
 
 [tool.pdm]
 distribution = false
@@ -26,8 +28,11 @@ distribution = false
 [tool.pdm.scripts]
 service = "python local_service.py"
 web = "python -m http.server 4173"
+browser-install = "python -m playwright install chromium"
+browser-e2e = "python scripts/browser_e2e_validate.py"
+api-e2e = "python scripts/api_e2e_validate.py"
 test = "python -m unittest discover tests"
 check.composite = [
-  "python -m py_compile local_service.py transcribe_worker.py xololingua_service/*.py tests/test_audio.py tests/test_segments.py tests/test_translation.py tests/test_jobs.py tests/test_pipeline.py",
+  "python -m compileall -q local_service.py transcribe_worker.py xololingua_service tests",
   "python -m unittest discover tests",
 ]

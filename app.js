@@ -89,6 +89,7 @@ const els = {
 };
 
 let deferredInstallPrompt = null;
+let _pairsFetched = false;
 
 populateLanguages();
 bindEvents();
@@ -113,8 +114,6 @@ function populateLanguages() {
     els.targetLanguageSelect.append(option);
   });
 }
-
-let _pairsFetched = false;
 
 async function fetchTranslationPairs() {
   if (_pairsFetched) return;
@@ -491,7 +490,9 @@ async function cancelSubtitleJobAdapter(jobId) {
 async function pollSubtitleJob(jobId, onProgress) {
   while (true) {
     await delay(1200);
-    const response = await fetch(`${LOCAL_SERVICE_URL}/api/subtitle-jobs/${jobId}`);
+    const response = await fetch(`${LOCAL_SERVICE_URL}/api/subtitle-jobs/${jobId}`, {
+      cache: "no-store"
+    });
     const payload = await response.json();
 
     if (!response.ok) {
