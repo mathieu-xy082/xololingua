@@ -31,6 +31,7 @@ DEFAULT_OUTPUT_DIR = Path(
         Path.home() / ".cache" / "xololingua" / "e2e-validations",
     )
 )
+DEFAULT_CLEANUP_RETENTION_DAYS = 7
 TERMINAL_JOB_STATUSES = {"succeeded", "failed", "cancelled"}
 
 
@@ -68,6 +69,7 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--video", type=Path, default=DEFAULT_VIDEO, help="MP4 video used as the real E2E fixture.")
     parser.add_argument("--service-url", default=DEFAULT_SERVICE_URL, help="URL of the local backend service.")
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR, help="Directory where the verified .srt artifact is written.")
+    parser.add_argument("--cleanup-retention-days", type=int, default=DEFAULT_CLEANUP_RETENTION_DAYS, help="Remove generated .srt artifacts in the output directory older than this many days; use 0 to disable cleanup.")
     parser.add_argument("--no-start", action="store_true", help="Do not auto-start PDM service; require it to be already reachable.")
     parser.add_argument("--keep-service", action="store_true", help="Leave an auto-started service running.")
     parser.add_argument("--poll-interval", type=float, default=2.0, help="Seconds between subtitle-job polls.")
@@ -212,6 +214,20 @@ def validate_srt(path: Path, min_blocks: int) -> None:
         raise AssertionError(f"SRT artifact has no subtitle text: {path}")
 
 
+def cleanup_stale_artifacts(output_dir: Path, retention_days: int, now: float | None = None) -> list[Path]:
+    if retention_days <= 0 or not output_dir.is_dir():
+        return []
+
+    cutoff = (time.time() if now is None else now) - retention_days * 86_400
+    removed: list[Path] = []
+    for artifact in sorted(output_dir.glob("*.srt")):
+        if artifact.stat().st_mtime >= cutoff:
+            continue
+        artifact.unlink()
+        removed.append(artifact)
+    return removed
+
+
 def run_api_workflow(args: argparse.Namespace) -> Path:
     if not args.video.is_file():
         raise SystemExit(f"Video fixture not found: {args.video}")
@@ -266,6 +282,9 @@ def main(argv: Iterable[str] | None = None) -> int:
     service: ManagedProcess | None = None
     try:
         service = maybe_start_service(args)
+        removed = cleanup_stale_artifacts(args.output_dir, args.cleanup_retention_days)
+        if removed:
+            log_step(f"Removed {len(removed)} stale API E2E artifact(s) from {args.output_dir}")
         artifact = run_api_workflow(args)
         print(f"API E2E succeeded for target={args.target}: {artifact}")
         print(f"Generated SRT size: {artifact.stat().st_size} bytes")

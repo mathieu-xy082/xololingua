@@ -76,6 +76,13 @@ class MissingTargetLanguageDocsTests(unittest.TestCase):
         self.assertIn("~/.cache/xololingua/e2e-validations/", api_section)
         self.assertNotIn("tmp/e2e-validations/", api_section)
 
+    def test_api_e2e_artifact_retention_cleanup_is_documented(self):
+        text = DOC.read_text(encoding="utf-8")
+        assumptions = text.split("## Current assumptions", 1)[1].split("## Prepared package validations", 1)[0]
+
+        self.assertIn("7-day retention cleanup", assumptions)
+        self.assertIn("--cleanup-retention-days", assumptions)
+
 
 if __name__ == "__main__":
     unittest.main()
