@@ -38,7 +38,7 @@ class MissingTargetLanguageDocsTests(unittest.TestCase):
 
     def test_current_package_index_blockers_keep_unavailable_languages_missing(self):
         text = DOC.read_text(encoding="utf-8")
-        self.assertIn("| 2026-07-04 | mr, te, ta |", text)
+        self.assertIn("| 2026-07-05 | mr, te, ta |", text)
         self.assertIn("`translate-en_mr`, `translate-en_te`, `translate-en_ta`", text)
         self.assertIn("`fr -> mr`, `fr -> te`, and `fr -> ta` remain blocked", text)
 

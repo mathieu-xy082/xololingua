@@ -90,6 +90,7 @@ These languages are abandoned for the moment because the current Argos package i
 | --- | --- | --- | --- |
 | 2026-06-30 | mr, te, ta | `translate-en_mr`, `translate-en_te`, `translate-en_ta` | `argospm update` completed, but neither `argospm search` nor `package.get_available_packages()` found English-to-target packages for these codes. `translation.get_supported_pairs()` therefore does not expose `fr -> mr`, `fr -> te`, or `fr -> ta` locally yet. |
 | 2026-07-04 | mr, te, ta | `translate-en_mr`, `translate-en_te`, `translate-en_ta` | `argostranslate.package.update_package_index()` completed; `package.get_available_packages()` still does not expose `translate-en_mr`, `translate-en_te`, or `translate-en_ta`. A live `translation.get_supported_pairs()` probe returned `fr -> mr: False`, `fr -> te: False`, and `fr -> ta: False`, so `fr -> mr`, `fr -> te`, and `fr -> ta` remain blocked locally. |
+| 2026-07-05 | mr, te, ta | `translate-en_mr`, `translate-en_te`, `translate-en_ta` | `argostranslate.package.update_package_index()` completed again; `package.get_available_packages()` still reports `translate-en_mr: False`, `translate-en_te: False`, and `translate-en_ta: False`. A live `translation.get_supported_pairs()` probe still returned `fr -> mr: False`, `fr -> te: False`, and `fr -> ta: False`, so these three languages remain local Argos-index blockers and are not API E2E candidates yet. |
 
 ## Already available for the reference French video
 

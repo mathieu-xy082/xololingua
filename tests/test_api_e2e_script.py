@@ -14,6 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "api_e2e_validate.py"
 PYPROJECT = ROOT / "pyproject.toml"
+README = ROOT / "README.md"
 
 
 class ApiE2EScriptTests(unittest.TestCase):
@@ -103,6 +104,14 @@ class ApiE2EScriptTests(unittest.TestCase):
             self.assertEqual(removed, [stale_srt])
             self.assertFalse(stale_srt.exists())
             self.assertTrue(fresh_srt.exists())
+
+    def test_readme_documents_cache_api_e2e_artifact_directory(self):
+        readme = README.read_text(encoding="utf-8")
+        e2e_section = readme.split("Slow E2E validators are opt-in", 1)[1].split("## Android", 1)[0]
+
+        self.assertIn("~/.cache/xololingua/e2e-validations/", e2e_section)
+        self.assertIn("XOLOLINGUA_API_E2E_OUTPUT_DIR", e2e_section)
+        self.assertNotIn("tmp/e2e-validations/", e2e_section)
 
     @unittest.skipUnless(
         os.environ.get("XOLOLINGUA_VALIDATE_API_E2E") == "1",
