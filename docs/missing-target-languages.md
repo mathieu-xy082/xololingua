@@ -118,9 +118,9 @@ These languages are abandoned for the moment because the current Argos package i
 
 | Priority | Code | Language | Expected pivot package | Notes |
 | --- | --- | --- | --- | --- |
-| 1 | mr | Marathi | `translate-en_mr` | Present in the UI language catalogue; not in first MVP couples yet. |
-| 2 | te | Telugu | `translate-en_te` | Present in the UI language catalogue; not in first MVP couples yet. |
-| 3 | ta | Tamil | `translate-en_ta` | Present in the UI language catalogue; not in first MVP couples yet. |
+| 1 | mr | Marathi | `translate-en_mr` | Argos index absent; abandoned for now and not an API E2E candidate until the package appears locally. |
+| 2 | te | Telugu | `translate-en_te` | Argos index absent; abandoned for now and not an API E2E candidate until the package appears locally. |
+| 3 | ta | Tamil | `translate-en_ta` | Argos index absent; abandoned for now and not an API E2E candidate until the package appears locally. |
 
 ## Validation checklist for each language
 

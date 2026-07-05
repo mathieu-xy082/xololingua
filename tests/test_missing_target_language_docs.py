@@ -52,6 +52,29 @@ class MissingTargetLanguageDocsTests(unittest.TestCase):
         for code in ("mr", "te", "ta"):
             self.assertRegex(missing_section.group("table"), rf"\|\s*\d+\s*\|\s*{code}\s*\|")
 
+    def test_missing_blocker_rows_name_argos_index_absence_and_do_not_suggest_retrying_e2e(self):
+        text = DOC.read_text(encoding="utf-8")
+        missing_section = re.search(
+            r"## Missing target languages\n\n(?P<table>.*?)(?:\n\n## |\Z)",
+            text,
+            re.S,
+        )
+        self.assertIsNotNone(missing_section)
+        assert missing_section is not None
+        missing_table = missing_section.group("table")
+
+        for code, package in (
+            ("mr", "translate-en_mr"),
+            ("te", "translate-en_te"),
+            ("ta", "translate-en_ta"),
+        ):
+            row = next(line for line in missing_table.splitlines() if f"| {code} |" in line)
+            self.assertIn(package, row)
+            self.assertIn("Argos index absent", row)
+            self.assertIn("abandoned for now", row)
+            self.assertIn("not an API E2E candidate", row)
+            self.assertNotIn("retry API E2E", row)
+
     def test_validation_checklist_names_api_e2e_as_removal_gate(self):
         text = DOC.read_text(encoding="utf-8")
         checklist = text.split("## Validation checklist for each language", 1)[1]
