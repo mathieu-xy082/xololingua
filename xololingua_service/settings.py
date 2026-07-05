@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import sys
-import tempfile
 from pathlib import Path
 
 HOST = "127.0.0.1"
@@ -14,7 +13,13 @@ MAX_SEGMENT_SECONDS = 12.0
 MIN_SEGMENT_SECONDS = 0.4
 SILENCE_NOISE = "-35dB"
 SILENCE_DURATION_SECONDS = 0.45
-WORK_DIR = Path(tempfile.gettempdir()) / "xololingua"
+TMP_ROOT = Path(
+    os.environ.get(
+        "XOLOLINGUA_TMP_DIR",
+        Path.home() / ".cache" / "xololingua" / "tmp",
+    )
+)
+WORK_DIR = TMP_ROOT / "service"
 ARGOS_COMMAND = os.environ.get("XOLOLINGUA_ARGOS_COMMAND", "argos-translate")
 SUBTITLE_JOB_WORKERS = int(os.environ.get("XOLOLINGUA_SUBTITLE_JOB_WORKERS", "1"))
 TRANSLATION_WORKERS = int(os.environ.get("XOLOLINGUA_TRANSLATION_WORKERS", "2"))
