@@ -69,6 +69,13 @@ class MissingTargetLanguageDocsTests(unittest.TestCase):
         self.assertIn("API E2E", prepared_section)
         self.assertNotIn("full browser video workflow generates and verifies a `.srt`", prepared_section)
 
+    def test_recorded_api_e2e_artifacts_use_cache_directory_not_repo_tmp(self):
+        text = DOC.read_text(encoding="utf-8")
+        api_section = text.split("## API E2E video validations", 1)[1].split("## Representative browser-download validations", 1)[0]
+
+        self.assertIn("~/.cache/xololingua/e2e-validations/", api_section)
+        self.assertNotIn("tmp/e2e-validations/", api_section)
+
 
 if __name__ == "__main__":
     unittest.main()
