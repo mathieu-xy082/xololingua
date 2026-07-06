@@ -76,7 +76,7 @@ Local Python service (port 8765)
         +-- SRT generation returned to the browser
 ```
 
-Processing takes place on the machine running the local service. Uploaded media and extracted audio are stored temporarily under `/tmp/xololingua` rather than sent to a hosted XoloLingua backend.
+Processing takes place on the machine running the local service. Uploaded media and extracted audio are stored temporarily under `~/.cache/xololingua/tmp/service` by default, or under `$XOLOLINGUA_TMP_DIR/service` when that environment variable is set, rather than sent to a hosted XoloLingua backend.
 
 ## Build and Run Locally
 
@@ -172,7 +172,7 @@ XOLOLINGUA_VALIDATE_API_E2E=1 XOLOLINGUA_API_E2E_TARGET=en pdm run test
 pdm run browser-e2e --target en
 ```
 
-The API E2E validator auto-starts `pdm run service` when needed, uploads `/root/android-app-games/resources/lisoir_dnde442.mp4`, detects French, extracts and segments audio, creates/polls a subtitle job, and writes a verified `.srt` artifact under `~/.cache/xololingua/e2e-validations/` by default. Override that location with `XOLOLINGUA_API_E2E_OUTPUT_DIR` when a run needs an explicit artifact directory.
+The API E2E validator auto-starts `pdm run service` when needed, uploads `/root/android-app-games/resources/lisoir_dnde442.mp4`, detects French, extracts and segments audio, creates/polls a subtitle job, and writes a verified `.srt` artifact under `~/.cache/xololingua/e2e-validations/` by default. Override that location with `XOLOLINGUA_API_E2E_OUTPUT_DIR` when a run needs an explicit artifact directory. Browser E2E downloads default to `~/.cache/xololingua/tmp/browser-e2e-downloads/`, can share another temp root through `XOLOLINGUA_TMP_DIR`, and can still be sent to an explicit directory with `XOLOLINGUA_BROWSER_E2E_DOWNLOAD_DIR`.
 
 ## Android
 

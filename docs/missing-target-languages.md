@@ -8,11 +8,12 @@ Update rule: when a language is added and the API E2E server workflow on a real 
 
 - The reference end-to-end fixture is `/root/android-app-games/resources/lisoir_dnde442.mp4`.
 - New API E2E artifacts default to `~/.cache/xololingua/e2e-validations/`; override with `XOLOLINGUA_API_E2E_OUTPUT_DIR` when a run needs an explicit artifact location. The API E2E validator applies 7-day retention cleanup for old generated `.srt` artifacts in that directory by default; use `--cleanup-retention-days 0` to disable it for forensic reruns.
-- New browser E2E downloads default to `~/.cache/xololingua/browser-e2e-downloads/`; override with `XOLOLINGUA_BROWSER_E2E_DOWNLOAD_DIR` when a run needs an explicit download location.
+- New browser E2E downloads default to `~/.cache/xololingua/tmp/browser-e2e-downloads/`; override the shared temp root with `XOLOLINGUA_TMP_DIR` or set `XOLOLINGUA_BROWSER_E2E_DOWNLOAD_DIR` when a run needs an explicit download location.
 - The reference video is detected as French (`fr`).
-- The only currently installed and validated Argos packages are:
+- Baseline Argos packages for the French fixture include:
   - `translate-fr_en`
   - `translate-en_fr`
+- Additional installed target packages are tracked below through prepared-package, translator-smoke, and API E2E validation rows; do not treat this baseline list as the complete local package set.
 - English (`en`) is treated as the current internal pivot language for expanding French source subtitles to additional targets.
 - For a French source video and an English pivot, adding target `<code>` generally requires validating at least:
   - French speech-to-text
@@ -117,9 +118,9 @@ These languages are abandoned for the moment because the current Argos package i
 
 | Priority | Code | Language | Expected pivot package | Notes |
 | --- | --- | --- | --- | --- |
-| 1 | mr | Marathi | `translate-en_mr` | Present in the UI language catalogue; not in first MVP couples yet. |
-| 2 | te | Telugu | `translate-en_te` | Present in the UI language catalogue; not in first MVP couples yet. |
-| 3 | ta | Tamil | `translate-en_ta` | Present in the UI language catalogue; not in first MVP couples yet. |
+| 1 | mr | Marathi | `translate-en_mr` | Argos index absent; abandoned for now and not an API E2E candidate until the package appears locally. |
+| 2 | te | Telugu | `translate-en_te` | Argos index absent; abandoned for now and not an API E2E candidate until the package appears locally. |
+| 3 | ta | Tamil | `translate-en_ta` | Argos index absent; abandoned for now and not an API E2E candidate until the package appears locally. |
 
 ## Validation checklist for each language
 
