@@ -78,6 +78,17 @@ Local Python service (port 8765)
 
 Processing takes place on the machine running the local service. Uploaded media and extracted audio are stored temporarily under `~/.cache/xololingua/tmp/service` by default, or under `$XOLOLINGUA_TMP_DIR/service` when that environment variable is set, rather than sent to a hosted XoloLingua backend.
 
+### Client-side migration contract
+
+The frontend keeps explicit capability probes for each migration stage and aggregates them through `frontend/client_pipeline_capabilities.js`:
+
+- `audioExtraction`: browser WebCodecs or ffmpeg.wasm path, otherwise Python service fallback.
+- `vad`: browser VAD path, otherwise Python segmentation fallback.
+- `transcription`: browser transformers.js path, otherwise Python faster-whisper fallback.
+- `translation`: browser local/cloud translator path, otherwise Python Argos fallback.
+
+The aggregate report labels the current flow as `client-side` only when every stage has a browser runtime. Any unavailable stage produces `hybrid-fallback` with a concrete list of `serverFallbackStages`, so milestone demos can state exactly which parts still rely on the Python service.
+
 ## Build and Run Locally
 
 ### Prerequisites
