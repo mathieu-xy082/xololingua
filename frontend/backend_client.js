@@ -16,7 +16,12 @@ export function createBackendClient({
   const endpoint = (path) => `${normalizedBaseUrl}${path}`;
 
   async function readJson(response, fallbackError) {
-    const payload = await response.json();
+    let payload;
+    try {
+      payload = await response.json();
+    } catch {
+      throw new Error(fallbackError);
+    }
     if (!response.ok) {
       throw new Error(payload.error || fallbackError);
     }

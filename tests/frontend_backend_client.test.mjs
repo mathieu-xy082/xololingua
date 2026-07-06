@@ -152,6 +152,24 @@ test("getTranslationPairs returns configured service language pairs", async () =
   ]);
 });
 
+test("getTranslationPairs surfaces malformed service responses as the fallback error", async () => {
+  const client = createBackendClient({
+    baseUrl: "http://service.test/",
+    fetchImpl: async () => ({
+      ok: true,
+      async json() {
+        throw new SyntaxError("Unexpected token '<'");
+      },
+    }),
+    FormDataImpl: FakeFormData,
+  });
+
+  await assert.rejects(
+    () => client.getTranslationPairs(),
+    /Translation pairs could not be read\./,
+  );
+});
+
 test("createSubtitleJob posts extracted audio and selected language details", async () => {
   const calls = [];
   const client = createBackendClient({
