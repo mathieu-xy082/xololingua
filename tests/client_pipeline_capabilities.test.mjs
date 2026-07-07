@@ -37,6 +37,21 @@ test("client pipeline report marks an all-browser flow as client-side", () => {
   assert.deepEqual(report.serverFallbackStages, []);
 });
 
+test("client pipeline report includes demo-ready fallback labels", () => {
+  const report = createClientPipelineCapabilityReport({
+    audioExtraction: { strategy: "webcodecs" },
+    vad: { strategy: "unavailable" },
+    transcription: { strategy: "transformers.js" },
+    translation: { strategy: "unavailable" },
+  });
+
+  assert.deepEqual(report.demoSummary, {
+    headline: "Hybrid PWA: 2 browser stages, 2 Python fallback stages",
+    browserStageLabels: ["Audio extraction", "Transcription"],
+    serverFallbackStageLabels: ["VAD / segmentation", "Translation"],
+  });
+});
+
 test("collectClientPipelineCapabilities builds a report from browser feature probes", () => {
   const report = collectClientPipelineCapabilities({
     VideoDecoder: function VideoDecoder() {},

@@ -43,6 +43,7 @@ The project has not published a first version yet.
   - French to Spanish and Spanish to French.
   - French to Hindi and Hindi to French.
   - French to Japanese and Japanese to French.
+- Added demo-ready client pipeline summaries that name browser stages and Python fallback stages.
 
 ### Changed
 

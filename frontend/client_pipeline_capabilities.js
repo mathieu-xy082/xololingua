@@ -10,6 +10,13 @@ const PIPELINE_STAGE_ORDER = [
   "translation",
 ];
 
+const PIPELINE_STAGE_LABELS = {
+  audioExtraction: "Audio extraction",
+  vad: "VAD / segmentation",
+  transcription: "Transcription",
+  translation: "Translation",
+};
+
 export function collectClientPipelineCapabilities(environment = globalThis) {
   return createClientPipelineCapabilityReport({
     audioExtraction: detectClientAudioExtractionCapabilities(environment),
@@ -42,10 +49,27 @@ export function createClientPipelineCapabilityReport(capabilitiesByStage) {
     }
   }
 
+  const mode = serverFallbackStages.length === 0 ? "client-side" : "hybrid-fallback";
+
   return {
-    mode: serverFallbackStages.length === 0 ? "client-side" : "hybrid-fallback",
+    mode,
     stages,
     browserStages,
     serverFallbackStages,
+    demoSummary: createDemoSummary({ mode, browserStages, serverFallbackStages }),
+  };
+}
+
+function createDemoSummary({ mode, browserStages, serverFallbackStages }) {
+  const browserCount = browserStages.length;
+  const fallbackCount = serverFallbackStages.length;
+  const headline = mode === "client-side"
+    ? `Client-side PWA: ${browserCount} browser stages, no Python fallback stages`
+    : `Hybrid PWA: ${browserCount} browser stages, ${fallbackCount} Python fallback stages`;
+
+  return {
+    headline,
+    browserStageLabels: browserStages.map((stageName) => PIPELINE_STAGE_LABELS[stageName]),
+    serverFallbackStageLabels: serverFallbackStages.map((stageName) => PIPELINE_STAGE_LABELS[stageName]),
   };
 }
