@@ -17,6 +17,13 @@ const PIPELINE_STAGE_LABELS = {
   translation: "Translation",
 };
 
+const PYTHON_FALLBACK_ENDPOINTS = {
+  audioExtraction: ["POST /api/extract-audio"],
+  vad: ["POST /api/segment-audio"],
+  transcription: ["POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
+  translation: ["POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
+};
+
 export function collectClientPipelineCapabilities(environment = globalThis) {
   return createClientPipelineCapabilityReport({
     audioExtraction: detectClientAudioExtractionCapabilities(environment),
@@ -71,5 +78,10 @@ function createDemoSummary({ mode, browserStages, serverFallbackStages }) {
     headline,
     browserStageLabels: browserStages.map((stageName) => PIPELINE_STAGE_LABELS[stageName]),
     serverFallbackStageLabels: serverFallbackStages.map((stageName) => PIPELINE_STAGE_LABELS[stageName]),
+    serverFallbackEndpoints: serverFallbackStages.map((stageName) => ({
+      stage: stageName,
+      label: PIPELINE_STAGE_LABELS[stageName],
+      endpoints: PYTHON_FALLBACK_ENDPOINTS[stageName],
+    })),
   };
 }
