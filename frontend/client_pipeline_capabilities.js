@@ -63,11 +63,11 @@ export function createClientPipelineCapabilityReport(capabilitiesByStage) {
     stages,
     browserStages,
     serverFallbackStages,
-    demoSummary: createDemoSummary({ mode, browserStages, serverFallbackStages }),
+    demoSummary: createDemoSummary({ mode, stages, browserStages, serverFallbackStages }),
   };
 }
 
-function createDemoSummary({ mode, browserStages, serverFallbackStages }) {
+function createDemoSummary({ mode, stages, browserStages, serverFallbackStages }) {
   const browserCount = browserStages.length;
   const fallbackCount = serverFallbackStages.length;
   const headline = mode === "client-side"
@@ -82,6 +82,13 @@ function createDemoSummary({ mode, browserStages, serverFallbackStages }) {
       stage: stageName,
       label: PIPELINE_STAGE_LABELS[stageName],
       endpoints: PYTHON_FALLBACK_ENDPOINTS[stageName],
+    })),
+    stageRows: PIPELINE_STAGE_ORDER.map((stageName) => ({
+      stage: stageName,
+      label: PIPELINE_STAGE_LABELS[stageName],
+      runtimeLabel: stages[stageName].runtime === "browser" ? "Browser" : "Python fallback",
+      strategy: stages[stageName].strategy,
+      fallbackEndpoints: stages[stageName].runtime === "browser" ? [] : PYTHON_FALLBACK_ENDPOINTS[stageName],
     })),
   };
 }

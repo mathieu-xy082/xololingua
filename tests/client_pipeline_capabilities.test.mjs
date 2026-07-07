@@ -57,6 +57,36 @@ test("client pipeline report includes demo-ready fallback labels and server endp
         endpoints: ["POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
       },
     ],
+    stageRows: [
+      {
+        stage: "audioExtraction",
+        label: "Audio extraction",
+        runtimeLabel: "Browser",
+        strategy: "webcodecs",
+        fallbackEndpoints: [],
+      },
+      {
+        stage: "vad",
+        label: "VAD / segmentation",
+        runtimeLabel: "Python fallback",
+        strategy: "unavailable",
+        fallbackEndpoints: ["POST /api/segment-audio"],
+      },
+      {
+        stage: "transcription",
+        label: "Transcription",
+        runtimeLabel: "Browser",
+        strategy: "transformers.js",
+        fallbackEndpoints: [],
+      },
+      {
+        stage: "translation",
+        label: "Translation",
+        runtimeLabel: "Python fallback",
+        strategy: "unavailable",
+        fallbackEndpoints: ["POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
+      },
+    ],
   });
 });
 

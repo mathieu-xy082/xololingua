@@ -45,6 +45,7 @@ The project has not published a first version yet.
   - French to Japanese and Japanese to French.
 - Added demo-ready client pipeline summaries that name browser stages and Python fallback stages.
 - Added Python fallback endpoint names to client pipeline demo summaries.
+- Added ordered client pipeline demo rows for presenting each stage's browser or Python fallback runtime.
 
 ### Changed
 

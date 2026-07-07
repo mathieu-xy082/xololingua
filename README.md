@@ -87,7 +87,7 @@ The frontend keeps explicit capability probes for each migration stage and aggre
 - `transcription`: browser transformers.js path, otherwise Python faster-whisper fallback.
 - `translation`: browser local/cloud translator path, otherwise Python Argos fallback.
 
-The aggregate report labels the current flow as `client-side` only when every stage has a browser runtime. Any unavailable stage produces `hybrid-fallback` with a concrete list of `serverFallbackStages`, so milestone demos can state exactly which parts still rely on the Python service. The report also exposes a `demoSummary` with readable stage labels and `serverFallbackEndpoints`, for example `Hybrid PWA: 2 browser stages, 2 Python fallback stages` plus `POST /api/segment-audio` for segmentation fallback, to keep the July milestone presentation aligned with the tested contract.
+The aggregate report labels the current flow as `client-side` only when every stage has a browser runtime. Any unavailable stage produces `hybrid-fallback` with a concrete list of `serverFallbackStages`, so milestone demos can state exactly which parts still rely on the Python service. The report also exposes a `demoSummary` with readable stage labels, `serverFallbackEndpoints`, and ordered `stageRows` that pair each stage with its browser or Python fallback runtime; for example `Hybrid PWA: 2 browser stages, 2 Python fallback stages` plus `POST /api/segment-audio` for segmentation fallback, to keep the July milestone presentation aligned with the tested contract.
 
 ## Build and Run Locally
 
