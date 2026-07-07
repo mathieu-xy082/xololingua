@@ -104,6 +104,47 @@ test("segmentAudio posts an extracted audio id and returns service segments", as
   assert.equal(calls[0].options.body, JSON.stringify({ audioId: "audio-123" }));
 });
 
+test("extractAudio surfaces malformed service responses as the fallback error", async () => {
+  const client = createBackendClient({
+    baseUrl: "http://service.test/",
+    fetchImpl: async (url) => {
+      if (url.endsWith("/api/health")) {
+        return jsonResponse(true, { status: "ok" });
+      }
+      return {
+        ok: true,
+        async json() {
+          throw new SyntaxError("Unexpected token '<'");
+        },
+      };
+    },
+    FormDataImpl: FakeFormData,
+  });
+
+  await assert.rejects(
+    () => client.extractAudio({ name: "clip.mp4" }),
+    /Audio extraction failed\./,
+  );
+});
+
+test("segmentAudio surfaces malformed service responses as the fallback error", async () => {
+  const client = createBackendClient({
+    baseUrl: "http://service.test/",
+    fetchImpl: async () => ({
+      ok: true,
+      async json() {
+        throw new SyntaxError("Unexpected token '<'");
+      },
+    }),
+    FormDataImpl: FakeFormData,
+  });
+
+  await assert.rejects(
+    () => client.segmentAudio("audio-123"),
+    /Audio segmentation failed\./,
+  );
+});
+
 test("getHealth returns service health from the configured backend URL", async () => {
   const calls = [];
   const client = createBackendClient({

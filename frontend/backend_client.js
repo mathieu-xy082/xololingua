@@ -56,11 +56,7 @@ export function createBackendClient({
         method: "POST",
         body: formData,
       });
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(payload.error || "Audio extraction failed.");
-      }
+      const payload = await readJson(response, "Audio extraction failed.");
 
       onProgress(35);
       return payload;
@@ -76,11 +72,7 @@ export function createBackendClient({
         },
         body: JSON.stringify({ audioId }),
       });
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(payload.error || "Audio segmentation failed.");
-      }
+      const payload = await readJson(response, "Audio segmentation failed.");
 
       onProgress(100);
       return payload.segments;
