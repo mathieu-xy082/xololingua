@@ -14,6 +14,9 @@ export function createBackendClient({
 
   const normalizedBaseUrl = String(baseUrl).replace(/\/+$/, "");
   const endpoint = (path) => `${normalizedBaseUrl}${path}`;
+  const delay = (milliseconds) => new Promise((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
 
   async function readJson(response, fallbackError) {
     let payload;
@@ -104,6 +107,30 @@ export function createBackendClient({
         method: "POST",
       });
       return readJson(response, "Subtitle generation job could not be cancelled.");
+    },
+
+    async pollSubtitleJob(jobId, { delayMs = 1200, onProgress = () => {} } = {}) {
+      while (true) {
+        if (delayMs > 0) {
+          await delay(delayMs);
+        }
+        const response = await fetchImpl(endpoint(`/api/subtitle-jobs/${jobId}`), {
+          cache: "no-store",
+        });
+        const payload = await readJson(response, "Subtitle generation job could not be read.");
+
+        onProgress(payload);
+
+        if (payload.status === "succeeded") {
+          return payload.segments;
+        }
+        if (payload.status === "failed") {
+          throw new Error(payload.error || payload.message || "Subtitle generation failed.");
+        }
+        if (payload.status === "cancelled") {
+          throw new Error(payload.message || "Subtitle generation cancelled.");
+        }
+      }
     },
   };
 }

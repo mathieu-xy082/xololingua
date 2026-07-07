@@ -417,65 +417,19 @@ async function runSubtitleJobAdapter(extractedAudio, sourceLanguage, targetLangu
     throw new Error("Audio must be extracted before subtitle generation.");
   }
 
-  const response = await fetch(`${LOCAL_SERVICE_URL}/api/subtitle-jobs`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      audioId: extractedAudio.audioId,
-      sourceLanguage: sourceLanguage.code,
-      targetLanguage: targetLanguageCode,
-      segments
-    })
+  const payload = await backendClient.createSubtitleJob({
+    extractedAudio,
+    sourceLanguage,
+    targetLanguage: targetLanguageCode,
+    segments
   });
-  const payload = await response.json();
-
-  if (!response.ok) {
-    throw new Error(payload.error || "Subtitle generation job could not start.");
-  }
 
   onJobCreated(payload);
-  return pollSubtitleJob(payload.jobId, onProgress);
+  return backendClient.pollSubtitleJob(payload.jobId, { onProgress });
 }
 
 async function cancelSubtitleJobAdapter(jobId) {
-  const response = await fetch(`${LOCAL_SERVICE_URL}/api/subtitle-jobs/${jobId}/cancel`, {
-    method: "POST"
-  });
-  const payload = await response.json();
-
-  if (!response.ok) {
-    throw new Error(payload.error || "Subtitle generation job could not be cancelled.");
-  }
-
-  return payload;
-}
-
-async function pollSubtitleJob(jobId, onProgress) {
-  while (true) {
-    await delay(1200);
-    const response = await fetch(`${LOCAL_SERVICE_URL}/api/subtitle-jobs/${jobId}`, {
-      cache: "no-store"
-    });
-    const payload = await response.json();
-
-    if (!response.ok) {
-      throw new Error(payload.error || "Subtitle generation job could not be read.");
-    }
-
-    onProgress(payload);
-
-    if (payload.status === "succeeded") {
-      return payload.segments;
-    }
-    if (payload.status === "failed") {
-      throw new Error(payload.error || payload.message || "Subtitle generation failed.");
-    }
-    if (payload.status === "cancelled") {
-      throw new Error(payload.message || "Subtitle generation cancelled.");
-    }
-  }
+  return backendClient.cancelSubtitleJob(jobId);
 }
 
 async function identifyLanguageAdapter(file, onProgress = () => {}, onStatus = () => {}) {

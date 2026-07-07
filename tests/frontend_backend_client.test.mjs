@@ -263,3 +263,40 @@ test("getSubtitleJob and cancelSubtitleJob use the configured backend URL", asyn
     { url: "http://service.test/api/subtitle-jobs/job-123/cancel", options: { method: "POST" } },
   ]);
 });
+
+test("pollSubtitleJob reports progress and returns translated segments when the service succeeds", async () => {
+  const calls = [];
+  const progress = [];
+  const responses = [
+    { status: "queued", message: "Queued", transcriptionProgress: 0, translationProgress: 0 },
+    { status: "processing", message: "Transcribing", transcriptionProgress: 45, translationProgress: 0 },
+    {
+      status: "succeeded",
+      message: "Complete",
+      transcriptionProgress: 100,
+      translationProgress: 100,
+      segments: [{ index: 1, start: 0, end: 1.5, translatedText: "Hello" }],
+    },
+  ];
+  const client = createBackendClient({
+    baseUrl: "http://service.test/",
+    fetchImpl: async (url, options = {}) => {
+      calls.push({ url, options });
+      return jsonResponse(true, responses.shift());
+    },
+    FormDataImpl: FakeFormData,
+  });
+
+  const segments = await client.pollSubtitleJob("job-123", {
+    delayMs: 0,
+    onProgress: (job) => progress.push(job.message),
+  });
+
+  assert.deepEqual(segments, [{ index: 1, start: 0, end: 1.5, translatedText: "Hello" }]);
+  assert.deepEqual(progress, ["Queued", "Transcribing", "Complete"]);
+  assert.deepEqual(calls, [
+    { url: "http://service.test/api/subtitle-jobs/job-123", options: { cache: "no-store" } },
+    { url: "http://service.test/api/subtitle-jobs/job-123", options: { cache: "no-store" } },
+    { url: "http://service.test/api/subtitle-jobs/job-123", options: { cache: "no-store" } },
+  ]);
+});
