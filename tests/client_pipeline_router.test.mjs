@@ -149,6 +149,49 @@ test("hybrid pipeline router falls back to the Python subtitle job endpoint when
   });
 });
 
+test("hybrid pipeline router falls back to the Python subtitle job endpoint when browser translation is unavailable", async () => {
+  const calls = [];
+  const router = createHybridPipelineRouter({
+    capabilityReport: {
+      stages: {
+        translation: { runtime: "server-fallback", strategy: "unavailable" },
+      },
+    },
+    clientAdapters: {
+      translation: async () => {
+        calls.push(["client"]);
+        return [{ index: 1, translatedText: "Hello" }];
+      },
+    },
+    serverAdapters: {
+      translation: async (payload, onProgress) => {
+        calls.push(["server", payload.sourceLanguage, payload.targetLanguage]);
+        onProgress({ translationProgress: 100 });
+        return [{ index: 1, translatedText: "Hello" }];
+      },
+    },
+  });
+  const progress = [];
+
+  const result = await router.runTranslation(
+    {
+      sourceLanguage: "fr",
+      targetLanguage: "en",
+      segments: [{ index: 1, start: 0, end: 1.5, text: "Bonjour" }],
+    },
+    (value) => progress.push(value),
+  );
+
+  assert.deepEqual(calls, [["server", "fr", "en"]]);
+  assert.deepEqual(progress, [{ translationProgress: 100 }]);
+  assert.deepEqual(result, {
+    runtime: "server-fallback",
+    strategy: "unavailable",
+    fallbackEndpoint: ["POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
+    payload: [{ index: 1, translatedText: "Hello" }],
+  });
+});
+
 test("hybrid pipeline router fails explicitly when the selected adapter is missing", async () => {
   const browserRouter = createHybridPipelineRouter({
     capabilityReport: {

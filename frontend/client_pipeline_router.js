@@ -2,6 +2,7 @@ const PYTHON_FALLBACK_ENDPOINTS = {
   audioExtraction: "POST /api/extract-audio",
   vad: "POST /api/segment-audio",
   transcription: ["POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
+  translation: ["POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
 };
 
 export function createHybridPipelineRouter({
@@ -42,6 +43,19 @@ export function createHybridPipelineRouter({
         browserAdapterLabel: "Browser transcription",
         serverAdapterLabel: "Python fallback transcription",
         input: transcriptionRequest,
+        onProgress,
+        capabilityReport,
+        clientAdapters,
+        serverAdapters,
+      });
+    },
+
+    async runTranslation(translationRequest, onProgress = () => {}) {
+      return runStage({
+        stageName: "translation",
+        browserAdapterLabel: "Browser translation",
+        serverAdapterLabel: "Python fallback translation",
+        input: translationRequest,
         onProgress,
         capabilityReport,
         clientAdapters,
