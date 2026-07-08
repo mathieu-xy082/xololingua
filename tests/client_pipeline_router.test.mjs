@@ -69,7 +69,7 @@ test("hybrid pipeline router falls back to the Python audio endpoint when browse
   assert.deepEqual(result, {
     runtime: "server-fallback",
     strategy: "unavailable",
-    fallbackEndpoint: "POST /api/extract-audio",
+    fallbackEndpoints: ["POST /api/extract-audio"],
     payload: { audioId: "server-audio", audioFileName: "clip.wav" },
   });
 });
@@ -105,7 +105,7 @@ test("hybrid pipeline router falls back to the Python segmentation endpoint when
   assert.deepEqual(result, {
     runtime: "server-fallback",
     strategy: "unavailable",
-    fallbackEndpoint: "POST /api/segment-audio",
+    fallbackEndpoints: ["POST /api/segment-audio"],
     payload: [{ start: 0, end: 1.5 }],
   });
 });
@@ -144,7 +144,7 @@ test("hybrid pipeline router falls back to the Python subtitle job endpoint when
   assert.deepEqual(result, {
     runtime: "server-fallback",
     strategy: "unavailable",
-    fallbackEndpoint: ["POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
+    fallbackEndpoints: ["POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
     payload: [{ index: 1, text: "bonjour" }],
   });
 });
@@ -187,7 +187,7 @@ test("hybrid pipeline router falls back to the Python subtitle job endpoint when
   assert.deepEqual(result, {
     runtime: "server-fallback",
     strategy: "unavailable",
-    fallbackEndpoint: ["POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
+    fallbackEndpoints: ["POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
     payload: [{ index: 1, translatedText: "Hello" }],
   });
 });

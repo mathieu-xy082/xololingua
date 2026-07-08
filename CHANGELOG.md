@@ -49,6 +49,7 @@ The project has not published a first version yet.
 - Added frontend backend-client coverage for malformed audio extraction and segmentation fallback responses.
 - Added hybrid client pipeline routing for browser or Python fallback VAD segmentation.
 - Added hybrid client pipeline routing for browser or Python fallback transcription.
+- Normalized hybrid router fallback endpoint metadata for all client pipeline stages.
 - Added a tested client-side SRT formatter module and service-worker precache coverage for frontend modules.
 
 ### Changed

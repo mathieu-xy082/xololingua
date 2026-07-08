@@ -1,6 +1,6 @@
 const PYTHON_FALLBACK_ENDPOINTS = {
-  audioExtraction: "POST /api/extract-audio",
-  vad: "POST /api/segment-audio",
+  audioExtraction: ["POST /api/extract-audio"],
+  vad: ["POST /api/segment-audio"],
   transcription: ["POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
   translation: ["POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
 };
@@ -169,7 +169,7 @@ async function runStage({
   };
 
   if (!useBrowser) {
-    result.fallbackEndpoint = PYTHON_FALLBACK_ENDPOINTS[stageName];
+    result.fallbackEndpoints = PYTHON_FALLBACK_ENDPOINTS[stageName];
   }
 
   return result;
