@@ -1,5 +1,6 @@
 const PYTHON_FALLBACK_ENDPOINTS = {
   audioExtraction: "POST /api/extract-audio",
+  vad: "POST /api/segment-audio",
 };
 
 export function createHybridPipelineRouter({
@@ -14,6 +15,19 @@ export function createHybridPipelineRouter({
         browserAdapterLabel: "Browser audio extraction",
         serverAdapterLabel: "Python fallback audio extraction",
         input: file,
+        onProgress,
+        capabilityReport,
+        clientAdapters,
+        serverAdapters,
+      });
+    },
+
+    async runVadSegmentation(audioId, onProgress = () => {}) {
+      return runStage({
+        stageName: "vad",
+        browserAdapterLabel: "Browser VAD segmentation",
+        serverAdapterLabel: "Python fallback VAD segmentation",
+        input: audioId,
         onProgress,
         capabilityReport,
         clientAdapters,

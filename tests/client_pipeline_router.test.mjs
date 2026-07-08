@@ -74,7 +74,43 @@ test("hybrid pipeline router falls back to the Python audio endpoint when browse
   });
 });
 
-test("hybrid pipeline router fails explicitly when the selected audio adapter is missing", async () => {
+test("hybrid pipeline router falls back to the Python segmentation endpoint when browser VAD is unavailable", async () => {
+  const calls = [];
+  const router = createHybridPipelineRouter({
+    capabilityReport: {
+      stages: {
+        vad: { runtime: "server-fallback", strategy: "unavailable" },
+      },
+    },
+    clientAdapters: {
+      vad: async () => {
+        calls.push(["client"]);
+        return [{ start: 0, end: 1 }];
+      },
+    },
+    serverAdapters: {
+      vad: async (audioId, onProgress) => {
+        calls.push(["server", audioId]);
+        onProgress(100);
+        return [{ start: 0, end: 1.5 }];
+      },
+    },
+  });
+  const progress = [];
+
+  const result = await router.runVadSegmentation("audio-123", (value) => progress.push(value));
+
+  assert.deepEqual(calls, [["server", "audio-123"]]);
+  assert.deepEqual(progress, [100]);
+  assert.deepEqual(result, {
+    runtime: "server-fallback",
+    strategy: "unavailable",
+    fallbackEndpoint: "POST /api/segment-audio",
+    payload: [{ start: 0, end: 1.5 }],
+  });
+});
+
+test("hybrid pipeline router fails explicitly when the selected adapter is missing", async () => {
   const browserRouter = createHybridPipelineRouter({
     capabilityReport: {
       stages: {
@@ -87,7 +123,7 @@ test("hybrid pipeline router fails explicitly when the selected audio adapter is
   const fallbackRouter = createHybridPipelineRouter({
     capabilityReport: {
       stages: {
-        audioExtraction: { runtime: "server-fallback", strategy: "unavailable" },
+        vad: { runtime: "server-fallback", strategy: "unavailable" },
       },
     },
     clientAdapters: {},
@@ -99,7 +135,7 @@ test("hybrid pipeline router fails explicitly when the selected audio adapter is
     /Browser audio extraction adapter is not configured\./,
   );
   await assert.rejects(
-    () => fallbackRouter.runAudioExtraction({ name: "clip.mp4" }),
-    /Python fallback audio extraction adapter is not configured\./,
+    () => fallbackRouter.runVadSegmentation("audio-123"),
+    /Python fallback VAD segmentation adapter is not configured\./,
   );
 });
