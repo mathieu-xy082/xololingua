@@ -48,6 +48,7 @@ The project has not published a first version yet.
 - Added ordered client pipeline demo rows for presenting each stage's browser or Python fallback runtime.
 - Added frontend backend-client coverage for malformed audio extraction and segmentation fallback responses.
 - Added hybrid client pipeline routing for browser or Python fallback VAD segmentation.
+- Added hybrid client pipeline routing for browser or Python fallback transcription.
 
 ### Changed
 

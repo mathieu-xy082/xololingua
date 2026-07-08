@@ -110,6 +110,45 @@ test("hybrid pipeline router falls back to the Python segmentation endpoint when
   });
 });
 
+test("hybrid pipeline router falls back to the Python subtitle job endpoint when browser transcription is unavailable", async () => {
+  const calls = [];
+  const router = createHybridPipelineRouter({
+    capabilityReport: {
+      stages: {
+        transcription: { runtime: "server-fallback", strategy: "unavailable" },
+      },
+    },
+    clientAdapters: {
+      transcription: async () => {
+        calls.push(["client"]);
+        return [{ index: 1, text: "bonjour" }];
+      },
+    },
+    serverAdapters: {
+      transcription: async (payload, onProgress) => {
+        calls.push(["server", payload.audioId, payload.sourceLanguage]);
+        onProgress({ transcriptionProgress: 100 });
+        return [{ index: 1, text: "bonjour" }];
+      },
+    },
+  });
+  const progress = [];
+
+  const result = await router.runTranscription(
+    { audioId: "audio-123", sourceLanguage: "fr", segments: [{ index: 1, start: 0, end: 1.5 }] },
+    (value) => progress.push(value),
+  );
+
+  assert.deepEqual(calls, [["server", "audio-123", "fr"]]);
+  assert.deepEqual(progress, [{ transcriptionProgress: 100 }]);
+  assert.deepEqual(result, {
+    runtime: "server-fallback",
+    strategy: "unavailable",
+    fallbackEndpoint: ["POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
+    payload: [{ index: 1, text: "bonjour" }],
+  });
+});
+
 test("hybrid pipeline router fails explicitly when the selected adapter is missing", async () => {
   const browserRouter = createHybridPipelineRouter({
     capabilityReport: {
