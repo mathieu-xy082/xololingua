@@ -221,3 +221,62 @@ test("hybrid pipeline router fails explicitly when the selected adapter is missi
     /Python fallback VAD segmentation adapter is not configured\./,
   );
 });
+
+test("hybrid pipeline router runs a demo subtitle pipeline with explicit stage runtimes", async () => {
+  const calls = [];
+  const router = createHybridPipelineRouter({
+    capabilityReport: {
+      stages: {
+        audioExtraction: { runtime: "browser", strategy: "ffmpeg.wasm" },
+        vad: { runtime: "server-fallback", strategy: "unavailable" },
+        transcription: { runtime: "server-fallback", strategy: "unavailable" },
+        translation: { runtime: "browser", strategy: "local-transformers.js" },
+      },
+    },
+    clientAdapters: {
+      audioExtraction: async (file) => {
+        calls.push(["browser-audio", file.name]);
+        return { audioId: "browser-audio" };
+      },
+      translation: async (request) => {
+        calls.push(["browser-translation", request.sourceLanguage, request.targetLanguage]);
+        return request.segments.map((segment) => ({
+          ...segment,
+          translatedText: `EN:${segment.text}`,
+        }));
+      },
+    },
+    serverAdapters: {
+      vad: async (audioId) => {
+        calls.push(["server-vad", audioId]);
+        return [{ index: 1, start: 0, end: 1.5 }];
+      },
+      transcription: async (request) => {
+        calls.push(["server-transcription", request.audioId, request.sourceLanguage]);
+        return request.segments.map((segment) => ({ ...segment, text: "Bonjour" }));
+      },
+    },
+  });
+
+  const result = await router.runSubtitlePipeline({
+    file: { name: "clip.mp4" },
+    sourceLanguage: "fr",
+    targetLanguage: "en",
+  });
+
+  assert.deepEqual(calls, [
+    ["browser-audio", "clip.mp4"],
+    ["server-vad", "browser-audio"],
+    ["server-transcription", "browser-audio", "fr"],
+    ["browser-translation", "fr", "en"],
+  ]);
+  assert.deepEqual(result.stageRuntimes, {
+    audioExtraction: "browser",
+    vad: "server-fallback",
+    transcription: "server-fallback",
+    translation: "browser",
+  });
+  assert.deepEqual(result.translatedSegments, [
+    { index: 1, start: 0, end: 1.5, text: "Bonjour", translatedText: "EN:Bonjour" },
+  ]);
+});

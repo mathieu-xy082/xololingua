@@ -62,6 +62,79 @@ export function createHybridPipelineRouter({
         serverAdapters,
       });
     },
+
+    async runSubtitlePipeline(
+      { file, sourceLanguage, targetLanguage },
+      {
+        onAudioExtractionProgress = () => {},
+        onVadProgress = () => {},
+        onTranscriptionProgress = () => {},
+        onTranslationProgress = () => {},
+      } = {},
+    ) {
+      const audioExtraction = await runStage({
+        stageName: "audioExtraction",
+        browserAdapterLabel: "Browser audio extraction",
+        serverAdapterLabel: "Python fallback audio extraction",
+        input: file,
+        onProgress: onAudioExtractionProgress,
+        capabilityReport,
+        clientAdapters,
+        serverAdapters,
+      });
+      const audioId = audioExtraction.payload?.audioId || audioExtraction.payload;
+
+      const vad = await runStage({
+        stageName: "vad",
+        browserAdapterLabel: "Browser VAD segmentation",
+        serverAdapterLabel: "Python fallback VAD segmentation",
+        input: audioId,
+        onProgress: onVadProgress,
+        capabilityReport,
+        clientAdapters,
+        serverAdapters,
+      });
+
+      const transcription = await runStage({
+        stageName: "transcription",
+        browserAdapterLabel: "Browser transcription",
+        serverAdapterLabel: "Python fallback transcription",
+        input: { audioId, sourceLanguage, segments: vad.payload },
+        onProgress: onTranscriptionProgress,
+        capabilityReport,
+        clientAdapters,
+        serverAdapters,
+      });
+
+      const translation = await runStage({
+        stageName: "translation",
+        browserAdapterLabel: "Browser translation",
+        serverAdapterLabel: "Python fallback translation",
+        input: {
+          sourceLanguage,
+          targetLanguage,
+          segments: transcription.payload,
+        },
+        onProgress: onTranslationProgress,
+        capabilityReport,
+        clientAdapters,
+        serverAdapters,
+      });
+
+      return {
+        audioExtraction,
+        vad,
+        transcription,
+        translation,
+        stageRuntimes: {
+          audioExtraction: audioExtraction.runtime,
+          vad: vad.runtime,
+          transcription: transcription.runtime,
+          translation: translation.runtime,
+        },
+        translatedSegments: translation.payload,
+      };
+    },
   };
 }
 
