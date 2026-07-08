@@ -1,9 +1,10 @@
-const CACHE_NAME = "xololingua-v8";
+const CACHE_NAME = "xololingua-v9";
 const ASSETS = [
   ".",
   "styles.css?v=2026-05-17-3",
   "app.js?v=2026-05-17-3",
   "frontend/backend_client.js",
+  "frontend/client_srt_formatter.js",
   "manifest.webmanifest?v=2026-05-17-3",
   "assets/icon.svg?v=2026-05-17-3",
   "assets/babbel_parrot.png"

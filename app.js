@@ -1,4 +1,5 @@
 import { createBackendClient } from "./frontend/backend_client.js";
+import { formatSrt, formatSrtTime } from "./frontend/client_srt_formatter.js";
 
 const MAX_DURATION_SECONDS = 2.5 * 60 * 60;
 const SEGMENT_SECONDS = 12;
@@ -503,19 +504,12 @@ function finishSegmentation(segments) {
 }
 
 async function generateSrtAdapter(segments, targetLanguageCode, onProgress) {
-  const blocks = [];
-
   for (const segment of segments) {
     await delay(35);
-    blocks.push([
-      String(segment.index),
-      `${formatSrtTime(segment.start)} --> ${formatSrtTime(segment.end)}`,
-      segment.translatedText || segment.text || ""
-    ].join("\n"));
     onProgress(Math.round((segment.index / segments.length) * 100));
   }
 
-  return `${blocks.join("\n\n")}\n`;
+  return formatSrt(segments);
 }
 
 function render() {
@@ -861,20 +855,6 @@ function isSupportedPair(sourceCode, targetCode) {
 function makeSubtitleFileName(videoName, languageCode) {
   const base = videoName.replace(/\.[^.]+$/, "").replace(/[^a-z0-9_-]+/gi, "_").slice(0, 20) || "subtitles";
   return `${base}.${languageCode}.srt`;
-}
-
-function formatSrtTime(seconds) {
-  const wholeSeconds = Math.floor(seconds);
-  const milliseconds = Math.round((seconds - wholeSeconds) * 1000);
-  const hours = Math.floor(wholeSeconds / 3600);
-  const minutes = Math.floor((wholeSeconds % 3600) / 60);
-  const remainingSeconds = wholeSeconds % 60;
-
-  return [
-    String(hours).padStart(2, "0"),
-    String(minutes).padStart(2, "0"),
-    String(remainingSeconds).padStart(2, "0")
-  ].join(":") + `,${String(milliseconds).padStart(3, "0")}`;
 }
 
 function formatDuration(seconds) {
