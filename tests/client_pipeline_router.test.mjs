@@ -38,6 +38,43 @@ test("hybrid pipeline router runs browser audio extraction when the stage is bro
   });
 });
 
+test("hybrid pipeline router falls back to the Python audio endpoint when browser extraction fails at runtime", async () => {
+  const calls = [];
+  const router = createHybridPipelineRouter({
+    capabilityReport: {
+      stages: {
+        audioExtraction: { runtime: "browser", strategy: "ffmpeg.wasm" },
+      },
+    },
+    clientAdapters: {
+      audioExtraction: async (file) => {
+        calls.push(["client", file.name]);
+        throw new Error("ffmpeg.wasm failed to load");
+      },
+    },
+    serverAdapters: {
+      audioExtraction: async (file, onProgress) => {
+        calls.push(["server", file.name]);
+        onProgress(45);
+        return { audioId: "server-audio", audioFileName: "clip.wav" };
+      },
+    },
+  });
+  const progress = [];
+
+  const result = await router.runAudioExtraction({ name: "clip.mp4" }, (value) => progress.push(value));
+
+  assert.deepEqual(calls, [["client", "clip.mp4"], ["server", "clip.mp4"]]);
+  assert.deepEqual(progress, [45]);
+  assert.deepEqual(result, {
+    runtime: "server-fallback",
+    strategy: "ffmpeg.wasm",
+    fallbackEndpoints: ["POST /api/extract-audio"],
+    browserFailureReason: "ffmpeg.wasm failed to load",
+    payload: { audioId: "server-audio", audioFileName: "clip.wav" },
+  });
+});
+
 test("hybrid pipeline router falls back to the Python audio endpoint when browser extraction is unavailable", async () => {
   const calls = [];
   const router = createHybridPipelineRouter({

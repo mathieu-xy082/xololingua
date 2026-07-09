@@ -182,15 +182,30 @@ async function runStage({
     throw new Error(`${label} adapter is not configured.`);
   }
 
-  const payload = await adapter(input, onProgress);
+  let payload;
+  let browserFailureReason;
+
+  try {
+    payload = await adapter(input, onProgress);
+  } catch (error) {
+    if (!useBrowser || typeof serverAdapters[stageName] !== "function") {
+      throw error;
+    }
+    browserFailureReason = error instanceof Error ? error.message : String(error);
+    payload = await serverAdapters[stageName](input, onProgress);
+  }
+
   const result = {
-    runtime: useBrowser ? "browser" : "server-fallback",
+    runtime: browserFailureReason || !useBrowser ? "server-fallback" : "browser",
     strategy: stage.strategy,
     payload,
   };
 
-  if (!useBrowser) {
+  if (result.runtime === "server-fallback") {
     result.fallbackEndpoints = PYTHON_FALLBACK_ENDPOINTS[stageName];
+  }
+  if (browserFailureReason) {
+    result.browserFailureReason = browserFailureReason;
   }
 
   return result;
