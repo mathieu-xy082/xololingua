@@ -16,13 +16,48 @@ const DEFAULT_BROWSER_EXTRACTION_MAX_DURATION_SECONDS = 60;
 const FFMPEG_INPUT_NAME = "input.mp4";
 const FFMPEG_OUTPUT_NAME = "output.wav";
 
+export function createBrowserVideoDurationProbe(environment = globalThis) {
+  return function probeBrowserVideoDuration(file) {
+    if (typeof environment.document?.createElement !== "function" ||
+        typeof environment.URL?.createObjectURL !== "function" ||
+        typeof environment.URL?.revokeObjectURL !== "function") {
+      throw new Error("Browser video duration probing requires document and URL object URL APIs.");
+    }
+
+    const video = environment.document.createElement("video");
+    const objectUrl = environment.URL.createObjectURL(file);
+    video.preload = "metadata";
+
+    return new Promise((resolve, reject) => {
+      const cleanup = () => {
+        video.onloadedmetadata = null;
+        video.onerror = null;
+        video.src = "";
+        environment.URL.revokeObjectURL(objectUrl);
+      };
+
+      video.onloadedmetadata = () => {
+        const durationSeconds = video.duration;
+        cleanup();
+        resolve(durationSeconds);
+      };
+      video.onerror = () => {
+        cleanup();
+        reject(new Error("Browser could not read video metadata for audio extraction."));
+      };
+      video.src = objectUrl;
+    });
+  };
+}
+
 export function createFfmpegWasmAudioExtractor({
   ffmpeg,
   fetchFile,
+  durationProbe,
   maxDurationSeconds = DEFAULT_BROWSER_EXTRACTION_MAX_DURATION_SECONDS,
 } = {}) {
   return async function extractWithFfmpegWasm(file, onProgress = () => {}) {
-    const durationSeconds = file?.durationSeconds;
+    const durationSeconds = await resolveDurationSeconds(file, durationProbe);
     if (Number.isFinite(durationSeconds) && durationSeconds > maxDurationSeconds) {
       throw new Error(
         `Browser ffmpeg.wasm extraction is limited to short videos up to ${maxDurationSeconds} seconds. ` +
@@ -84,6 +119,16 @@ export function createFfmpegWasmAudioExtractor({
 
 function makeWavFileName(fileName) {
   return fileName.replace(/\.[^.]+$/, "") + ".wav";
+}
+
+async function resolveDurationSeconds(file, durationProbe) {
+  if (Number.isFinite(file?.durationSeconds)) {
+    return file.durationSeconds;
+  }
+  if (typeof durationProbe === "function") {
+    return durationProbe(file);
+  }
+  return undefined;
 }
 
 function unlinkIfPresent(ffmpeg, path) {

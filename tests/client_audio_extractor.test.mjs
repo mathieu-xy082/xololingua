@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  createBrowserVideoDurationProbe,
   createClientAudioExtractor,
   createFfmpegWasmAudioExtractor,
   detectClientAudioExtractionCapabilities,
@@ -87,6 +88,74 @@ test("ffmpeg wasm audio extractor rejects videos over the browser demo duration 
     () => extractor({ name: "long.mp4", durationSeconds: 31 }),
     /Browser ffmpeg\.wasm extraction is limited to short videos up to 30 seconds\./,
   );
+});
+
+test("ffmpeg wasm audio extractor rejects long real files using a duration probe before loading wasm", async () => {
+  const calls = [];
+  const extractor = createFfmpegWasmAudioExtractor({
+    ffmpeg: {
+      isLoaded() {
+        calls.push("isLoaded");
+        return false;
+      },
+      async load() {
+        calls.push("load");
+      },
+      FS() {},
+      async run() {},
+    },
+    fetchFile: async () => {
+      calls.push("fetchFile");
+      return new Uint8Array();
+    },
+    durationProbe: async (file) => {
+      calls.push(["durationProbe", file.name]);
+      return 31;
+    },
+    maxDurationSeconds: 30,
+  });
+
+  await assert.rejects(
+    () => extractor({ name: "long.mp4" }),
+    /Browser ffmpeg\.wasm extraction is limited to short videos up to 30 seconds\./,
+  );
+  assert.deepEqual(calls, [["durationProbe", "long.mp4"]]);
+});
+
+test("browser video duration probe reads metadata and revokes its object URL", async () => {
+  const calls = [];
+  const video = {};
+  const probe = createBrowserVideoDurationProbe({
+    document: {
+      createElement(tagName) {
+        calls.push(["createElement", tagName]);
+        return video;
+      },
+    },
+    URL: {
+      createObjectURL(file) {
+        calls.push(["createObjectURL", file.name]);
+        return "blob:clip";
+      },
+      revokeObjectURL(url) {
+        calls.push(["revokeObjectURL", url]);
+      },
+    },
+  });
+
+  const promise = probe({ name: "clip.mp4" });
+  assert.equal(video.preload, "metadata");
+  assert.equal(video.src, "blob:clip");
+  video.duration = 42.5;
+  video.onloadedmetadata();
+
+  assert.equal(await promise, 42.5);
+  assert.equal(video.src, "");
+  assert.deepEqual(calls, [
+    ["createElement", "video"],
+    ["createObjectURL", "clip.mp4"],
+    ["revokeObjectURL", "blob:clip"],
+  ]);
 });
 
 test("client audio extractor uses an explicit ffmpeg wasm fallback when WebCodecs is missing", async () => {
