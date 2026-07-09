@@ -121,6 +121,13 @@ export function createHybridPipelineRouter({
         serverAdapters,
       });
 
+      const stageResults = {
+        audioExtraction,
+        vad,
+        transcription,
+        translation,
+      };
+
       return {
         audioExtraction,
         vad,
@@ -132,10 +139,20 @@ export function createHybridPipelineRouter({
           transcription: transcription.runtime,
           translation: translation.runtime,
         },
+        serverFallbackStages: summarizeServerFallbackStages(stageResults),
         translatedSegments: translation.payload,
       };
     },
   };
+}
+
+function summarizeServerFallbackStages(stageResults) {
+  return Object.entries(stageResults)
+    .filter(([, result]) => result.runtime === "server-fallback")
+    .map(([stage, result]) => ({
+      stage,
+      endpoints: result.fallbackEndpoints || PYTHON_FALLBACK_ENDPOINTS[stage],
+    }));
 }
 
 async function runStage({

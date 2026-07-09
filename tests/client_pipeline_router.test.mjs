@@ -280,3 +280,41 @@ test("hybrid pipeline router runs a demo subtitle pipeline with explicit stage r
     { index: 1, start: 0, end: 1.5, text: "Bonjour", translatedText: "EN:Bonjour" },
   ]);
 });
+
+test("hybrid pipeline router summarizes Python fallback stages after a demo subtitle run", async () => {
+  const router = createHybridPipelineRouter({
+    capabilityReport: {
+      stages: {
+        audioExtraction: { runtime: "browser", strategy: "ffmpeg.wasm" },
+        vad: { runtime: "server-fallback", strategy: "unavailable" },
+        transcription: { runtime: "server-fallback", strategy: "unavailable" },
+        translation: { runtime: "browser", strategy: "local-transformers.js" },
+      },
+    },
+    clientAdapters: {
+      audioExtraction: async () => ({ audioId: "browser-audio" }),
+      translation: async ({ segments }) => segments,
+    },
+    serverAdapters: {
+      vad: async () => [{ index: 1, start: 0, end: 1.5 }],
+      transcription: async ({ segments }) => segments.map((segment) => ({ ...segment, text: "Bonjour" })),
+    },
+  });
+
+  const result = await router.runSubtitlePipeline({
+    file: { name: "clip.mp4" },
+    sourceLanguage: "fr",
+    targetLanguage: "en",
+  });
+
+  assert.deepEqual(result.serverFallbackStages, [
+    {
+      stage: "vad",
+      endpoints: ["POST /api/segment-audio"],
+    },
+    {
+      stage: "transcription",
+      endpoints: ["POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
+    },
+  ]);
+});
