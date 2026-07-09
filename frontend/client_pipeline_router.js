@@ -9,6 +9,7 @@ export function createHybridPipelineRouter({
   capabilityReport,
   clientAdapters = {},
   serverAdapters = {},
+  srtFormatter,
 } = {}) {
   return {
     async runAudioExtraction(file, onProgress = () => {}) {
@@ -128,6 +129,8 @@ export function createHybridPipelineRouter({
         translation,
       };
 
+      const translatedSegments = translation.payload;
+
       return {
         audioExtraction,
         vad,
@@ -140,7 +143,8 @@ export function createHybridPipelineRouter({
           translation: translation.runtime,
         },
         serverFallbackStages: summarizeServerFallbackStages(stageResults),
-        translatedSegments: translation.payload,
+        translatedSegments,
+        srtText: typeof srtFormatter === "function" ? srtFormatter(translatedSegments) : undefined,
       };
     },
   };

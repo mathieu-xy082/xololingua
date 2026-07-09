@@ -281,6 +281,41 @@ test("hybrid pipeline router runs a demo subtitle pipeline with explicit stage r
   ]);
 });
 
+test("hybrid pipeline router returns formatted SRT text when a demo pipeline formatter is configured", async () => {
+  const router = createHybridPipelineRouter({
+    capabilityReport: {
+      stages: {
+        audioExtraction: { runtime: "browser", strategy: "ffmpeg.wasm" },
+        vad: { runtime: "server-fallback", strategy: "unavailable" },
+        transcription: { runtime: "server-fallback", strategy: "unavailable" },
+        translation: { runtime: "browser", strategy: "local-transformers.js" },
+      },
+    },
+    clientAdapters: {
+      audioExtraction: async () => ({ audioId: "browser-audio" }),
+      translation: async ({ segments }) => segments.map((segment) => ({
+        ...segment,
+        translatedText: `EN:${segment.text}`,
+      })),
+    },
+    serverAdapters: {
+      vad: async () => [{ index: 1, start: 0, end: 1.5 }],
+      transcription: async ({ segments }) => segments.map((segment) => ({ ...segment, text: "Bonjour" })),
+    },
+    srtFormatter: (segments) => segments
+      .map((segment) => `${segment.index}\n${segment.start} --> ${segment.end}\n${segment.translatedText}`)
+      .join("\n\n"),
+  });
+
+  const result = await router.runSubtitlePipeline({
+    file: { name: "clip.mp4" },
+    sourceLanguage: "fr",
+    targetLanguage: "en",
+  });
+
+  assert.equal(result.srtText, "1\n0 --> 1.5\nEN:Bonjour");
+});
+
 test("hybrid pipeline router summarizes Python fallback stages after a demo subtitle run", async () => {
   const router = createHybridPipelineRouter({
     capabilityReport: {
