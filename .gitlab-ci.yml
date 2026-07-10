@@ -2,32 +2,31 @@ stages:
   - check
 
 variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
   PDM_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pdm"
   PDM_CHECK_UPDATE: "false"
-  PIP_DISABLE_PIP_VERSION_CHECK: "1"
   PDM_VENV_IN_PROJECT: "1"
 
 cache:
   key:
     files:
-      - pdm.lock
       - pyproject.toml
+      - pdm.lock
   paths:
-    - .cache/pdm
-    - .venv
+    - .cache/pip/
+    - .cache/pdm/
+    - .venv/
 
 check:
   stage: check
   image: python:3.12-bookworm
   before_script:
-    - python --version
     - apt-get update
-    - apt-get install -y --no-install-recommends nodejs ca-certificates
-    - node --version
+    - apt-get install -y --no-install-recommends nodejs ffmpeg
+    - rm -rf /var/lib/apt/lists/*
     - python -m pip install --upgrade pip pdm
-    - pdm config python.use_venv true
-    - PDM_IGNORE_ACTIVE_VENV=1 pdm install --no-default -G test --no-self --frozen-lockfile
+    - pdm --version
+    - node --version
+    - PDM_IGNORE_ACTIVE_VENV=1 pdm install -G test --frozen-lockfile
   script:
-    - PDM_IGNORE_ACTIVE_VENV=1 pdm run python -m compileall -q local_service.py transcribe_worker.py xololingua_service tests
-    - PDM_IGNORE_ACTIVE_VENV=1 pdm run python -m unittest discover tests
-    - sh -c 'node --test tests/*.test.mjs'
+    - PDM_IGNORE_ACTIVE_VENV=1 pdm run check
