@@ -28,4 +28,6 @@ check:
     - pdm config python.use_venv true
     - PDM_IGNORE_ACTIVE_VENV=1 pdm install --no-default -G test --no-self --frozen-lockfile
   script:
-    - PDM_IGNORE_ACTIVE_VENV=1 pdm run check
+    - PDM_IGNORE_ACTIVE_VENV=1 pdm run python -m compileall -q local_service.py transcribe_worker.py xololingua_service tests
+    - PDM_IGNORE_ACTIVE_VENV=1 pdm run python -m unittest discover tests
+    - sh -c 'node --test tests/*.test.mjs'
