@@ -13,11 +13,20 @@ export function detectClientTranscriptionCapabilities(environment = globalThis) 
 export function createClientTranscriber({
   environment = globalThis,
   transformerWorker,
+  maxDurationSeconds,
 } = {}) {
   return {
     capabilities: detectClientTranscriptionCapabilities(environment),
 
     async transcribeAudio(request, onProgress = () => {}) {
+      if (
+        Number.isFinite(maxDurationSeconds)
+        && Number.isFinite(request?.audio?.durationSeconds)
+        && request.audio.durationSeconds > maxDurationSeconds
+      ) {
+        throw new Error(`Browser transcription limit exceeded: audio duration ${request.audio.durationSeconds}s is greater than the ${maxDurationSeconds}s limit.`);
+      }
+
       if (typeof transformerWorker !== "function") {
         throw new Error("Browser transcription requires transformers.js in a Web Worker or a configured transcription fallback.");
       }
