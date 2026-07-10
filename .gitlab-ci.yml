@@ -1,0 +1,31 @@
+stages:
+  - check
+
+variables:
+  PDM_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pdm"
+  PDM_CHECK_UPDATE: "false"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+cache:
+  key:
+    files:
+      - pdm.lock
+      - pyproject.toml
+  paths:
+    - .cache/pdm
+    - .venv
+
+check:
+  stage: check
+  image: python:3.12-bookworm
+  before_script:
+    - python --version
+    - apt-get update
+    - apt-get install -y --no-install-recommends nodejs npm
+    - node --version
+    - python -m pip install --upgrade pip
+    - python -m pip install pdm
+    - pdm config python.use_venv true
+    - pdm install -G test
+  script:
+    - pdm run check
