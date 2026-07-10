@@ -214,6 +214,34 @@ test("client audio extractor uses an explicit ffmpeg wasm fallback when WebCodec
   assert.deepEqual(progress, [0, 100]);
 });
 
+test("client audio extractor still uses configured ffmpeg wasm while WebCodecs extraction is not implemented", async () => {
+  const calls = [];
+  const fallbackExtractor = async (file, onProgress) => {
+    calls.push(file.name);
+    onProgress(100);
+    return {
+      audioFileName: "clip.wav",
+      sampleRate: 16000,
+      channelCount: 1,
+    };
+  };
+  const extractor = createClientAudioExtractor({
+    environment: {
+      VideoDecoder: function VideoDecoder() {},
+      AudioDecoder: function AudioDecoder() {},
+      AudioContext: function AudioContext() {},
+    },
+    ffmpegWasmExtractor: fallbackExtractor,
+  });
+
+  const result = await extractor.extractAudio({ name: "clip.mp4" });
+
+  assert.equal(result.strategy, "ffmpeg.wasm");
+  assert.equal(result.fallbackUsed, true);
+  assert.equal(result.audioFileName, "clip.wav");
+  assert.deepEqual(calls, ["clip.mp4"]);
+});
+
 test("client audio extractor fails explicitly when no browser extraction path is available", async () => {
   const extractor = createClientAudioExtractor({ environment: {} });
 

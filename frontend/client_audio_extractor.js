@@ -164,10 +164,6 @@ export function createClientAudioExtractor({
     async extractAudio(file, onProgress = () => {}) {
       const capabilities = detectClientAudioExtractionCapabilities(environment);
 
-      if (capabilities.webCodecs) {
-        throw new Error("WebCodecs audio extraction is detected but not implemented yet.");
-      }
-
       if (typeof ffmpegWasmExtractor === "function") {
         onProgress(0);
         const extracted = await ffmpegWasmExtractor(file, onProgress);
@@ -176,6 +172,10 @@ export function createClientAudioExtractor({
           strategy: "ffmpeg.wasm",
           fallbackUsed: true,
         };
+      }
+
+      if (capabilities.webCodecs) {
+        throw new Error("WebCodecs audio extraction is detected but not implemented yet; configure ffmpeg.wasm or use the Python fallback.");
       }
 
       throw new Error("Browser audio extraction requires WebCodecs or a configured ffmpeg.wasm fallback.");
