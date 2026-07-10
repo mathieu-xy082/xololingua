@@ -90,6 +90,39 @@ test("ffmpeg wasm audio extractor rejects videos over the browser demo duration 
   );
 });
 
+test("ffmpeg wasm audio extractor releases the wasm runtime after cleanup when requested", async () => {
+  const operations = [];
+  const ffmpeg = {
+    isLoaded() {
+      return true;
+    },
+    FS(command, path, data) {
+      operations.push(["FS", command, path, data ? [...data] : undefined]);
+      if (command === "readFile") return new Uint8Array([82, 73, 70, 70]);
+      return undefined;
+    },
+    async run(...args) {
+      operations.push(["run", ...args]);
+    },
+    terminate() {
+      operations.push(["terminate"]);
+    },
+  };
+  const extractor = createFfmpegWasmAudioExtractor({
+    ffmpeg,
+    fetchFile: async (file) => new Uint8Array(await file.arrayBuffer()),
+    releaseAfterRun: true,
+  });
+
+  await extractor(new File([new Uint8Array([1, 2, 3])], "clip.mp4", { type: "video/mp4" }));
+
+  assert.deepEqual(operations.slice(-3), [
+    ["FS", "unlink", "input.mp4", undefined],
+    ["FS", "unlink", "output.wav", undefined],
+    ["terminate"],
+  ]);
+});
+
 test("ffmpeg wasm audio extractor rejects oversized browser inputs before loading wasm", async () => {
   const calls = [];
   const extractor = createFfmpegWasmAudioExtractor({

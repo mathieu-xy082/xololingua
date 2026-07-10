@@ -57,6 +57,7 @@ export function createFfmpegWasmAudioExtractor({
   durationProbe,
   maxDurationSeconds = DEFAULT_BROWSER_EXTRACTION_MAX_DURATION_SECONDS,
   maxInputBytes = DEFAULT_BROWSER_EXTRACTION_MAX_INPUT_BYTES,
+  releaseAfterRun = false,
 } = {}) {
   return async function extractWithFfmpegWasm(file, onProgress = () => {}) {
     if (Number.isFinite(file?.size) && file.size > maxInputBytes) {
@@ -122,6 +123,9 @@ export function createFfmpegWasmAudioExtractor({
     } finally {
       unlinkIfPresent(ffmpeg, FFMPEG_INPUT_NAME);
       unlinkIfPresent(ffmpeg, FFMPEG_OUTPUT_NAME);
+      if (releaseAfterRun) {
+        await releaseFfmpegRuntime(ffmpeg);
+      }
     }
   };
 }
@@ -151,6 +155,16 @@ function unlinkIfPresent(ffmpeg, path) {
     ffmpeg.FS("unlink", path);
   } catch {
     // ffmpeg.wasm throws when the file was never written; cleanup should stay best-effort.
+  }
+}
+
+async function releaseFfmpegRuntime(ffmpeg) {
+  if (typeof ffmpeg.terminate === "function") {
+    await ffmpeg.terminate();
+    return;
+  }
+  if (typeof ffmpeg.exit === "function") {
+    await ffmpeg.exit();
   }
 }
 
