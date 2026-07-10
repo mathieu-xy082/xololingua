@@ -5,6 +5,7 @@ variables:
   PDM_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pdm"
   PDM_CHECK_UPDATE: "false"
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PDM_VENV_IN_PROJECT: "1"
 
 cache:
   key:
@@ -21,11 +22,10 @@ check:
   before_script:
     - python --version
     - apt-get update
-    - apt-get install -y --no-install-recommends nodejs npm
+    - apt-get install -y --no-install-recommends nodejs ca-certificates
     - node --version
-    - python -m pip install --upgrade pip
-    - python -m pip install pdm
+    - python -m pip install --upgrade pip pdm
     - pdm config python.use_venv true
-    - pdm install -G test
+    - PDM_IGNORE_ACTIVE_VENV=1 pdm install --no-default -G test --no-self --frozen-lockfile
   script:
-    - pdm run check
+    - PDM_IGNORE_ACTIVE_VENV=1 pdm run check
