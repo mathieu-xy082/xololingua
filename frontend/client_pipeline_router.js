@@ -5,6 +5,20 @@ const PYTHON_FALLBACK_ENDPOINTS = {
   translation: ["POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
 };
 
+const PIPELINE_STAGE_ORDER = [
+  "audioExtraction",
+  "vad",
+  "transcription",
+  "translation",
+];
+
+const PIPELINE_STAGE_LABELS = {
+  audioExtraction: "Audio extraction",
+  vad: "VAD / segmentation",
+  transcription: "Transcription",
+  translation: "Translation",
+};
+
 export function createHybridPipelineRouter({
   capabilityReport,
   clientAdapters = {},
@@ -142,6 +156,7 @@ export function createHybridPipelineRouter({
           transcription: transcription.runtime,
           translation: translation.runtime,
         },
+        userStageReport: createUserStageReport(stageResults),
         serverFallbackStages: summarizeServerFallbackStages(stageResults),
         translatedSegments,
         srtText: typeof srtFormatter === "function" ? srtFormatter(translatedSegments) : undefined,
@@ -157,6 +172,27 @@ function summarizeServerFallbackStages(stageResults) {
       stage,
       endpoints: result.fallbackEndpoints || PYTHON_FALLBACK_ENDPOINTS[stage],
     }));
+}
+
+function createUserStageReport(stageResults) {
+  return PIPELINE_STAGE_ORDER.map((stage) => {
+    const result = stageResults[stage];
+    const row = {
+      stage,
+      label: PIPELINE_STAGE_LABELS[stage],
+      runtime: result.runtime,
+      runtimeLabel: result.runtime === "browser" ? "Browser" : "Python fallback",
+      strategy: result.strategy,
+      status: result.runtime === "browser" ? "completed" : "completed-via-fallback",
+      fallbackEndpoints: result.fallbackEndpoints || [],
+    };
+
+    if (result.browserFailureReason) {
+      row.browserFailureReason = result.browserFailureReason;
+    }
+
+    return row;
+  });
 }
 
 async function runStage({

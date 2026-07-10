@@ -390,3 +390,76 @@ test("hybrid pipeline router summarizes Python fallback stages after a demo subt
     },
   ]);
 });
+
+test("hybrid pipeline router returns an ordered user stage report with Python fallback details", async () => {
+  const router = createHybridPipelineRouter({
+    capabilityReport: {
+      stages: {
+        audioExtraction: { runtime: "browser", strategy: "ffmpeg.wasm" },
+        vad: { runtime: "browser", strategy: "web-audio-vad" },
+        transcription: { runtime: "server-fallback", strategy: "unavailable" },
+        translation: { runtime: "browser", strategy: "local-transformers.js" },
+      },
+    },
+    clientAdapters: {
+      audioExtraction: async () => ({ audioId: "browser-audio" }),
+      vad: async () => {
+        throw new Error("VAD model unavailable");
+      },
+      translation: async ({ segments }) => segments.map((segment) => ({
+        ...segment,
+        translatedText: `EN:${segment.text}`,
+      })),
+    },
+    serverAdapters: {
+      vad: async () => [{ index: 1, start: 0, end: 1.5 }],
+      transcription: async ({ segments }) => segments.map((segment) => ({ ...segment, text: "Bonjour" })),
+    },
+  });
+
+  const result = await router.runSubtitlePipeline({
+    file: { name: "clip.mp4" },
+    sourceLanguage: "fr",
+    targetLanguage: "en",
+  });
+
+  assert.deepEqual(result.userStageReport, [
+    {
+      stage: "audioExtraction",
+      label: "Audio extraction",
+      runtime: "browser",
+      runtimeLabel: "Browser",
+      strategy: "ffmpeg.wasm",
+      status: "completed",
+      fallbackEndpoints: [],
+    },
+    {
+      stage: "vad",
+      label: "VAD / segmentation",
+      runtime: "server-fallback",
+      runtimeLabel: "Python fallback",
+      strategy: "web-audio-vad",
+      status: "completed-via-fallback",
+      fallbackEndpoints: ["POST /api/segment-audio"],
+      browserFailureReason: "VAD model unavailable",
+    },
+    {
+      stage: "transcription",
+      label: "Transcription",
+      runtime: "server-fallback",
+      runtimeLabel: "Python fallback",
+      strategy: "unavailable",
+      status: "completed-via-fallback",
+      fallbackEndpoints: ["POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
+    },
+    {
+      stage: "translation",
+      label: "Translation",
+      runtime: "browser",
+      runtimeLabel: "Browser",
+      strategy: "local-transformers.js",
+      status: "completed",
+      fallbackEndpoints: [],
+    },
+  ]);
+});
