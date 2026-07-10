@@ -6,6 +6,7 @@ variables:
   PDM_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pdm"
   PDM_CHECK_UPDATE: "false"
   PDM_VENV_IN_PROJECT: "1"
+  PDM_VERSION: "2.25.9"
 
 cache:
   key:
@@ -24,7 +25,8 @@ check:
     - apt-get update
     - apt-get install -y --no-install-recommends nodejs ffmpeg
     - rm -rf /var/lib/apt/lists/*
-    - python -m pip install --upgrade pip pdm
+    - python --version
+    - python -m pip install --upgrade pip "pdm==$PDM_VERSION"
     - pdm --version
     - node --version
     - PDM_IGNORE_ACTIVE_VENV=1 pdm install -G test --frozen-lockfile
