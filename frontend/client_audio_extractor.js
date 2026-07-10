@@ -14,10 +14,14 @@ export function detectClientAudioExtractionCapabilities(environment = globalThis
 
 const DEFAULT_BROWSER_EXTRACTION_MAX_DURATION_SECONDS = 60;
 const DEFAULT_BROWSER_EXTRACTION_MAX_INPUT_BYTES = 100 * 1024 * 1024;
+const DEFAULT_BROWSER_METADATA_TIMEOUT_MS = 10_000;
 const FFMPEG_INPUT_NAME = "input.mp4";
 const FFMPEG_OUTPUT_NAME = "output.wav";
 
-export function createBrowserVideoDurationProbe(environment = globalThis) {
+export function createBrowserVideoDurationProbe(
+  environment = globalThis,
+  { metadataTimeoutMs = DEFAULT_BROWSER_METADATA_TIMEOUT_MS } = {},
+) {
   return function probeBrowserVideoDuration(file) {
     if (typeof environment.document?.createElement !== "function" ||
         typeof environment.URL?.createObjectURL !== "function" ||
@@ -27,14 +31,21 @@ export function createBrowserVideoDurationProbe(environment = globalThis) {
 
     const video = environment.document.createElement("video");
     const objectUrl = environment.URL.createObjectURL(file);
+    const setTimeoutFn = environment.setTimeout ?? globalThis.setTimeout;
+    const clearTimeoutFn = environment.clearTimeout ?? globalThis.clearTimeout;
     video.preload = "metadata";
 
     return new Promise((resolve, reject) => {
+      let timeoutId;
+      let didTimeout = false;
       const cleanup = () => {
         video.onloadedmetadata = null;
         video.onerror = null;
         video.src = "";
         environment.URL.revokeObjectURL(objectUrl);
+        if (!didTimeout && timeoutId !== undefined && typeof clearTimeoutFn === "function") {
+          clearTimeoutFn(timeoutId);
+        }
       };
 
       video.onloadedmetadata = () => {
@@ -46,6 +57,15 @@ export function createBrowserVideoDurationProbe(environment = globalThis) {
         cleanup();
         reject(new Error("Browser could not read video metadata for audio extraction."));
       };
+      if (Number.isFinite(metadataTimeoutMs) && metadataTimeoutMs > 0 && typeof setTimeoutFn === "function") {
+        timeoutId = setTimeoutFn(() => {
+          didTimeout = true;
+          cleanup();
+          reject(new Error(
+            `Timed out after ${metadataTimeoutMs} ms while reading browser video metadata for audio extraction.`,
+          ));
+        }, metadataTimeoutMs);
+      }
       video.src = objectUrl;
     });
   };

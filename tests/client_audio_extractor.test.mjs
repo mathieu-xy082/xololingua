@@ -227,6 +227,55 @@ test("browser video duration probe reads metadata and revokes its object URL", a
   ]);
 });
 
+test("browser video duration probe times out and releases object URLs when metadata stalls", async () => {
+  const calls = [];
+  const timers = [];
+  const video = {};
+  const probe = createBrowserVideoDurationProbe({
+    document: {
+      createElement(tagName) {
+        calls.push(["createElement", tagName]);
+        return video;
+      },
+    },
+    URL: {
+      createObjectURL(file) {
+        calls.push(["createObjectURL", file.name]);
+        return "blob:stalled";
+      },
+      revokeObjectURL(url) {
+        calls.push(["revokeObjectURL", url]);
+      },
+    },
+    setTimeout(callback, timeoutMs) {
+      timers.push([callback, timeoutMs]);
+      return "metadata-timeout";
+    },
+    clearTimeout(timerId) {
+      calls.push(["clearTimeout", timerId]);
+    },
+  }, { metadataTimeoutMs: 123 });
+
+  const promise = probe({ name: "stalled.mp4" });
+  assert.equal(video.preload, "metadata");
+  assert.equal(video.src, "blob:stalled");
+  assert.equal(timers.length, 1);
+  assert.equal(timers[0][1], 123);
+
+  timers[0][0]();
+
+  await assert.rejects(
+    promise,
+    /Timed out after 123 ms while reading browser video metadata for audio extraction\./,
+  );
+  assert.equal(video.src, "");
+  assert.deepEqual(calls, [
+    ["createElement", "video"],
+    ["createObjectURL", "stalled.mp4"],
+    ["revokeObjectURL", "blob:stalled"],
+  ]);
+});
+
 test("client audio extractor uses an explicit ffmpeg wasm fallback when WebCodecs is missing", async () => {
   const calls = [];
   const fallbackExtractor = async (file, onProgress) => {
