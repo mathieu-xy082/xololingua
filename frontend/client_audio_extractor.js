@@ -13,6 +13,7 @@ export function detectClientAudioExtractionCapabilities(environment = globalThis
 }
 
 const DEFAULT_BROWSER_EXTRACTION_MAX_DURATION_SECONDS = 60;
+const DEFAULT_BROWSER_EXTRACTION_MAX_INPUT_BYTES = 100 * 1024 * 1024;
 const FFMPEG_INPUT_NAME = "input.mp4";
 const FFMPEG_OUTPUT_NAME = "output.wav";
 
@@ -55,8 +56,16 @@ export function createFfmpegWasmAudioExtractor({
   fetchFile,
   durationProbe,
   maxDurationSeconds = DEFAULT_BROWSER_EXTRACTION_MAX_DURATION_SECONDS,
+  maxInputBytes = DEFAULT_BROWSER_EXTRACTION_MAX_INPUT_BYTES,
 } = {}) {
   return async function extractWithFfmpegWasm(file, onProgress = () => {}) {
+    if (Number.isFinite(file?.size) && file.size > maxInputBytes) {
+      throw new Error(
+        `Browser ffmpeg.wasm extraction is limited to input files up to ${formatBytes(maxInputBytes)}. ` +
+        "Use the Python fallback for larger videos.",
+      );
+    }
+
     const durationSeconds = await resolveDurationSeconds(file, durationProbe);
     if (Number.isFinite(durationSeconds) && durationSeconds > maxDurationSeconds) {
       throw new Error(
@@ -119,6 +128,12 @@ export function createFfmpegWasmAudioExtractor({
 
 function makeWavFileName(fileName) {
   return fileName.replace(/\.[^.]+$/, "") + ".wav";
+}
+
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KiB`;
+  return `${Math.round(bytes / (1024 * 1024))} MiB`;
 }
 
 async function resolveDurationSeconds(file, durationProbe) {

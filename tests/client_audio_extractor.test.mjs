@@ -90,6 +90,34 @@ test("ffmpeg wasm audio extractor rejects videos over the browser demo duration 
   );
 });
 
+test("ffmpeg wasm audio extractor rejects oversized browser inputs before loading wasm", async () => {
+  const calls = [];
+  const extractor = createFfmpegWasmAudioExtractor({
+    ffmpeg: {
+      isLoaded() {
+        calls.push("isLoaded");
+        return false;
+      },
+      async load() {
+        calls.push("load");
+      },
+      FS() {},
+      async run() {},
+    },
+    fetchFile: async () => {
+      calls.push("fetchFile");
+      return new Uint8Array();
+    },
+    maxInputBytes: 1024,
+  });
+
+  await assert.rejects(
+    () => extractor({ name: "large.mp4", size: 1025 }),
+    /Browser ffmpeg\.wasm extraction is limited to input files up to 1 KiB\./,
+  );
+  assert.deepEqual(calls, []);
+});
+
 test("ffmpeg wasm audio extractor rejects long real files using a duration probe before loading wasm", async () => {
   const calls = [];
   const extractor = createFfmpegWasmAudioExtractor({

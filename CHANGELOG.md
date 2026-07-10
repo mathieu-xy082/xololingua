@@ -51,6 +51,7 @@ The project has not published a first version yet.
 - Added hybrid client pipeline routing for browser or Python fallback transcription.
 - Normalized hybrid router fallback endpoint metadata for all client pipeline stages.
 - Added a tested client-side SRT formatter module and service-worker precache coverage for frontend modules.
+- Added a browser ffmpeg.wasm input-size guard before WASM loading to keep demo extraction memory bounded.
 
 ### Changed
 
