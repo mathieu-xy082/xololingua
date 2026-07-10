@@ -17,12 +17,23 @@ git@gitlab.com:android-app-games/xololingua.git
 ## Règles générales
 
 - `main` reste la branche stable.
-- `ec/backend` est la branche canonique active pour la migration backend → client/PWA.
+- `ec/backend` devient une **baseline d'intégration/review** pour le travail backend → client/PWA déjà accumulé.
+- Les nouvelles itérations ne doivent plus grossir `ec/backend` directement : elles partent de branches spécialisées.
 - Les branches secondaires ou follow-up doivent rester dédiées à un objectif clair.
 - Une branche déjà mergée/fermée ne doit pas être réutilisée pour de nouveaux travaux.
 - Toute intégration dans `main` nécessite une review explicite avec Mathieu.
 - Les validations doivent distinguer clairement : unitaires, frontend, API E2E, browser/user E2E.
 - Les artefacts temporaires/générés doivent rester hors repo, sous `/root/.cache/xololingua/tmp` si nécessaire.
+
+## Décision de restructuration
+
+La branche `ec/backend` est devenue trop massive pour continuer à porter toutes les sous-évolutions. Le pilotage est donc éclaté en branches spécialisées basées sur l'état actuel de `ec/backend` :
+
+```text
+8fc8810 docs: add XoloLingua automation coordinator
+```
+
+L'ancien job monolithique est conservé pour historique/contexte mais mis en pause.
 
 ## Tâche maîtresse
 
@@ -38,6 +49,8 @@ La tâche maîtresse est read-only par défaut. Elle ne doit pas :
 - force-push ;
 - créer/modifier/supprimer d'autres cron jobs.
 
+Elle reçoit comme contexte les derniers outputs des sous-tâches spécialisées via `context_from`.
+
 Elle doit alerter avec le marqueur suivant lorsqu'une branche semble prête :
 
 ```text
@@ -48,7 +61,13 @@ BRANCHE PRÊTE POUR REVIEW: <branch>
 
 | Job ID | Nom | Branche principale | Cadence | État | Rôle |
 |---|---|---|---:|---|---|
-| `885307802b8f` | XoloLingua backend-to-client migration — usable client milestone by 2026-07-22 | `ec/backend` | 4h | active | Migration backend → client/PWA, réduction pression serveur |
+| `885307802b8f` | XoloLingua backend-to-client migration — usable client milestone by 2026-07-22 | `ec/backend` | 4h | **pause** | Ancien job monolithique, conservé pour historique/contexte |
+| `589dc2f140b9` | XoloLingua urgent GitLab CI workstream | `ci/gitlab-pipeline` | 4h | active | Ajout urgent d'une CI GitLab PDM/Node pour `pdm run check` |
+| `36180c1d35d6` | XoloLingua browser audio extraction workstream | `ec/browser-audio-extraction` | 8h | active | WebCodecs/ffmpeg.wasm, bornage, release runtime, fallback audio |
+| `0feea85268be` | XoloLingua hybrid pipeline routing workstream | `ec/hybrid-pipeline-routing` | 8h | active | Orchestration browser/server, fallback Python, reporting pipeline, SRT |
+| `639f23a146c0` | XoloLingua client ML stages workstream | `ec/client-ml-stages` | 8h | active | VAD, transcription, traduction côté client, capability probes |
+| `63a1182beb92` | XoloLingua PWA offline integration workstream | `ec/pwa-offline-integration` | 12h | active | Service worker, PWA/offline, app wiring, backend client boundaries |
+| `89e76696343f` | XoloLingua backend review stabilization workstream | `ec/backend-review-stabilization` | 12h | active | Préparation review de la baseline massive `ec/backend`, checklist et stabilisation |
 | `4e64fc0e1685` | XoloLingua tmp cleanup | n/a | quotidien 03:00 UTC | active | Nettoyage no-agent des fichiers temporaires hors repo |
 
 ## Branches surveillées
@@ -57,6 +76,15 @@ Branches principales :
 
 - `main`
 - `ec/backend`
+
+Branches spécialisées actives :
+
+- `ci/gitlab-pipeline`
+- `ec/browser-audio-extraction`
+- `ec/hybrid-pipeline-routing`
+- `ec/client-ml-stages`
+- `ec/pwa-offline-integration`
+- `ec/backend-review-stabilization`
 
 Branches historiques/follow-up à surveiller sans les réutiliser automatiquement :
 
@@ -68,9 +96,14 @@ Branches historiques/follow-up à surveiller sans les réutiliser automatiquemen
 
 ## Ordre recommandé de review
 
-1. `ec/backend` lorsque la migration backend → client atteint un jalon cohérent et validable.
-2. Branches follow-up explicitement créées après fermeture/merge d'une branche existante.
-3. Nettoyage de branches historiques uniquement après confirmation de Mathieu.
+1. `ci/gitlab-pipeline` — urgent, car elle sécurise toutes les autres branches.
+2. `ec/backend-review-stabilization` — préparer la review de la baseline massive existante.
+3. `ec/browser-audio-extraction` — extraction audio navigateur et réduction pression serveur.
+4. `ec/hybrid-pipeline-routing` — orchestration browser/server.
+5. `ec/client-ml-stages` — VAD/transcription/traduction côté client.
+6. `ec/pwa-offline-integration` — PWA/offline/service worker/UI wiring.
+7. Branches follow-up explicitement créées après fermeture/merge d'une branche existante.
+8. Nettoyage de branches historiques uniquement après confirmation de Mathieu.
 
 ## Commandes de validation utiles
 
@@ -96,8 +129,8 @@ pdm run browser-e2e
 
 À chaque run, le coordinateur doit :
 
-1. inspecter `main`, `ec/backend` et les branches secondaires pertinentes ;
-2. lire le dernier output de la tâche migration backend → client ;
+1. inspecter `main`, `ec/backend` et les branches spécialisées pertinentes ;
+2. lire les derniers outputs des tâches spécialisées ;
 3. identifier les branches prêtes pour review ;
 4. identifier les blocages et validations manquantes ;
 5. recommander l'ordre de review/intégration ;
