@@ -19,11 +19,21 @@ export function createClientTranslator({
   environment = globalThis,
   localTranslatorWorker,
   cloudTranslator,
+  maxSegments,
 } = {}) {
   return {
     capabilities: detectClientTranslationCapabilities(environment),
 
     async translateSegments(request, onProgress = () => {}) {
+      const segmentCount = request?.segments?.length || 0;
+      if (
+        Number.isFinite(maxSegments)
+        && segmentCount > maxSegments
+      ) {
+        const segmentLabel = maxSegments === 1 ? "segment" : "segments";
+        throw new Error(`Browser translation limit exceeded: ${segmentCount} segments is greater than the ${maxSegments} ${segmentLabel} limit.`);
+      }
+
       const translate = typeof localTranslatorWorker === "function"
         ? localTranslatorWorker
         : cloudTranslator;

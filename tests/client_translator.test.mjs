@@ -61,6 +61,31 @@ test("client translator delegates segment translation to an injected local trans
   });
 });
 
+test("client translator rejects segment batches beyond the configured browser limit", async () => {
+  let workerCalled = false;
+  const translator = createClientTranslator({
+    environment: {},
+    localTranslatorWorker: async () => {
+      workerCalled = true;
+      return { segments: [] };
+    },
+    maxSegments: 1,
+  });
+
+  await assert.rejects(
+    () => translator.translateSegments({
+      segments: [
+        { index: 1, start: 0, end: 1, text: "Bonjour" },
+        { index: 2, start: 1, end: 2, text: "le monde" },
+      ],
+      sourceLanguage: "fr",
+      targetLanguage: "en",
+    }),
+    /Browser translation limit exceeded: 2 segments is greater than the 1 segment limit\./,
+  );
+  assert.equal(workerCalled, false);
+});
+
 test("client translator fails explicitly when no local or cloud translation path is configured", async () => {
   const translator = createClientTranslator({ environment: {} });
 
