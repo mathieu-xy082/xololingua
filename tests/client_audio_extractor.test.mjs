@@ -278,6 +278,42 @@ test("ffmpeg wasm audio extractor rejects long real files using a duration probe
   assert.deepEqual(calls, [["durationProbe", "long.mp4"]]);
 });
 
+test("ffmpeg wasm audio extractor reports duration probe failures with fallback guidance before loading wasm", async () => {
+  const calls = [];
+  const extractor = createFfmpegWasmAudioExtractor({
+    ffmpeg: {
+      isLoaded() {
+        calls.push("isLoaded");
+        return false;
+      },
+      async load() {
+        calls.push("load");
+      },
+      FS() {},
+      async run() {},
+    },
+    fetchFile: async () => {
+      calls.push("fetchFile");
+      return new Uint8Array();
+    },
+    durationProbe: async (file) => {
+      calls.push(["durationProbe", file.name]);
+      throw new Error("metadata unavailable");
+    },
+  });
+
+  await assert.rejects(
+    () => extractor({ name: "unreadable.mp4" }),
+    (error) => {
+      assert.match(error.message, /Browser ffmpeg\.wasm audio extraction could not read video duration for unreadable\.mp4\./);
+      assert.match(error.message, /Use the Python fallback for this video\./);
+      assert.equal(error.cause?.message, "metadata unavailable");
+      return true;
+    },
+  );
+  assert.deepEqual(calls, [["durationProbe", "unreadable.mp4"]]);
+});
+
 test("browser video duration probe reads metadata and revokes its object URL", async () => {
   const calls = [];
   const video = {};

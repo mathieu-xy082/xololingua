@@ -87,7 +87,16 @@ export function createFfmpegWasmAudioExtractor({
       );
     }
 
-    const durationSeconds = await resolveDurationSeconds(file, durationProbe);
+    let durationSeconds;
+    try {
+      durationSeconds = await resolveDurationSeconds(file, durationProbe);
+    } catch (error) {
+      throw new Error(
+        `Browser ffmpeg.wasm audio extraction could not read video duration for ${file?.name || "the selected video"}. ` +
+        "Use the Python fallback for this video.",
+        { cause: error },
+      );
+    }
     if (Number.isFinite(durationSeconds) && durationSeconds > maxDurationSeconds) {
       throw new Error(
         `Browser ffmpeg.wasm extraction is limited to short videos up to ${maxDurationSeconds} seconds. ` +
