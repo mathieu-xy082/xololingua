@@ -10,7 +10,7 @@ set -euo pipefail
 #
 # Usage:
 #   scripts/ci-local.sh
-#   KEEP_CI_CONTAINER=1 scripts/ci-local.sh   # leave container/cache for inspection
+#   KEEP_CI_CONTAINER=1 scripts/ci-local.sh   # leave container/cache/artifacts for inspection
 #   CI_LOCAL_IMAGE=python:3.12-bookworm scripts/ci-local.sh
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -25,9 +25,20 @@ if ! command -v docker >/dev/null 2>&1; then
 fi
 
 cleanup() {
-  if [[ "${KEEP_CI_CONTAINER:-0}" != "1" ]]; then
-    docker rm -f "$container_name" >/dev/null 2>&1 || true
+  if [[ "${KEEP_CI_CONTAINER:-0}" == "1" ]]; then
+    echo "==> KEEP_CI_CONTAINER=1 set; leaving Docker container and local CI artifacts for inspection"
+    return 0
   fi
+
+  docker rm -f "$container_name" >/dev/null 2>&1 || true
+
+  # The Docker preflight mounts the repository at /work and PDM writes these
+  # generated artifacts there. Remove them automatically so running the
+  # preflight does not leave the working tree dirty or require manual cleanup.
+  rm -rf \
+    "$repo_root/.venv" \
+    "$repo_root/.cache" \
+    "$repo_root/.pdm-python"
 }
 trap cleanup EXIT
 
