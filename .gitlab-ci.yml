@@ -6,7 +6,7 @@ variables:
   PDM_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pdm"
   PDM_CHECK_UPDATE: "false"
   PDM_VENV_IN_PROJECT: "1"
-  PDM_VERSION: "2.25.9"
+  PDM_VERSION: "2.28.0"
 
 cache:
   key:

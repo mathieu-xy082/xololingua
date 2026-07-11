@@ -32,9 +32,9 @@ browser-install = "python -m playwright install chromium"
 browser-e2e = "python scripts/browser_e2e_validate.py"
 api-e2e = "python scripts/api_e2e_validate.py"
 test = "python -m unittest discover tests"
-frontend_test = "node --test tests/*.test.mjs"
+frontend_test = "sh -c 'node --test tests/*.test.mjs'"
 check.composite = [
   "python -m compileall -q local_service.py transcribe_worker.py xololingua_service tests",
   "python -m unittest discover tests",
-  "node --test tests/*.test.mjs",
+  "sh -c 'node --test tests/*.test.mjs'",
 ]
