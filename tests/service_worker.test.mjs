@@ -60,3 +60,9 @@ test("PWA shell loads vad-web and ONNX Runtime browser assets before the module 
   assert.match(serviceWorkerSource, /node_modules\/onnxruntime-web\/dist\/ort-wasm-simd\.wasm/);
   assert.match(serviceWorkerSource, /node_modules\/@ricky0123\/vad-web\/dist\/silero_vad_legacy\.onnx/);
 });
+
+test("PWA shell reads service metadata through the backend client boundary", () => {
+  assert.match(appSource, /backendClient\.getHealth\(\)/);
+  assert.match(appSource, /backendClient\.getTranslationPairs\(\)/);
+  assert.doesNotMatch(appSource, /fetch\(`\$\{LOCAL_SERVICE_URL\}\/api\/(?:health|translation-pairs)`\)/);
+});

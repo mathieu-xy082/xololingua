@@ -145,10 +145,8 @@ function populateLanguages() {
 async function fetchTranslationPairs() {
   if (_pairsFetched) return;
   try {
-    const response = await fetch(`${LOCAL_SERVICE_URL}/api/translation-pairs`);
-    if (!response.ok) return;
-    const data = await response.json();
-    for (const { source, target } of data.pairs) {
+    const pairs = await backendClient.getTranslationPairs();
+    for (const { source, target } of pairs) {
       supportedLanguagePairs.add(`${source}:${target}`);
     }
     _pairsFetched = true;
@@ -160,9 +158,7 @@ async function fetchTranslationPairs() {
 
 async function fetchServiceStatus() {
   try {
-    const response = await fetch(`${LOCAL_SERVICE_URL}/api/health`);
-    if (!response.ok) return;
-    const health = await response.json();
+    const health = await backendClient.getHealth();
     const backend = health.whisperBackend || "whisper-cli";
     const model = health.whisperModel || "?";
     const device = health.whisperDevice || "?";
@@ -476,8 +472,9 @@ async function cancelSubtitleJobAdapter(jobId) {
 }
 
 async function identifyLanguageAdapter(file, onProgress = () => {}, onStatus = () => {}) {
-  const health = await fetch(`${LOCAL_SERVICE_URL}/api/health`);
-  if (!health.ok) {
+  try {
+    await backendClient.getHealth();
+  } catch {
     throw new Error("Local audio service is not available for language detection.");
   }
 
