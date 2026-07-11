@@ -65,7 +65,7 @@ BRANCHE PRÊTE POUR REVIEW: <branch>
 | `589dc2f140b9` | XoloLingua urgent GitLab CI workstream | `ci/gitlab-pipeline` | 4h | active | Ajout urgent d'une CI GitLab PDM/Node pour `pdm run check` |
 | `36180c1d35d6` | XoloLingua browser audio extraction workstream | `ec/browser-audio-extraction` | 8h | active | **Priorité 2** — WebCodecs/ffmpeg.wasm, bornage, release runtime, fallback audio |
 | `0feea85268be` | XoloLingua hybrid pipeline routing workstream | `ec/hybrid-pipeline-routing` | 8h | pause | Intégré dans `ec/backend`; conservé pour historique/contexte |
-| `NEW` | XoloLingua app hybrid router wiring workstream | `ec/app-hybrid-router-wiring` | 6h | active | **Priorité 1** — brancher `app.js` sur le router hybride, rapport stages browser/server |
+| `469e4544f5ce` | XoloLingua app hybrid router wiring workstream | `ec/app-hybrid-router-wiring` | 6h | active | **Priorité 1** — brancher `app.js` sur le router hybride, rapport stages browser/server |
 | `639f23a146c0` | XoloLingua client ML stages workstream | `ec/client-ml-stages` | 8h | pause | Temporairement dépriorisé pendant le focus priorités 1–2 |
 | `63a1182beb92` | XoloLingua PWA offline integration workstream | `ec/pwa-offline-integration` | 12h | pause | Temporairement dépriorisé hors pré-cache nécessaire au wiring router |
 | `89e76696343f` | XoloLingua backend review stabilization workstream | `ec/backend-review-stabilization` | 12h | pause | Intégré/clos; conservé pour historique/contexte |
