@@ -15,3 +15,14 @@ test("service worker precaches JavaScript modules imported by the PWA shell", ()
 
   assert.deepEqual(cachedAssets, importedModules);
 });
+
+test("PWA shell starts from the hybrid pipeline router contract", () => {
+  assert.match(
+    appSource,
+    /import\s+\{\s*collectClientPipelineCapabilities\s*\}\s+from\s+["']\.\/frontend\/client_pipeline_capabilities\.js["']/,
+  );
+  assert.match(
+    appSource,
+    /import\s+\{\s*createHybridPipelineRouter\s*\}\s+from\s+["']\.\/frontend\/client_pipeline_router\.js["']/,
+  );
+});

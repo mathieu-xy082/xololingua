@@ -1,4 +1,6 @@
 import { createBackendClient } from "./frontend/backend_client.js";
+import { collectClientPipelineCapabilities } from "./frontend/client_pipeline_capabilities.js";
+import { createHybridPipelineRouter } from "./frontend/client_pipeline_router.js";
 import { formatSrt, formatSrtTime } from "./frontend/client_srt_formatter.js";
 
 const MAX_DURATION_SECONDS = 2.5 * 60 * 60;
