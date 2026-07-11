@@ -1,6 +1,6 @@
 import { createBackendClient } from "./frontend/backend_client.js";
+import { createAppHybridPipelineRouter } from "./frontend/app_hybrid_router_wiring.js";
 import { collectClientPipelineCapabilities } from "./frontend/client_pipeline_capabilities.js";
-import { createHybridPipelineRouter } from "./frontend/client_pipeline_router.js";
 import { formatSrt, formatSrtTime } from "./frontend/client_srt_formatter.js";
 
 const MAX_DURATION_SECONDS = 2.5 * 60 * 60;
@@ -8,6 +8,12 @@ const SEGMENT_SECONDS = 12;
 const LOCAL_SERVICE_URL = "http://127.0.0.1:8765";
 const APP_ASSET_VERSION = "2026-05-17-3";
 const backendClient = createBackendClient({ baseUrl: LOCAL_SERVICE_URL });
+const clientPipelineCapabilities = collectClientPipelineCapabilities();
+const hybridPipelineRouter = createAppHybridPipelineRouter({
+  backendClient,
+  capabilityReport: clientPipelineCapabilities,
+  srtFormatter: formatSrt,
+});
 
 const languages = [
   { code: "en", name: "English" },
@@ -301,11 +307,15 @@ async function segmentAudio() {
   setProgress("segmentation", 0);
   render();
 
+  const stageReports = [];
   if (!state.extractedAudio) {
     try {
-      state.extractedAudio = await extractAudioAdapter(state.videoFile, (progress) => {
+      const extraction = await hybridPipelineRouter.runAudioExtraction(state.videoFile, (progress) => {
         setProgress("segmentation", progress);
       });
+      stageReports.push(extraction);
+      state.extractedAudio = extraction.payload;
+      els.segmentationStatus.textContent = `Audio extraction: ${formatPipelineStageRuntime(extraction)}. Segmenting speech audio...`;
     } catch (extractionError) {
       els.segmentationStatus.textContent = `${extractionError.message} Falling back to prototype segmentation.`;
       const segments = await segmentAudioAdapter(state.duration, (progress) => {
@@ -319,11 +329,12 @@ async function segmentAudio() {
 
   els.segmentationStatus.textContent = `Audio extracted: ${formatBytes(state.extractedAudio.audioSizeBytes)} WAV. Segmenting speech audio...`;
   try {
-    const serviceSegments = await serviceSegmentAudioAdapter(state.extractedAudio.audioId, (progress) => {
+    const segmentation = await hybridPipelineRouter.runVadSegmentation(state.extractedAudio.audioId, (progress) => {
       const scaledProgress = 35 + Math.round(progress * 0.65);
       setProgress("segmentation", scaledProgress);
     });
-    finishSegmentation(serviceSegments);
+    stageReports.push(segmentation);
+    finishSegmentation(segmentation.payload, stageReports);
   } catch (segmentationError) {
     els.segmentationStatus.textContent = `${segmentationError.message} Falling back to prototype segmentation.`;
     const segments = await segmentAudioAdapter(state.duration, (progress) => {
@@ -494,15 +505,27 @@ async function segmentAudioAdapter(duration, onProgress) {
   return segments;
 }
 
-function finishSegmentation(segments) {
+function finishSegmentation(segments, stageReports = []) {
   state.segments = segments;
   const extractionDetail = state.extractedAudio
     ? ` Audio file: ${state.extractedAudio.audioFileName}.`
     : " Prototype-only segmentation cannot generate subtitles until audio extraction succeeds.";
-  els.segmentationStatus.textContent = `${segments.length} speech segments prepared.${extractionDetail}`;
+  const runtimeDetail = stageReports.length > 0
+    ? ` Pipeline: ${stageReports.map(formatPipelineStageRuntime).join("; ")}.`
+    : "";
+  els.segmentationStatus.textContent = `${segments.length} speech segments prepared.${extractionDetail}${runtimeDetail}`;
   state.busyStep = "";
   setProgress("segmentation", 100);
   render();
+}
+
+function formatPipelineStageRuntime(result) {
+  const runtime = result.runtime === "browser" ? "browser" : "Python fallback";
+  const fallback = result.fallbackEndpoints?.length
+    ? ` via ${result.fallbackEndpoints.join(", ")}`
+    : "";
+  const reason = result.browserFailureReason ? ` (${result.browserFailureReason})` : "";
+  return `${runtime} ${result.strategy}${fallback}${reason}`;
 }
 
 async function generateSrtAdapter(segments, targetLanguageCode, onProgress) {
