@@ -8,6 +8,14 @@ import {
   detectClientAudioExtractionCapabilities,
 } from "../frontend/client_audio_extractor.js";
 
+const TestFile = globalThis.File ?? class FilePolyfill extends Blob {
+  constructor(parts, name, options = {}) {
+    super(parts, options);
+    this.name = String(name);
+    this.lastModified = options.lastModified ?? Date.now();
+  }
+};
+
 test("detectClientAudioExtractionCapabilities reports native WebCodecs readiness", () => {
   const capabilities = detectClientAudioExtractionCapabilities({
     VideoDecoder: function VideoDecoder() {},
@@ -47,7 +55,7 @@ test("ffmpeg wasm audio extractor converts an MP4 file to mono 16 kHz WAV", asyn
     fetchFile: async (file) => new Uint8Array(await file.arrayBuffer()),
   });
 
-  const result = await extractor(new File([new Uint8Array([1, 2, 3])], "clip.mp4", { type: "video/mp4" }));
+  const result = await extractor(new TestFile([new Uint8Array([1, 2, 3])], "clip.mp4", { type: "video/mp4" }));
 
   assert.deepEqual(operations, [
     ["load"],
@@ -114,7 +122,7 @@ test("ffmpeg wasm audio extractor releases the wasm runtime after cleanup when r
     releaseAfterRun: true,
   });
 
-  await extractor(new File([new Uint8Array([1, 2, 3])], "clip.mp4", { type: "video/mp4" }));
+  await extractor(new TestFile([new Uint8Array([1, 2, 3])], "clip.mp4", { type: "video/mp4" }));
 
   assert.deepEqual(operations.slice(-3), [
     ["FS", "unlink", "input.mp4", undefined],
