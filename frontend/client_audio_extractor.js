@@ -111,6 +111,15 @@ export function createFfmpegWasmAudioExtractor({
     }
 
     const inputBytes = await fetchFile(file);
+    if (Number.isFinite(inputBytes?.byteLength) && inputBytes.byteLength > maxInputBytes) {
+      if (releaseAfterRun) {
+        await releaseFfmpegRuntime(ffmpeg);
+      }
+      throw new Error(
+        `Browser ffmpeg.wasm extraction received ${formatBytes(inputBytes.byteLength)} after loading the input. ` +
+        `The browser limit is ${formatBytes(maxInputBytes)}; use the Python fallback for larger videos.`,
+      );
+    }
     onProgress(20);
     ffmpeg.FS("writeFile", FFMPEG_INPUT_NAME, inputBytes);
 

@@ -159,6 +159,40 @@ test("ffmpeg wasm audio extractor rejects oversized browser inputs before loadin
   assert.deepEqual(calls, []);
 });
 
+test("ffmpeg wasm audio extractor rejects fetched bytes over the browser limit before writing wasm FS", async () => {
+  const calls = [];
+  const ffmpeg = {
+    isLoaded() {
+      calls.push("isLoaded");
+      return true;
+    },
+    FS(command, path) {
+      calls.push(["FS", command, path]);
+    },
+    async run(...args) {
+      calls.push(["run", ...args]);
+    },
+    terminate() {
+      calls.push("terminate");
+    },
+  };
+  const extractor = createFfmpegWasmAudioExtractor({
+    ffmpeg,
+    fetchFile: async () => {
+      calls.push("fetchFile");
+      return new Uint8Array(1025);
+    },
+    maxInputBytes: 1024,
+    releaseAfterRun: true,
+  });
+
+  await assert.rejects(
+    () => extractor({ name: "streamed.mp4" }),
+    /Browser ffmpeg\.wasm extraction received 1 KiB after loading the input\./,
+  );
+  assert.deepEqual(calls, ["isLoaded", "fetchFile", "terminate"]);
+});
+
 test("ffmpeg wasm audio extractor rejects long real files using a duration probe before loading wasm", async () => {
   const calls = [];
   const extractor = createFfmpegWasmAudioExtractor({
