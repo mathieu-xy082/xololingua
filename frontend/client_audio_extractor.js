@@ -124,18 +124,26 @@ export function createFfmpegWasmAudioExtractor({
     ffmpeg.FS("writeFile", FFMPEG_INPUT_NAME, inputBytes);
 
     try {
-      await ffmpeg.run(
-        "-i",
-        FFMPEG_INPUT_NAME,
-        "-vn",
-        "-ac",
-        "1",
-        "-ar",
-        "16000",
-        "-f",
-        "wav",
-        FFMPEG_OUTPUT_NAME,
-      );
+      try {
+        await ffmpeg.run(
+          "-i",
+          FFMPEG_INPUT_NAME,
+          "-vn",
+          "-ac",
+          "1",
+          "-ar",
+          "16000",
+          "-f",
+          "wav",
+          FFMPEG_OUTPUT_NAME,
+        );
+      } catch (error) {
+        throw new Error(
+          `Browser ffmpeg.wasm audio extraction failed for ${file?.name || "the selected video"}. ` +
+          "Use the Python fallback for this video.",
+          { cause: error },
+        );
+      }
       onProgress(85);
       const outputBytes = ffmpeg.FS("readFile", FFMPEG_OUTPUT_NAME);
       const audioBlob = new Blob([outputBytes], { type: "audio/wav" });

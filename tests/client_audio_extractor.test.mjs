@@ -193,6 +193,59 @@ test("ffmpeg wasm audio extractor rejects fetched bytes over the browser limit b
   assert.deepEqual(calls, ["isLoaded", "fetchFile", "terminate"]);
 });
 
+test("ffmpeg wasm audio extractor reports transcoding failures with explicit fallback guidance", async () => {
+  const calls = [];
+  const ffmpeg = {
+    isLoaded() {
+      calls.push("isLoaded");
+      return true;
+    },
+    FS(command, path, data) {
+      calls.push(["FS", command, path, data ? [...data] : undefined]);
+    },
+    async run(...args) {
+      calls.push(["run", ...args]);
+      throw new Error("demux failed");
+    },
+    terminate() {
+      calls.push("terminate");
+    },
+  };
+  const extractor = createFfmpegWasmAudioExtractor({
+    ffmpeg,
+    fetchFile: async (file) => new Uint8Array(await file.arrayBuffer()),
+    releaseAfterRun: true,
+  });
+
+  await assert.rejects(
+    () => extractor(new TestFile([new Uint8Array([1, 2, 3])], "broken.mp4", { type: "video/mp4" })),
+    (error) => {
+      assert.match(error.message, /Browser ffmpeg\.wasm audio extraction failed for broken\.mp4\./);
+      assert.match(error.message, /Use the Python fallback for this video\./);
+      assert.equal(error.cause?.message, "demux failed");
+      return true;
+    },
+  );
+  assert.deepEqual(calls.slice(-3), [
+    ["FS", "unlink", "input.mp4", undefined],
+    ["FS", "unlink", "output.wav", undefined],
+    "terminate",
+  ]);
+  assert.deepEqual(calls[2], [
+    "run",
+    "-i",
+    "input.mp4",
+    "-vn",
+    "-ac",
+    "1",
+    "-ar",
+    "16000",
+    "-f",
+    "wav",
+    "output.wav",
+  ]);
+});
+
 test("ffmpeg wasm audio extractor rejects long real files using a duration probe before loading wasm", async () => {
   const calls = [];
   const extractor = createFfmpegWasmAudioExtractor({
