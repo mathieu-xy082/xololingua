@@ -109,14 +109,15 @@ class PipelineIntegrationTests(unittest.TestCase):
 
             runtime_available = {"backend": "faster-whisper", "available": True, "device": "cpu", "model": "base", "computeType": "int8", "cudaDevices": 0}
             with mock.patch.dict(runtime.WHISPER_RUNTIME, runtime_available):
-                with mock.patch.object(transcription, "transcribe_segments", return_value=transcribed):
-                    with mock.patch.object(translation, "translate_segments", return_value=translated):
-                        job = self._post_json("/api/subtitle-jobs", {
-                            "audioId": audio_id,
-                            "sourceLanguage": "fr",
-                            "targetLanguage": "en",
-                            "segments": segments,
-                        })
+                with mock.patch.object(http_api, "translation_backend_available", return_value=True):
+                    with mock.patch.object(transcription, "transcribe_segments", return_value=transcribed):
+                        with mock.patch.object(translation, "translate_segments", return_value=translated):
+                            job = self._post_json("/api/subtitle-jobs", {
+                                "audioId": audio_id,
+                                "sourceLanguage": "fr",
+                                "targetLanguage": "en",
+                                "segments": segments,
+                            })
 
             self.assertIn("jobId", job)
             job_id = job["jobId"]

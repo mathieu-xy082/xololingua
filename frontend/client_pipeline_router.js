@@ -85,6 +85,7 @@ export function createHybridPipelineRouter({
         onVadProgress = () => {},
         onTranscriptionProgress = () => {},
         onTranslationProgress = () => {},
+        onStageComplete = () => {},
       } = {},
     ) {
       const audioExtraction = await runStage({
@@ -97,6 +98,7 @@ export function createHybridPipelineRouter({
         clientAdapters,
         serverAdapters,
       });
+      onStageComplete(createUserStageReportRow("audioExtraction", audioExtraction));
       const audioId = audioExtraction.payload?.audioId || audioExtraction.payload;
 
       const vad = await runStage({
@@ -109,6 +111,7 @@ export function createHybridPipelineRouter({
         clientAdapters,
         serverAdapters,
       });
+      onStageComplete(createUserStageReportRow("vad", vad));
 
       const transcription = await runStage({
         stageName: "transcription",
@@ -120,6 +123,7 @@ export function createHybridPipelineRouter({
         clientAdapters,
         serverAdapters,
       });
+      onStageComplete(createUserStageReportRow("transcription", transcription));
 
       const translation = await runStage({
         stageName: "translation",
@@ -135,6 +139,7 @@ export function createHybridPipelineRouter({
         clientAdapters,
         serverAdapters,
       });
+      onStageComplete(createUserStageReportRow("translation", translation));
 
       const stageResults = {
         audioExtraction,
@@ -175,24 +180,25 @@ function summarizeServerFallbackStages(stageResults) {
 }
 
 function createUserStageReport(stageResults) {
-  return PIPELINE_STAGE_ORDER.map((stage) => {
-    const result = stageResults[stage];
-    const row = {
-      stage,
-      label: PIPELINE_STAGE_LABELS[stage],
-      runtime: result.runtime,
-      runtimeLabel: result.runtime === "browser" ? "Browser" : "Python fallback",
-      strategy: result.strategy,
-      status: result.runtime === "browser" ? "completed" : "completed-via-fallback",
-      fallbackEndpoints: result.fallbackEndpoints || [],
-    };
+  return PIPELINE_STAGE_ORDER.map((stage) => createUserStageReportRow(stage, stageResults[stage]));
+}
 
-    if (result.browserFailureReason) {
-      row.browserFailureReason = result.browserFailureReason;
-    }
+function createUserStageReportRow(stage, result) {
+  const row = {
+    stage,
+    label: PIPELINE_STAGE_LABELS[stage],
+    runtime: result.runtime,
+    runtimeLabel: result.runtime === "browser" ? "Browser" : "Python fallback",
+    strategy: result.strategy,
+    status: result.runtime === "browser" ? "completed" : "completed-via-fallback",
+    fallbackEndpoints: result.fallbackEndpoints || [],
+  };
 
-    return row;
-  });
+  if (result.browserFailureReason) {
+    row.browserFailureReason = result.browserFailureReason;
+  }
+
+  return row;
 }
 
 async function runStage({
