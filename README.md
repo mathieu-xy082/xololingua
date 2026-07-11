@@ -245,5 +245,3 @@ L'objectif est d'éliminer la dépendance au service Python local (`local_servic
 - Une fois les étapes 1 à 4 implémentées, le service Python (`local_service.py`, `xololingua_service/`) devient optionnel
 - Conserver le service comme backend avancé (GPU dédié, modèles plus grands) mais ne plus en faire un prérequis
 - Déployer la PWA sur un hébergeur statique (GitHub Pages, Netlify, etc.)
-
-
