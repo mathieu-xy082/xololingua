@@ -119,7 +119,19 @@ export function createFfmpegWasmAudioExtractor({
       await ffmpeg.load();
     }
 
-    const inputBytes = await fetchFile(file);
+    let inputBytes;
+    try {
+      inputBytes = await fetchFile(file);
+    } catch (error) {
+      if (releaseAfterRun) {
+        await releaseFfmpegRuntime(ffmpeg);
+      }
+      throw new Error(
+        `Browser ffmpeg.wasm audio extraction could not load ${file?.name || "the selected video"} into browser memory. ` +
+        "Use the Python fallback for this video.",
+        { cause: error },
+      );
+    }
     if (Number.isFinite(inputBytes?.byteLength) && inputBytes.byteLength > maxInputBytes) {
       if (releaseAfterRun) {
         await releaseFfmpegRuntime(ffmpeg);

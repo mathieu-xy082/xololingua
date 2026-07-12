@@ -193,6 +193,44 @@ test("ffmpeg wasm audio extractor rejects fetched bytes over the browser limit b
   assert.deepEqual(calls, ["isLoaded", "fetchFile", "terminate"]);
 });
 
+test("ffmpeg wasm audio extractor releases the wasm runtime when browser input loading fails", async () => {
+  const calls = [];
+  const ffmpeg = {
+    isLoaded() {
+      calls.push("isLoaded");
+      return true;
+    },
+    FS(command, path) {
+      calls.push(["FS", command, path]);
+    },
+    async run(...args) {
+      calls.push(["run", ...args]);
+    },
+    terminate() {
+      calls.push("terminate");
+    },
+  };
+  const extractor = createFfmpegWasmAudioExtractor({
+    ffmpeg,
+    fetchFile: async () => {
+      calls.push("fetchFile");
+      throw new Error("array buffer exhausted");
+    },
+    releaseAfterRun: true,
+  });
+
+  await assert.rejects(
+    () => extractor({ name: "memory-hungry.mp4" }),
+    (error) => {
+      assert.match(error.message, /Browser ffmpeg\.wasm audio extraction could not load memory-hungry\.mp4 into browser memory\./);
+      assert.match(error.message, /Use the Python fallback for this video\./);
+      assert.equal(error.cause?.message, "array buffer exhausted");
+      return true;
+    },
+  );
+  assert.deepEqual(calls, ["isLoaded", "fetchFile", "terminate"]);
+});
+
 test("ffmpeg wasm audio extractor reports transcoding failures with explicit fallback guidance", async () => {
   const calls = [];
   const ffmpeg = {
