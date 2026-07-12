@@ -104,6 +104,42 @@ test("segmentAudio posts an extracted audio id and returns service segments", as
   assert.equal(calls[0].options.body, JSON.stringify({ audioId: "audio-123" }));
 });
 
+test("transcribeAudio posts extracted audio, source language, and segments", async () => {
+  const calls = [];
+  const client = createBackendClient({
+    baseUrl: "http://service.test/",
+    fetchImpl: async (url, options = {}) => {
+      calls.push({ url, options });
+      return jsonResponse(true, {
+        segments: [{ index: 1, start: 0, end: 1.5, text: "Bonjour" }],
+      });
+    },
+    FormDataImpl: FakeFormData,
+  });
+  const progress = [];
+
+  const segments = await client.transcribeAudio(
+    {
+      audioId: "audio-123",
+      sourceLanguage: { code: "fr", name: "French" },
+      segments: [{ index: 1, start: 0, end: 1.5 }],
+    },
+    (value) => progress.push(value),
+  );
+
+  assert.deepEqual(progress, [{ stage: "transcribing", progress: 5 }, { stage: "transcribing", progress: 100 }]);
+  assert.deepEqual(segments, [{ index: 1, start: 0, end: 1.5, text: "Bonjour" }]);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "http://service.test/api/transcribe-audio");
+  assert.equal(calls[0].options.method, "POST");
+  assert.deepEqual(calls[0].options.headers, { "Content-Type": "application/json" });
+  assert.equal(calls[0].options.body, JSON.stringify({
+    audioId: "audio-123",
+    languageCode: "fr",
+    segments: [{ index: 1, start: 0, end: 1.5 }],
+  }));
+});
+
 test("extractAudio surfaces malformed service responses as the fallback error", async () => {
   const client = createBackendClient({
     baseUrl: "http://service.test/",

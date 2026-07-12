@@ -16,6 +16,7 @@ export function createAppHybridPipelineRouter({
     serverAdapters: {
       audioExtraction: (file, onProgress) => backendClient.extractAudio(file, onProgress),
       vad: (audioId, onProgress) => backendClient.segmentAudio(audioId, onProgress),
+      transcription: (request, onProgress) => backendClient.transcribeAudio(request, onProgress),
       translation: async (request, onProgress) => {
         const payload = await backendClient.createSubtitleJob({
           extractedAudio: request.extractedAudio,

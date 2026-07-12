@@ -1,7 +1,7 @@
 const PYTHON_FALLBACK_ENDPOINTS = {
   audioExtraction: ["POST /api/extract-audio"],
   vad: ["POST /api/segment-audio"],
-  transcription: ["POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
+  transcription: ["POST /api/transcribe-audio"],
   translation: ["POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
 };
 

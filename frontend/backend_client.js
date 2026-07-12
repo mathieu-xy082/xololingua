@@ -81,6 +81,26 @@ export function createBackendClient({
       return payload.segments;
     },
 
+    async transcribeAudio({ audioId, sourceLanguage, segments }, onProgress = () => {}) {
+      onProgress({ stage: "transcribing", progress: 5 });
+
+      const response = await fetchImpl(endpoint("/api/transcribe-audio"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          audioId,
+          languageCode: sourceLanguage.code,
+          segments,
+        }),
+      });
+      const payload = await readJson(response, "Audio transcription failed.");
+
+      onProgress({ stage: "transcribing", progress: 100 });
+      return payload.segments;
+    },
+
     async createSubtitleJob({ extractedAudio, sourceLanguage, targetLanguage, segments }) {
       const response = await fetchImpl(endpoint("/api/subtitle-jobs"), {
         method: "POST",

@@ -87,6 +87,45 @@ test("app hybrid router wiring downgrades browser-ready stages to Python fallbac
   assert.equal(segmentation.strategy, "web-audio-vad");
 });
 
+test("app hybrid router wiring runs transcription through the Python transcription fallback adapter", async () => {
+  const calls = [];
+  const router = createAppHybridPipelineRouter({
+    backendClient: {
+      extractAudio: async () => ({ audioId: "audio-123" }),
+      segmentAudio: async () => [],
+      transcribeAudio: async ({ audioId, sourceLanguage, segments }, onProgress) => {
+        calls.push(["transcribeAudio", audioId, sourceLanguage.code, segments.length]);
+        onProgress({ stage: "transcribing", progress: 55 });
+        return [{ index: 1, start: 0, end: 1.5, text: "Bonjour" }];
+      },
+    },
+    capabilityReport: {
+      stages: {
+        transcription: { runtime: "server-fallback", strategy: "python-backend" },
+      },
+    },
+  });
+  const progress = [];
+
+  const result = await router.runTranscription(
+    {
+      audioId: "audio-123",
+      sourceLanguage: { code: "fr", name: "French" },
+      segments: [{ index: 1, start: 0, end: 1.5 }],
+    },
+    (job) => progress.push(job),
+  );
+
+  assert.deepEqual(calls, [["transcribeAudio", "audio-123", "fr", 1]]);
+  assert.deepEqual(progress, [{ stage: "transcribing", progress: 55 }]);
+  assert.deepEqual(result, {
+    runtime: "server-fallback",
+    strategy: "python-backend",
+    fallbackEndpoints: ["POST /api/transcribe-audio"],
+    payload: [{ index: 1, start: 0, end: 1.5, text: "Bonjour" }],
+  });
+});
+
 test("app hybrid router wiring runs subtitle generation through the Python subtitle job fallback", async () => {
   const calls = [];
   const jobUpdates = [];

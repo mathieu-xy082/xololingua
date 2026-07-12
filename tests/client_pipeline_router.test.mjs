@@ -147,7 +147,7 @@ test("hybrid pipeline router falls back to the Python segmentation endpoint when
   });
 });
 
-test("hybrid pipeline router falls back to the Python subtitle job endpoint when browser transcription is unavailable", async () => {
+test("hybrid pipeline router falls back to the Python transcription endpoint when browser transcription is unavailable", async () => {
   const calls = [];
   const router = createHybridPipelineRouter({
     capabilityReport: {
@@ -181,7 +181,7 @@ test("hybrid pipeline router falls back to the Python subtitle job endpoint when
   assert.deepEqual(result, {
     runtime: "server-fallback",
     strategy: "unavailable",
-    fallbackEndpoints: ["POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
+    fallbackEndpoints: ["POST /api/transcribe-audio"],
     payload: [{ index: 1, text: "bonjour" }],
   });
 });
@@ -386,7 +386,7 @@ test("hybrid pipeline router summarizes Python fallback stages after a demo subt
     },
     {
       stage: "transcription",
-      endpoints: ["POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
+      endpoints: ["POST /api/transcribe-audio"],
     },
   ]);
 });
@@ -452,7 +452,7 @@ test("hybrid pipeline router emits ordered user stage reports as each subtitle s
       runtimeLabel: "Python fallback",
       strategy: "unavailable",
       status: "completed-via-fallback",
-      fallbackEndpoints: ["POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
+      fallbackEndpoints: ["POST /api/transcribe-audio"],
     },
     {
       stage: "translation",
@@ -525,7 +525,7 @@ test("hybrid pipeline router returns an ordered user stage report with Python fa
       runtimeLabel: "Python fallback",
       strategy: "unavailable",
       status: "completed-via-fallback",
-      fallbackEndpoints: ["POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
+      fallbackEndpoints: ["POST /api/transcribe-audio"],
     },
     {
       stage: "translation",
