@@ -51,6 +51,7 @@ const state = {
   languageProgress: 0,
   extractedAudio: null,
   segments: [],
+  pipelineStageReports: [],
   srtUrl: "",
   subtitleJobId: "",
   subtitleCancelRequested: false,
@@ -302,6 +303,7 @@ async function segmentAudio() {
     state.extractedAudio = null;
   }
   state.segments = [];
+  state.pipelineStageReports = [];
   els.segmentationStatus.textContent = state.extractedAudio
     ? `Audio already extracted: ${formatBytes(state.extractedAudio.audioSizeBytes)} WAV. Segmenting speech audio...`
     : "Extracting audio from MP4...";
@@ -382,6 +384,7 @@ async function generateSubtitles() {
       },
     );
     state.segments = translation.payload;
+    state.pipelineStageReports = [...state.pipelineStageReports, { stage: "translation", ...translation }];
     renderSegmentReview();
     els.subtitleStatus.textContent = `Subtitle generation: ${formatPipelineStageRuntime({ stage: "translation", ...translation })}. Preparing translated SRT...`;
 
@@ -398,7 +401,9 @@ async function generateSubtitles() {
     els.downloadLink.download = fileName;
     els.downloadLink.textContent = `Download ${fileName}`;
     els.downloadLink.hidden = false;
-    els.subtitleStatus.textContent = "Subtitle file ready.";
+    els.subtitleStatus.textContent = state.pipelineStageReports.length > 0
+      ? `Subtitle file ready. Pipeline: ${formatPipelineStageSummary(state.pipelineStageReports)}.`
+      : "Subtitle file ready.";
     state.busyStep = "";
     state.subtitleJobId = "";
     state.subtitleCancelRequested = false;
@@ -501,6 +506,7 @@ async function segmentAudioAdapter(duration, onProgress) {
 
 function finishSegmentation(segments, stageReports = []) {
   state.segments = segments;
+  state.pipelineStageReports = stageReports;
   const extractionDetail = state.extractedAudio
     ? ` Audio file: ${state.extractedAudio.audioFileName}.`
     : " Prototype-only segmentation cannot generate subtitles until audio extraction succeeds.";
@@ -598,6 +604,7 @@ function resetOutput() {
   state.targetLanguage = "";
   state.languageProgress = 0;
   state.extractedAudio = null;
+  state.pipelineStageReports = [];
   state.busyStep = "";
   els.videoPreview.removeAttribute("src");
   els.videoPreview.load();
@@ -610,6 +617,7 @@ function resetOutput() {
 
 function resetSegmentation() {
   state.segments = [];
+  state.pipelineStageReports = [];
   els.segmentDetails.hidden = true;
   els.toggleSegmentsButton.setAttribute("aria-expanded", "false");
   els.toggleSegmentsButton.textContent = "Show details";

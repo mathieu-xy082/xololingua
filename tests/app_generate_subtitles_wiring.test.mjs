@@ -9,3 +9,10 @@ test("app subtitle generation is routed through the hybrid pipeline translation 
   assert.doesNotMatch(appSource, /const translatedSegments = await runSubtitleJobAdapter\(/);
   assert.match(appSource, /Subtitle generation: \$\{formatPipelineStageRuntime\(\{ stage: "translation", \.\.\.translation \}\)\}/);
 });
+
+test("app keeps a readable hybrid pipeline report across segmentation and subtitle generation", () => {
+  assert.match(appSource, /pipelineStageReports: \[\]/);
+  assert.match(appSource, /state\.pipelineStageReports = stageReports;/);
+  assert.match(appSource, /state\.pipelineStageReports = \[\.\.\.state\.pipelineStageReports, \{ stage: "translation", \.\.\.translation \}\];/);
+  assert.match(appSource, /formatPipelineStageSummary\(state\.pipelineStageReports\)/);
+});
