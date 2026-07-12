@@ -17,7 +17,7 @@ Les valeurs par défaut protègent la mémoire du navigateur et doivent rester v
 - taille maximale revérifiée après `fetchFile`, avant écriture dans le FS wasm ;
 - timeout de lecture des métadonnées vidéo : `10 s`.
 
-Si le navigateur ne peut pas lire la durée, si la vidéo dépasse ces bornes, si `fetchFile` échoue, si le transcodage échoue ou si ffmpeg.wasm produit une sortie vide, l'erreur doit indiquer explicitement d'utiliser le fallback Python.
+Si le navigateur ne peut pas lire une durée finie, si la vidéo dépasse ces bornes, si `fetchFile` échoue, si le transcodage échoue ou si ffmpeg.wasm produit une sortie vide, l'erreur doit indiquer explicitement d'utiliser le fallback Python.
 
 ## Hygiène runtime/mémoire
 

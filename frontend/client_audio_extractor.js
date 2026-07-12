@@ -97,6 +97,12 @@ export function createFfmpegWasmAudioExtractor({
         { cause: error },
       );
     }
+    if (durationSeconds !== undefined && !Number.isFinite(durationSeconds)) {
+      throw new Error(
+        `Browser ffmpeg.wasm audio extraction requires finite video duration metadata for ${file?.name || "the selected video"}. ` +
+        "Use the Python fallback for this video.",
+      );
+    }
     if (Number.isFinite(durationSeconds) && durationSeconds > maxDurationSeconds) {
       throw new Error(
         `Browser ffmpeg.wasm extraction is limited to short videos up to ${maxDurationSeconds} seconds. ` +
