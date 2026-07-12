@@ -231,6 +231,46 @@ test("ffmpeg wasm audio extractor releases the wasm runtime when browser input l
   assert.deepEqual(calls, ["isLoaded", "fetchFile", "terminate"]);
 });
 
+test("ffmpeg wasm audio extractor rejects empty wasm output with explicit fallback guidance", async () => {
+  const calls = [];
+  const ffmpeg = {
+    isLoaded() {
+      calls.push("isLoaded");
+      return true;
+    },
+    FS(command, path, data) {
+      calls.push(["FS", command, path, data ? [...data] : undefined]);
+      if (command === "readFile") return new Uint8Array();
+      return undefined;
+    },
+    async run(...args) {
+      calls.push(["run", ...args]);
+    },
+    terminate() {
+      calls.push("terminate");
+    },
+  };
+  const extractor = createFfmpegWasmAudioExtractor({
+    ffmpeg,
+    fetchFile: async (file) => new Uint8Array(await file.arrayBuffer()),
+    releaseAfterRun: true,
+  });
+
+  await assert.rejects(
+    () => extractor(new TestFile([new Uint8Array([1, 2, 3])], "silent.mp4", { type: "video/mp4" })),
+    (error) => {
+      assert.match(error.message, /Browser ffmpeg\.wasm audio extraction produced no audio bytes for silent\.mp4\./);
+      assert.match(error.message, /Use the Python fallback for this video\./);
+      return true;
+    },
+  );
+  assert.deepEqual(calls.slice(-3), [
+    ["FS", "unlink", "input.mp4", undefined],
+    ["FS", "unlink", "output.wav", undefined],
+    "terminate",
+  ]);
+});
+
 test("ffmpeg wasm audio extractor reports transcoding failures with explicit fallback guidance", async () => {
   const calls = [];
   const ffmpeg = {

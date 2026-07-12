@@ -167,6 +167,12 @@ export function createFfmpegWasmAudioExtractor({
       }
       onProgress(85);
       const outputBytes = ffmpeg.FS("readFile", FFMPEG_OUTPUT_NAME);
+      if (!Number.isFinite(outputBytes?.byteLength) || outputBytes.byteLength === 0) {
+        throw new Error(
+          `Browser ffmpeg.wasm audio extraction produced no audio bytes for ${file?.name || "the selected video"}. ` +
+          "Use the Python fallback for this video.",
+        );
+      }
       const audioBlob = new Blob([outputBytes], { type: "audio/wav" });
       onProgress(100);
 
