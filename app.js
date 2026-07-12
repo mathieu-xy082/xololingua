@@ -2,6 +2,7 @@ import { createBackendClient } from "./frontend/backend_client.js";
 import { createAppHybridPipelineRouter } from "./frontend/app_hybrid_router_wiring.js";
 import { collectClientPipelineCapabilities } from "./frontend/client_pipeline_capabilities.js";
 import { formatSrt, formatSrtTime } from "./frontend/client_srt_formatter.js";
+import { formatPipelineStageRuntime, formatPipelineStageSummary } from "./frontend/pipeline_stage_status.js";
 
 const MAX_DURATION_SECONDS = 2.5 * 60 * 60;
 const SEGMENT_SECONDS = 12;
@@ -313,9 +314,9 @@ async function segmentAudio() {
       const extraction = await hybridPipelineRouter.runAudioExtraction(state.videoFile, (progress) => {
         setProgress("segmentation", progress);
       });
-      stageReports.push(extraction);
+      stageReports.push({ stage: "audioExtraction", ...extraction });
       state.extractedAudio = extraction.payload;
-      els.segmentationStatus.textContent = `Audio extraction: ${formatPipelineStageRuntime(extraction)}. Segmenting speech audio...`;
+      els.segmentationStatus.textContent = `${formatPipelineStageRuntime({ stage: "audioExtraction", ...extraction })}. Segmenting speech audio...`;
     } catch (extractionError) {
       els.segmentationStatus.textContent = `${extractionError.message} Falling back to prototype segmentation.`;
       const segments = await segmentAudioAdapter(state.duration, (progress) => {
@@ -333,7 +334,7 @@ async function segmentAudio() {
       const scaledProgress = 35 + Math.round(progress * 0.65);
       setProgress("segmentation", scaledProgress);
     });
-    stageReports.push(segmentation);
+    stageReports.push({ stage: "vad", ...segmentation });
     finishSegmentation(segmentation.payload, stageReports);
   } catch (segmentationError) {
     els.segmentationStatus.textContent = `${segmentationError.message} Falling back to prototype segmentation.`;
@@ -382,7 +383,7 @@ async function generateSubtitles() {
     );
     state.segments = translation.payload;
     renderSegmentReview();
-    els.subtitleStatus.textContent = `Subtitle generation: ${formatPipelineStageRuntime(translation)}. Preparing translated SRT...`;
+    els.subtitleStatus.textContent = `Subtitle generation: ${formatPipelineStageRuntime({ stage: "translation", ...translation })}. Preparing translated SRT...`;
 
     const srt = await generateSrtAdapter(state.segments, state.targetLanguage, (progress) => {
       setSubtitleProgress(100, 100);
@@ -504,7 +505,7 @@ function finishSegmentation(segments, stageReports = []) {
     ? ` Audio file: ${state.extractedAudio.audioFileName}.`
     : " Prototype-only segmentation cannot generate subtitles until audio extraction succeeds.";
   const runtimeDetail = stageReports.length > 0
-    ? ` Pipeline: ${stageReports.map(formatPipelineStageRuntime).join("; ")}.`
+    ? ` Pipeline: ${formatPipelineStageSummary(stageReports)}.`
     : "";
   els.segmentationStatus.textContent = `${segments.length} speech segments prepared.${extractionDetail}${runtimeDetail}`;
   state.busyStep = "";
@@ -512,14 +513,6 @@ function finishSegmentation(segments, stageReports = []) {
   render();
 }
 
-function formatPipelineStageRuntime(result) {
-  const runtime = result.runtime === "browser" ? "browser" : "Python fallback";
-  const fallback = result.fallbackEndpoints?.length
-    ? ` via ${result.fallbackEndpoints.join(", ")}`
-    : "";
-  const reason = result.browserFailureReason ? ` (${result.browserFailureReason})` : "";
-  return `${runtime} ${result.strategy}${fallback}${reason}`;
-}
 
 async function generateSrtAdapter(segments, targetLanguageCode, onProgress) {
   for (const segment of segments) {
