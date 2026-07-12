@@ -86,3 +86,54 @@ test("app hybrid router wiring downgrades browser-ready stages to Python fallbac
   assert.equal(segmentation.runtime, "server-fallback");
   assert.equal(segmentation.strategy, "web-audio-vad");
 });
+
+test("app hybrid router wiring runs subtitle generation through the Python subtitle job fallback", async () => {
+  const calls = [];
+  const jobUpdates = [];
+  const router = createAppHybridPipelineRouter({
+    backendClient: {
+      extractAudio: async () => ({ audioId: "audio-123" }),
+      segmentAudio: async () => [],
+      createSubtitleJob: async ({ extractedAudio, sourceLanguage, targetLanguage, segments }) => {
+        calls.push(["createSubtitleJob", extractedAudio.audioId, sourceLanguage.code, targetLanguage, segments.length]);
+        return { jobId: "job-1" };
+      },
+      pollSubtitleJob: async (jobId, { onProgress }) => {
+        calls.push(["pollSubtitleJob", jobId]);
+        onProgress({ stage: "translating", translationProgress: 50 });
+        return [{ index: 1, start: 0, end: 1.5, text: "Bonjour", translatedText: "Hello" }];
+      },
+    },
+    capabilityReport: {
+      stages: {
+        translation: { runtime: "server-fallback", strategy: "python-backend" },
+      },
+    },
+  });
+
+  const result = await router.runTranslation(
+    {
+      extractedAudio: { audioId: "audio-123" },
+      sourceLanguage: { code: "fr", name: "French" },
+      targetLanguage: "en",
+      segments: [{ index: 1, start: 0, end: 1.5, text: "Bonjour" }],
+      onJobCreated: (job) => jobUpdates.push(job),
+    },
+    (job) => jobUpdates.push(job),
+  );
+
+  assert.deepEqual(calls, [
+    ["createSubtitleJob", "audio-123", "fr", "en", 1],
+    ["pollSubtitleJob", "job-1"],
+  ]);
+  assert.deepEqual(jobUpdates, [
+    { jobId: "job-1" },
+    { stage: "translating", translationProgress: 50 },
+  ]);
+  assert.deepEqual(result, {
+    runtime: "server-fallback",
+    strategy: "python-backend",
+    fallbackEndpoints: ["POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
+    payload: [{ index: 1, start: 0, end: 1.5, text: "Bonjour", translatedText: "Hello" }],
+  });
+});

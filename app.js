@@ -364,16 +364,25 @@ async function generateSubtitles() {
   render();
 
   try {
-    const translatedSegments = await runSubtitleJobAdapter(state.extractedAudio, state.sourceLanguage, state.targetLanguage, state.segments, (job) => {
-      els.subtitleStatus.textContent = job.message || job.stage;
-      syncSubtitleProgress(job);
-    }, (job) => {
-      state.subtitleJobId = job.jobId;
-      render();
-    });
-    state.segments = translatedSegments;
+    const translation = await hybridPipelineRouter.runTranslation(
+      {
+        extractedAudio: state.extractedAudio,
+        sourceLanguage: state.sourceLanguage,
+        targetLanguage: state.targetLanguage,
+        segments: state.segments,
+        onJobCreated: (job) => {
+          state.subtitleJobId = job.jobId;
+          render();
+        },
+      },
+      (job) => {
+        els.subtitleStatus.textContent = job.message || job.stage;
+        syncSubtitleProgress(job);
+      },
+    );
+    state.segments = translation.payload;
     renderSegmentReview();
-    els.subtitleStatus.textContent = "Preparing translated SRT...";
+    els.subtitleStatus.textContent = `Subtitle generation: ${formatPipelineStageRuntime(translation)}. Preparing translated SRT...`;
 
     const srt = await generateSrtAdapter(state.segments, state.targetLanguage, (progress) => {
       setSubtitleProgress(100, 100);
@@ -424,22 +433,6 @@ async function cancelSubtitleGeneration() {
     setSubtitleProgress(0, 0);
     render();
   }
-}
-
-async function runSubtitleJobAdapter(extractedAudio, sourceLanguage, targetLanguageCode, segments, onProgress, onJobCreated) {
-  if (!extractedAudio) {
-    throw new Error("Audio must be extracted before subtitle generation.");
-  }
-
-  const payload = await backendClient.createSubtitleJob({
-    extractedAudio,
-    sourceLanguage,
-    targetLanguage: targetLanguageCode,
-    segments
-  });
-
-  onJobCreated(payload);
-  return backendClient.pollSubtitleJob(payload.jobId, { onProgress });
 }
 
 async function cancelSubtitleJobAdapter(jobId) {

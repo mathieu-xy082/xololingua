@@ -16,6 +16,16 @@ export function createAppHybridPipelineRouter({
     serverAdapters: {
       audioExtraction: (file, onProgress) => backendClient.extractAudio(file, onProgress),
       vad: (audioId, onProgress) => backendClient.segmentAudio(audioId, onProgress),
+      translation: async (request, onProgress) => {
+        const payload = await backendClient.createSubtitleJob({
+          extractedAudio: request.extractedAudio,
+          sourceLanguage: request.sourceLanguage,
+          targetLanguage: request.targetLanguage,
+          segments: request.segments,
+        });
+        request.onJobCreated?.(payload);
+        return backendClient.pollSubtitleJob(payload.jobId, { onProgress });
+      },
     },
     srtFormatter,
   });
