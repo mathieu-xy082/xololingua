@@ -367,6 +367,21 @@ async function generateSubtitles() {
   render();
 
   try {
+    const transcription = await hybridPipelineRouter.runTranscription(
+      {
+        audioId: state.extractedAudio.audioId,
+        sourceLanguage: state.sourceLanguage,
+        segments: state.segments,
+      },
+      (job) => {
+        els.subtitleStatus.textContent = job.message || job.stage;
+        syncSubtitleProgress(job);
+      },
+    );
+    state.segments = transcription.payload;
+    renderSegmentReview();
+    els.subtitleStatus.textContent = `Subtitle generation: ${formatPipelineStageRuntime({ stage: "transcription", ...transcription })}. Translating subtitles...`;
+
     const translation = await hybridPipelineRouter.runTranslation(
       {
         extractedAudio: state.extractedAudio,
@@ -384,7 +399,7 @@ async function generateSubtitles() {
       },
     );
     state.segments = translation.payload;
-    state.pipelineStageReports = [...state.pipelineStageReports, { stage: "translation", ...translation }];
+    state.pipelineStageReports = [...state.pipelineStageReports, { stage: "transcription", ...transcription }, { stage: "translation", ...translation }];
     renderSegmentReview();
     els.subtitleStatus.textContent = `Subtitle generation: ${formatPipelineStageRuntime({ stage: "translation", ...translation })}. Preparing translated SRT...`;
 
@@ -706,6 +721,10 @@ function syncSubtitleProgress(job) {
   }
 
   if (job.stage === "translating") {
+    if (typeof job.translationProgress === "number") {
+      setSubtitleProgress(100, job.translationProgress);
+      return;
+    }
     const translation = Math.round(((rawProgress - 55) / 35) * 100);
     setSubtitleProgress(100, translation);
     return;

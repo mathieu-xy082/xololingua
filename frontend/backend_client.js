@@ -117,6 +117,26 @@ export function createBackendClient({
       return readJson(response, "Subtitle generation job could not start.");
     },
 
+    async translateSegments({ sourceLanguage, targetLanguage, segments }, onProgress = () => {}) {
+      onProgress({ stage: "translating", progress: 10, translationProgress: 10 });
+
+      const response = await fetchImpl(endpoint("/api/translate-segments"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          sourceLanguage: sourceLanguage.code,
+          targetLanguage,
+          segments,
+        }),
+      });
+      const payload = await readJson(response, "Segment translation failed.");
+
+      onProgress({ stage: "translating", progress: 100, translationProgress: 100 });
+      return payload.segments;
+    },
+
     async getSubtitleJob(jobId) {
       const response = await fetchImpl(endpoint(`/api/subtitle-jobs/${jobId}`));
       return readJson(response, "Subtitle generation job could not be read.");

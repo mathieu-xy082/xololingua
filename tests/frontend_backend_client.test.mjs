@@ -278,6 +278,45 @@ test("createSubtitleJob posts extracted audio and selected language details", as
   }));
 });
 
+test("translateSegments posts transcribed segments to the Python translation endpoint", async () => {
+  const calls = [];
+  const client = createBackendClient({
+    baseUrl: "http://service.test/",
+    fetchImpl: async (url, options = {}) => {
+      calls.push({ url, options });
+      return jsonResponse(true, {
+        segments: [{ index: 1, start: 0, end: 1.5, text: "Bonjour", translatedText: "Hello" }],
+      });
+    },
+    FormDataImpl: FakeFormData,
+  });
+  const progress = [];
+
+  const segments = await client.translateSegments(
+    {
+      sourceLanguage: { code: "fr" },
+      targetLanguage: "en",
+      segments: [{ index: 1, start: 0, end: 1.5, text: "Bonjour" }],
+    },
+    (value) => progress.push(value),
+  );
+
+  assert.deepEqual(progress, [
+    { stage: "translating", progress: 10, translationProgress: 10 },
+    { stage: "translating", progress: 100, translationProgress: 100 },
+  ]);
+  assert.deepEqual(segments, [{ index: 1, start: 0, end: 1.5, text: "Bonjour", translatedText: "Hello" }]);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "http://service.test/api/translate-segments");
+  assert.equal(calls[0].options.method, "POST");
+  assert.deepEqual(calls[0].options.headers, { "Content-Type": "application/json" });
+  assert.equal(calls[0].options.body, JSON.stringify({
+    sourceLanguage: "fr",
+    targetLanguage: "en",
+    segments: [{ index: 1, start: 0, end: 1.5, text: "Bonjour" }],
+  }));
+});
+
 test("getSubtitleJob and cancelSubtitleJob use the configured backend URL", async () => {
   const calls = [];
   const client = createBackendClient({

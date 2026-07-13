@@ -126,20 +126,16 @@ test("app hybrid router wiring runs transcription through the Python transcripti
   });
 });
 
-test("app hybrid router wiring runs subtitle generation through the Python subtitle job fallback", async () => {
+test("app hybrid router wiring translates already-transcribed segments through the Python translation fallback", async () => {
   const calls = [];
   const jobUpdates = [];
   const router = createAppHybridPipelineRouter({
     backendClient: {
       extractAudio: async () => ({ audioId: "audio-123" }),
       segmentAudio: async () => [],
-      createSubtitleJob: async ({ extractedAudio, sourceLanguage, targetLanguage, segments }) => {
-        calls.push(["createSubtitleJob", extractedAudio.audioId, sourceLanguage.code, targetLanguage, segments.length]);
-        return { jobId: "job-1" };
-      },
-      pollSubtitleJob: async (jobId, { onProgress }) => {
-        calls.push(["pollSubtitleJob", jobId]);
-        onProgress({ stage: "translating", translationProgress: 50 });
+      translateSegments: async ({ sourceLanguage, targetLanguage, segments }, onProgress) => {
+        calls.push(["translateSegments", sourceLanguage.code, targetLanguage, segments.length]);
+        onProgress({ stage: "translating", progress: 100 });
         return [{ index: 1, start: 0, end: 1.5, text: "Bonjour", translatedText: "Hello" }];
       },
     },
@@ -161,18 +157,12 @@ test("app hybrid router wiring runs subtitle generation through the Python subti
     (job) => jobUpdates.push(job),
   );
 
-  assert.deepEqual(calls, [
-    ["createSubtitleJob", "audio-123", "fr", "en", 1],
-    ["pollSubtitleJob", "job-1"],
-  ]);
-  assert.deepEqual(jobUpdates, [
-    { jobId: "job-1" },
-    { stage: "translating", translationProgress: 50 },
-  ]);
+  assert.deepEqual(calls, [["translateSegments", "fr", "en", 1]]);
+  assert.deepEqual(jobUpdates, [{ stage: "translating", progress: 100 }]);
   assert.deepEqual(result, {
     runtime: "server-fallback",
     strategy: "python-backend",
-    fallbackEndpoints: ["POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
+    fallbackEndpoints: ["POST /api/translate-segments"],
     payload: [{ index: 1, start: 0, end: 1.5, text: "Bonjour", translatedText: "Hello" }],
   });
 });
