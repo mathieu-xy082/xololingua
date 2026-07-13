@@ -126,7 +126,7 @@ export function createFfmpegWasmAudioExtractor({
         await ffmpeg.load();
       } catch (error) {
         if (releaseAfterRun) {
-          await releaseFfmpegRuntime(ffmpeg);
+          await safelyReleaseFfmpegRuntime(ffmpeg);
         }
         throw new Error(
           `Browser ffmpeg.wasm audio extraction could not load the wasm runtime for ${file?.name || "the selected video"}. ` +
@@ -141,7 +141,7 @@ export function createFfmpegWasmAudioExtractor({
       inputBytes = await fetchFile(file);
     } catch (error) {
       if (releaseAfterRun) {
-        await releaseFfmpegRuntime(ffmpeg);
+        await safelyReleaseFfmpegRuntime(ffmpeg);
       }
       throw new Error(
         `Browser ffmpeg.wasm audio extraction could not load ${file?.name || "the selected video"} into browser memory. ` +
@@ -151,7 +151,7 @@ export function createFfmpegWasmAudioExtractor({
     }
     if (Number.isFinite(inputBytes?.byteLength) && inputBytes.byteLength > maxInputBytes) {
       if (releaseAfterRun) {
-        await releaseFfmpegRuntime(ffmpeg);
+        await safelyReleaseFfmpegRuntime(ffmpeg);
       }
       throw new Error(
         `Browser ffmpeg.wasm extraction received ${formatBytes(inputBytes.byteLength)} after loading the input. ` +
@@ -213,7 +213,7 @@ export function createFfmpegWasmAudioExtractor({
       unlinkIfPresent(ffmpeg, FFMPEG_INPUT_NAME);
       unlinkIfPresent(ffmpeg, FFMPEG_OUTPUT_NAME);
       if (releaseAfterRun) {
-        await releaseFfmpegRuntime(ffmpeg);
+        await safelyReleaseFfmpegRuntime(ffmpeg);
       }
     }
   };
@@ -254,6 +254,14 @@ async function releaseFfmpegRuntime(ffmpeg) {
   }
   if (typeof ffmpeg.exit === "function") {
     await ffmpeg.exit();
+  }
+}
+
+async function safelyReleaseFfmpegRuntime(ffmpeg) {
+  try {
+    await releaseFfmpegRuntime(ffmpeg);
+  } catch {
+    // Runtime teardown is best-effort; preserve the extraction error with its fallback guidance.
   }
 }
 
