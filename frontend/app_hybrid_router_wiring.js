@@ -53,7 +53,11 @@ function createAppCapabilityReport(capabilityReport = {}, clientAdapters = {}, b
 
 function createAppStageReport(stageName, stage, clientAdapters, backendClient) {
   const appStage = stage.runtime === "browser" && typeof clientAdapters[stageName] !== "function"
-    ? { ...stage, runtime: "server-fallback" }
+    ? {
+        ...stage,
+        runtime: "server-fallback",
+        browserFailureReason: `Browser ${getAppStageLabel(stageName)} adapter is not configured in app.js; using Python backend fallback.`,
+      }
     : stage;
 
   if (stageName === "translation" && typeof backendClient.translateSegments === "function") {
@@ -61,4 +65,13 @@ function createAppStageReport(stageName, stage, clientAdapters, backendClient) {
   }
 
   return appStage;
+}
+
+function getAppStageLabel(stageName) {
+  return {
+    audioExtraction: "audio extraction",
+    vad: "VAD / segmentation",
+    transcription: "transcription",
+    translation: "translation",
+  }[stageName] || stageName;
 }

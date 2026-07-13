@@ -247,8 +247,8 @@ async function runStage({
   if (result.runtime === "server-fallback") {
     result.fallbackEndpoints = stage.fallbackEndpoints || PYTHON_FALLBACK_ENDPOINTS[stageName];
   }
-  if (browserFailureReason) {
-    result.browserFailureReason = browserFailureReason;
+  if (browserFailureReason || stage.browserFailureReason) {
+    result.browserFailureReason = browserFailureReason || stage.browserFailureReason;
   }
 
   return result;

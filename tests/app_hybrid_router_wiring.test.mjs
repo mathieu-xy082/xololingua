@@ -83,8 +83,16 @@ test("app hybrid router wiring downgrades browser-ready stages to Python fallbac
   ]);
   assert.equal(extraction.runtime, "server-fallback");
   assert.equal(extraction.strategy, "ffmpeg.wasm");
+  assert.equal(
+    extraction.browserFailureReason,
+    "Browser audio extraction adapter is not configured in app.js; using Python backend fallback.",
+  );
   assert.equal(segmentation.runtime, "server-fallback");
   assert.equal(segmentation.strategy, "web-audio-vad");
+  assert.equal(
+    segmentation.browserFailureReason,
+    "Browser VAD / segmentation adapter is not configured in app.js; using Python backend fallback.",
+  );
 });
 
 test("app hybrid router wiring runs transcription through the Python transcription fallback adapter", async () => {
