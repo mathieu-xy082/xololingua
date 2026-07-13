@@ -23,3 +23,8 @@ test("app maps direct translation endpoint progress without subtitle-job scaling
   assert.match(appSource, /typeof job\.translationProgress === "number"/);
   assert.match(appSource, /setSubtitleProgress\(100, job\.translationProgress\)/);
 });
+
+test("app segmentation no longer exposes legacy direct backend adapters outside the hybrid router", () => {
+  assert.doesNotMatch(appSource, /function extractAudioAdapter\(/);
+  assert.doesNotMatch(appSource, /function serviceSegmentAudioAdapter\(/);
+});

@@ -348,14 +348,6 @@ async function segmentAudio() {
   }
 }
 
-async function extractAudioAdapter(file, onProgress) {
-  return backendClient.extractAudio(file, onProgress);
-}
-
-async function serviceSegmentAudioAdapter(audioId, onProgress) {
-  return backendClient.segmentAudio(audioId, onProgress);
-}
-
 async function generateSubtitles() {
   if (!canGenerate()) return;
   state.busyStep = "subtitle";
