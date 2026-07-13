@@ -193,6 +193,48 @@ test("ffmpeg wasm audio extractor rejects fetched bytes over the browser limit b
   assert.deepEqual(calls, ["isLoaded", "fetchFile", "terminate"]);
 });
 
+test("ffmpeg wasm audio extractor releases the wasm runtime when wasm loading fails", async () => {
+  const calls = [];
+  const ffmpeg = {
+    isLoaded() {
+      calls.push("isLoaded");
+      return false;
+    },
+    async load() {
+      calls.push("load");
+      throw new Error("wasm heap unavailable");
+    },
+    FS(command, path) {
+      calls.push(["FS", command, path]);
+    },
+    async run(...args) {
+      calls.push(["run", ...args]);
+    },
+    terminate() {
+      calls.push("terminate");
+    },
+  };
+  const extractor = createFfmpegWasmAudioExtractor({
+    ffmpeg,
+    fetchFile: async () => {
+      calls.push("fetchFile");
+      return new Uint8Array();
+    },
+    releaseAfterRun: true,
+  });
+
+  await assert.rejects(
+    () => extractor({ name: "heap-pressure.mp4" }),
+    (error) => {
+      assert.match(error.message, /Browser ffmpeg\.wasm audio extraction could not load the wasm runtime for heap-pressure\.mp4\./);
+      assert.match(error.message, /Use the Python fallback for this video\./);
+      assert.equal(error.cause?.message, "wasm heap unavailable");
+      return true;
+    },
+  );
+  assert.deepEqual(calls, ["isLoaded", "load", "terminate"]);
+});
+
 test("ffmpeg wasm audio extractor releases the wasm runtime when browser input loading fails", async () => {
   const calls = [];
   const ffmpeg = {

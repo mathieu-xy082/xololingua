@@ -122,7 +122,18 @@ export function createFfmpegWasmAudioExtractor({
       if (typeof ffmpeg.load !== "function") {
         throw new Error("ffmpeg.wasm audio extraction requires an ffmpeg.load() method.");
       }
-      await ffmpeg.load();
+      try {
+        await ffmpeg.load();
+      } catch (error) {
+        if (releaseAfterRun) {
+          await releaseFfmpegRuntime(ffmpeg);
+        }
+        throw new Error(
+          `Browser ffmpeg.wasm audio extraction could not load the wasm runtime for ${file?.name || "the selected video"}. ` +
+          "Use the Python fallback for this video.",
+          { cause: error },
+        );
+      }
     }
 
     let inputBytes;
