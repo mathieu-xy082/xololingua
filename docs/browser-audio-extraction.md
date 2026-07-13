@@ -22,7 +22,7 @@ Si le navigateur ne peut pas lire une durée finie, si la vidéo dépasse ces bo
 ## Hygiène runtime/mémoire
 
 - Toujours supprimer `input.mp4` et `output.wav` du FS wasm après une tentative.
-- Quand `releaseAfterRun` est activé, appeler `terminate()` ou `exit()` même sur les erreurs de chargement, de taille post-chargement, de transcodage ou de sortie vide.
+- Quand `releaseAfterRun` est activé, appeler `terminate()` ou `exit()` même sur les erreurs de chargement, de taille post-chargement, d'écriture FS wasm, de transcodage ou de sortie vide.
 - Ne pas écrire d'artefacts de test dans le repo ; utiliser un cache/temp hors repo si des fixtures réelles deviennent nécessaires.
 
 ## Validation attendue

@@ -273,6 +273,49 @@ test("ffmpeg wasm audio extractor releases the wasm runtime when browser input l
   assert.deepEqual(calls, ["isLoaded", "fetchFile", "terminate"]);
 });
 
+test("ffmpeg wasm audio extractor releases the wasm runtime when writing input to wasm FS fails", async () => {
+  const calls = [];
+  const ffmpeg = {
+    isLoaded() {
+      calls.push("isLoaded");
+      return true;
+    },
+    FS(command, path, data) {
+      calls.push(["FS", command, path, data ? [...data] : undefined]);
+      if (command === "writeFile") throw new Error("wasm fs quota exceeded");
+      return undefined;
+    },
+    async run(...args) {
+      calls.push(["run", ...args]);
+    },
+    terminate() {
+      calls.push("terminate");
+    },
+  };
+  const extractor = createFfmpegWasmAudioExtractor({
+    ffmpeg,
+    fetchFile: async (file) => new Uint8Array(await file.arrayBuffer()),
+    releaseAfterRun: true,
+  });
+
+  await assert.rejects(
+    () => extractor(new TestFile([new Uint8Array([1, 2, 3])], "quota.mp4", { type: "video/mp4" })),
+    (error) => {
+      assert.match(error.message, /Browser ffmpeg\.wasm audio extraction could not write quota\.mp4 into the wasm filesystem\./);
+      assert.match(error.message, /Use the Python fallback for this video\./);
+      assert.equal(error.cause?.message, "wasm fs quota exceeded");
+      return true;
+    },
+  );
+  assert.deepEqual(calls, [
+    "isLoaded",
+    ["FS", "writeFile", "input.mp4", [1, 2, 3]],
+    ["FS", "unlink", "input.mp4", undefined],
+    ["FS", "unlink", "output.wav", undefined],
+    "terminate",
+  ]);
+});
+
 test("ffmpeg wasm audio extractor rejects empty wasm output with explicit fallback guidance", async () => {
   const calls = [];
   const ffmpeg = {

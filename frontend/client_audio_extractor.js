@@ -159,9 +159,17 @@ export function createFfmpegWasmAudioExtractor({
       );
     }
     onProgress(20);
-    ffmpeg.FS("writeFile", FFMPEG_INPUT_NAME, inputBytes);
 
     try {
+      try {
+        ffmpeg.FS("writeFile", FFMPEG_INPUT_NAME, inputBytes);
+      } catch (error) {
+        throw new Error(
+          `Browser ffmpeg.wasm audio extraction could not write ${file?.name || "the selected video"} into the wasm filesystem. ` +
+          "Use the Python fallback for this video.",
+          { cause: error },
+        );
+      }
       try {
         await ffmpeg.run(
           "-i",
