@@ -130,6 +130,7 @@ export function createHybridPipelineRouter({
         browserAdapterLabel: "Browser translation",
         serverAdapterLabel: "Python fallback translation",
         input: {
+          extractedAudio: audioExtraction.payload,
           sourceLanguage,
           targetLanguage,
           segments: transcription.payload,

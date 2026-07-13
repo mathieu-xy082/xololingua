@@ -176,3 +176,57 @@ test("app hybrid router wiring runs subtitle generation through the Python subti
     payload: [{ index: 1, start: 0, end: 1.5, text: "Bonjour", translatedText: "Hello" }],
   });
 });
+
+test("app hybrid router full pipeline passes extracted audio into the Python subtitle fallback", async () => {
+  const calls = [];
+  const router = createAppHybridPipelineRouter({
+    backendClient: {
+      extractAudio: async (file) => {
+        calls.push(["extractAudio", file.name]);
+        return { audioId: "audio-123", audioFileName: "clip.wav" };
+      },
+      segmentAudio: async (audioId) => {
+        calls.push(["segmentAudio", audioId]);
+        return [{ index: 1, start: 0, end: 1.5 }];
+      },
+      transcribeAudio: async ({ audioId, sourceLanguage, segments }) => {
+        calls.push(["transcribeAudio", audioId, sourceLanguage.code, segments.length]);
+        return [{ index: 1, start: 0, end: 1.5, text: "Bonjour" }];
+      },
+      createSubtitleJob: async ({ extractedAudio, sourceLanguage, targetLanguage, segments }) => {
+        calls.push(["createSubtitleJob", extractedAudio.audioId, sourceLanguage.code, targetLanguage, segments.length]);
+        return { jobId: "job-1" };
+      },
+      pollSubtitleJob: async (jobId) => {
+        calls.push(["pollSubtitleJob", jobId]);
+        return [{ index: 1, start: 0, end: 1.5, text: "Bonjour", translatedText: "Hello" }];
+      },
+    },
+    capabilityReport: {
+      stages: {
+        audioExtraction: { runtime: "server-fallback", strategy: "python-backend" },
+        vad: { runtime: "server-fallback", strategy: "python-backend" },
+        transcription: { runtime: "server-fallback", strategy: "python-backend" },
+        translation: { runtime: "server-fallback", strategy: "python-backend" },
+      },
+    },
+  });
+
+  const result = await router.runSubtitlePipeline({
+    file: { name: "clip.mp4" },
+    sourceLanguage: { code: "fr", name: "French" },
+    targetLanguage: "en",
+  });
+
+  assert.deepEqual(calls, [
+    ["extractAudio", "clip.mp4"],
+    ["segmentAudio", "audio-123"],
+    ["transcribeAudio", "audio-123", "fr", 1],
+    ["createSubtitleJob", "audio-123", "fr", "en", 1],
+    ["pollSubtitleJob", "job-1"],
+  ]);
+  assert.equal(result.translation.runtime, "server-fallback");
+  assert.deepEqual(result.translatedSegments, [
+    { index: 1, start: 0, end: 1.5, text: "Bonjour", translatedText: "Hello" },
+  ]);
+});
