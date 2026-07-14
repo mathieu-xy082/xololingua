@@ -1,3 +1,5 @@
+import { normalizeAudioExtractionStageResult } from "./pipeline_stage_contract.js";
+
 const PYTHON_FALLBACK_ENDPOINTS = {
   audioExtraction: ["POST /api/extract-audio"],
   vad: ["POST /api/segment-audio"],
@@ -171,12 +173,23 @@ export function createHybridPipelineRouter({
   };
 }
 
+function createStageMetadata({ stageName, stage, browserFailureReason, runtimeIsFallback }) {
+  const metadata = {};
+  if (runtimeIsFallback) {
+    metadata.fallbackEndpoints = stage.fallbackEndpoints || PYTHON_FALLBACK_ENDPOINTS[stageName];
+  }
+  if (browserFailureReason || stage.browserFailureReason) {
+    metadata.browserFailureReason = browserFailureReason || stage.browserFailureReason;
+  }
+  return metadata;
+}
+
 function summarizeServerFallbackStages(stageResults) {
   return Object.entries(stageResults)
     .filter(([, result]) => result.runtime === "server-fallback")
     .map(([stage, result]) => ({
       stage,
-      endpoints: result.fallbackEndpoints || PYTHON_FALLBACK_ENDPOINTS[stage],
+      endpoints: result.metadata?.fallbackEndpoints || result.fallbackEndpoints || PYTHON_FALLBACK_ENDPOINTS[stage],
     }));
 }
 
@@ -192,11 +205,12 @@ function createUserStageReportRow(stage, result) {
     runtimeLabel: result.runtime === "browser" ? "Browser" : "Python fallback",
     strategy: result.strategy,
     status: result.runtime === "browser" ? "completed" : "completed-via-fallback",
-    fallbackEndpoints: result.fallbackEndpoints || [],
+    fallbackEndpoints: result.metadata?.fallbackEndpoints || result.fallbackEndpoints || [],
   };
 
-  if (result.browserFailureReason) {
-    row.browserFailureReason = result.browserFailureReason;
+  const browserFailureReason = result.metadata?.browserFailureReason || result.browserFailureReason;
+  if (browserFailureReason) {
+    row.browserFailureReason = browserFailureReason;
   }
 
   return row;
@@ -238,16 +252,23 @@ async function runStage({
     payload = await serverAdapters[stageName](input, onProgress);
   }
 
-  const result = {
-    runtime: browserFailureReason || !useBrowser ? "server-fallback" : "browser",
-    strategy: stage.strategy,
-    payload,
-  };
+  const result = stageName === "audioExtraction"
+    ? normalizeAudioExtractionStageResult({
+        runtime: browserFailureReason || !useBrowser ? "server-fallback" : "browser",
+        strategy: stage.strategy,
+        payload,
+        metadata: createStageMetadata({ stageName, stage, browserFailureReason, runtimeIsFallback: browserFailureReason || !useBrowser }),
+      })
+    : {
+        runtime: browserFailureReason || !useBrowser ? "server-fallback" : "browser",
+        strategy: stage.strategy,
+        payload,
+      };
 
-  if (result.runtime === "server-fallback") {
+  if (stageName !== "audioExtraction" && result.runtime === "server-fallback") {
     result.fallbackEndpoints = stage.fallbackEndpoints || PYTHON_FALLBACK_ENDPOINTS[stageName];
   }
-  if (browserFailureReason || stage.browserFailureReason) {
+  if (stageName !== "audioExtraction" && (browserFailureReason || stage.browserFailureReason)) {
     result.browserFailureReason = browserFailureReason || stage.browserFailureReason;
   }
 

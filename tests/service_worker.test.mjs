@@ -8,11 +8,16 @@ const appHybridRouterWiringSource = await readFile(
   new URL("../frontend/app_hybrid_router_wiring.js", import.meta.url),
   "utf8",
 );
+const clientPipelineRouterSource = await readFile(
+  new URL("../frontend/client_pipeline_router.js", import.meta.url),
+  "utf8",
+);
 
 test("service worker precaches JavaScript modules imported by the PWA shell and app wiring", () => {
   const importedModules = [
     ...appSource.matchAll(/import\s+[^;]+from\s+["']\.\/(frontend\/[^"']+)["']/g),
     ...appHybridRouterWiringSource.matchAll(/import\s+[^;]+from\s+["']\.\/(client_pipeline_router\.js)["']/g),
+    ...clientPipelineRouterSource.matchAll(/import\s+[^;]+from\s+["']\.\/(pipeline_stage_contract\.js)["']/g),
   ]
     .map((match) => match[1].startsWith("frontend/") ? match[1] : `frontend/${match[1]}`)
     .sort();
