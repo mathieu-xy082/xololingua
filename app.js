@@ -1,5 +1,5 @@
 import { createBackendClient } from "./frontend/backend_client.js";
-import { createAppHybridPipelineRouter } from "./frontend/app_hybrid_router_wiring.js";
+import { createAppClientAdapters, createAppHybridPipelineRouter } from "./frontend/app_hybrid_router_wiring.js";
 import { collectClientPipelineCapabilities } from "./frontend/client_pipeline_capabilities.js";
 import { formatSrt, formatSrtTime } from "./frontend/client_srt_formatter.js";
 import { formatPipelineStageRuntime, formatPipelineStageSummary } from "./frontend/pipeline_stage_status.js";
@@ -10,9 +10,13 @@ const LOCAL_SERVICE_URL = "http://127.0.0.1:8765";
 const APP_ASSET_VERSION = "2026-05-17-3";
 const backendClient = createBackendClient({ baseUrl: LOCAL_SERVICE_URL });
 const clientPipelineCapabilities = collectClientPipelineCapabilities();
+const appClientAdapters = createAppClientAdapters({
+  clientAudioExtractor: globalThis.XOLOLINGUA_CLIENT_AUDIO_EXTRACTOR,
+});
 const hybridPipelineRouter = createAppHybridPipelineRouter({
   backendClient,
   capabilityReport: clientPipelineCapabilities,
+  clientAdapters: appClientAdapters,
   srtFormatter: formatSrt,
 });
 

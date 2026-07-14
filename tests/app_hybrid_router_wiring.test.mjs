@@ -1,7 +1,27 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { createAppHybridPipelineRouter } from "../frontend/app_hybrid_router_wiring.js";
+import { createAppClientAdapters, createAppHybridPipelineRouter } from "../frontend/app_hybrid_router_wiring.js";
+
+test("app client adapters expose browser audio extraction for the global E2E guard", async () => {
+  const calls = [];
+  const adapters = createAppClientAdapters({
+    clientAudioExtractor: {
+      extractAudio: async (file, onProgress) => {
+        calls.push([file.name]);
+        onProgress(100);
+        return { audioId: "browser-audio", audioFileName: "clip.wav", audioSizeBytes: 2048 };
+      },
+    },
+  });
+  const progress = [];
+
+  const payload = await adapters.audioExtraction({ name: "clip.mp4" }, (value) => progress.push(value));
+
+  assert.deepEqual(calls, [["clip.mp4"]]);
+  assert.deepEqual(progress, [100]);
+  assert.deepEqual(payload, { audioId: "browser-audio", audioFileName: "clip.wav", audioSizeBytes: 2048 });
+});
 
 test("app hybrid router wiring keeps audio extraction and VAD on explicit Python fallback adapters", async () => {
   const calls = [];
@@ -50,6 +70,41 @@ test("app hybrid router wiring keeps audio extraction and VAD on explicit Python
     strategy: "python-backend",
     fallbackEndpoints: ["POST /api/segment-audio"],
     payload: [{ index: 1, start: 0, end: 1.5, text: "Speech segment 1" }],
+  });
+});
+
+test("app hybrid router wiring uses the configured browser audio extraction adapter when audio extraction is browser-ready", async () => {
+  const calls = [];
+  const router = createAppHybridPipelineRouter({
+    backendClient: {
+      extractAudio: async (file) => {
+        calls.push(["server-audio", file.name]);
+        return { audioId: "server-audio" };
+      },
+    },
+    clientAdapters: {
+      audioExtraction: async (file, onProgress) => {
+        calls.push(["browser-audio", file.name]);
+        onProgress(100);
+        return { audioId: "browser-audio", audioFileName: "clip.wav", audioSizeBytes: 4096 };
+      },
+    },
+    capabilityReport: {
+      stages: {
+        audioExtraction: { runtime: "browser", strategy: "ffmpeg.wasm" },
+      },
+    },
+  });
+  const progress = [];
+
+  const extraction = await router.runAudioExtraction({ name: "clip.mp4" }, (value) => progress.push(value));
+
+  assert.deepEqual(calls, [["browser-audio", "clip.mp4"]]);
+  assert.deepEqual(progress, [100]);
+  assert.deepEqual(extraction, {
+    runtime: "browser",
+    strategy: "ffmpeg.wasm",
+    payload: { audioId: "browser-audio", audioFileName: "clip.wav", audioSizeBytes: 4096 },
   });
 });
 

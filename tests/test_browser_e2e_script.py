@@ -76,6 +76,25 @@ class BrowserE2EScriptTests(unittest.TestCase):
             with self.assertRaisesRegex(AssertionError, "subtitle text"):
                 module.validate_srt(bad_srt, min_blocks=1)
 
+    def test_browser_e2e_exposes_require_browser_audio_guard(self):
+        module = self.load_module()
+        args = module.parse_args(["--require-browser-audio"])
+
+        self.assertTrue(args.require_browser_audio)
+
+    def test_browser_e2e_asserts_browser_audio_runtime_from_pipeline_status(self):
+        module = self.load_module()
+
+        module.assert_browser_audio_runtime(
+            "Subtitle file ready. Pipeline: Audio extraction: Browser (ffmpeg.wasm); "
+            "VAD / segmentation: Python fallback via POST /api/segment-audio."
+        )
+
+        with self.assertRaisesRegex(AssertionError, "Expected browser audio extraction"):
+            module.assert_browser_audio_runtime(
+                "Subtitle file ready. Pipeline: Audio extraction: Python fallback via POST /api/extract-audio."
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

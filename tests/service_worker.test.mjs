@@ -30,8 +30,9 @@ test("PWA shell starts from the hybrid pipeline router wiring contract", () => {
   );
   assert.match(
     appSource,
-    /import\s+\{\s*createAppHybridPipelineRouter\s*\}\s+from\s+["']\.\/frontend\/app_hybrid_router_wiring\.js["']/,
+    /import\s+\{[^}]*createAppHybridPipelineRouter[^}]*\}\s+from\s+["']\.\/frontend\/app_hybrid_router_wiring\.js["']/,
   );
+  assert.match(appSource, /createAppClientAdapters\(\{\s*clientAudioExtractor:\s*globalThis\.XOLOLINGUA_CLIENT_AUDIO_EXTRACTOR/s);
   assert.match(
     appHybridRouterWiringSource,
     /import\s+\{\s*createHybridPipelineRouter\s*\}\s+from\s+["']\.\/client_pipeline_router\.js["']/,

@@ -1,5 +1,13 @@
 import { createHybridPipelineRouter } from "./client_pipeline_router.js";
 
+export function createAppClientAdapters({ clientAudioExtractor } = {}) {
+  const adapters = {};
+  if (typeof clientAudioExtractor?.extractAudio === "function") {
+    adapters.audioExtraction = (file, onProgress) => clientAudioExtractor.extractAudio(file, onProgress);
+  }
+  return adapters;
+}
+
 export function createAppHybridPipelineRouter({
   backendClient,
   capabilityReport,

@@ -91,6 +91,11 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--segmentation-timeout-ms", type=int, default=240_000)
     parser.add_argument("--subtitle-timeout-ms", type=int, default=900_000)
     parser.add_argument("--min-srt-blocks", type=int, default=1, help="Minimum number of SRT blocks expected in the download.")
+    parser.add_argument(
+        "--require-browser-audio",
+        action="store_true",
+        help="Fail unless the final pipeline status proves audio extraction ran in the browser.",
+    )
     return parser.parse_args(argv)
 
 
@@ -169,6 +174,14 @@ def validate_srt(path: Path, min_blocks: int) -> None:
         raise AssertionError(f"Downloaded SRT has no subtitle text: {path}")
 
 
+def assert_browser_audio_runtime(pipeline_status: str) -> None:
+    if not re.search(r"Audio extraction:\s*Browser\b", pipeline_status):
+        raise AssertionError(
+            "Expected browser audio extraction in final pipeline status, "
+            f"got: {pipeline_status!r}"
+        )
+
+
 def log_step(message: str) -> None:
     print(f"[browser-e2e] {message}", flush=True)
 
@@ -219,6 +232,9 @@ def run_browser_workflow(args: argparse.Namespace) -> Path:
             download_link = page.locator("#downloadLink")
             expect(download_link).to_be_visible(timeout=args.subtitle_timeout_ms)
             expect(download_link).to_contain_text("Download")
+            final_pipeline_status = page.locator("#subtitleStatus").inner_text()
+            if args.require_browser_audio:
+                assert_browser_audio_runtime(final_pipeline_status)
 
             log_step("Capturing SRT download")
             with page.expect_download(timeout=60_000) as download_info:
