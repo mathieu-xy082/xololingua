@@ -288,7 +288,7 @@ test("app hybrid router wiring runs transcription through the Python transcripti
       segments: [{ index: 1, start: 0, end: 1.5, text: "Bonjour" }],
     },
     metadata: {
-      fallbackEndpoints: ["POST /api/transcribe-audio"],
+      fallbackEndpoints: ["POST /api/transcribe-audio", "POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
     },
   });
 });

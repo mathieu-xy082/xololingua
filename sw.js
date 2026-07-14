@@ -11,6 +11,8 @@ const ASSETS = [
   "frontend/client_pipeline_router.js",
   "frontend/pipeline_stage_contract.js",
   "frontend/client_srt_formatter.js",
+  "frontend/client_transcriber.js",
+  "frontend/client_translator.js",
   "frontend/client_vad_segmenter.js",
   "frontend/vad_web_runtime.js",
   "frontend/pipeline_stage_status.js",

@@ -17,6 +17,10 @@ const ffmpegWasmRuntimeSource = await readFile(
   new URL("../frontend/ffmpeg_wasm_runtime.js", import.meta.url),
   "utf8",
 );
+const clientPipelineCapabilitiesSource = await readFile(
+  new URL("../frontend/client_pipeline_capabilities.js", import.meta.url),
+  "utf8",
+);
 
 test("service worker precaches JavaScript modules imported by the PWA shell and app wiring", () => {
   const importedModules = [
@@ -30,7 +34,26 @@ test("service worker precaches JavaScript modules imported by the PWA shell and 
     .map((match) => match[1])
     .sort();
 
-  assert.deepEqual(cachedAssets, importedModules);
+  assert.deepEqual(
+    importedModules.filter((modulePath) => !cachedAssets.includes(modulePath)),
+    [],
+  );
+});
+
+test("service worker precaches the full frontend module graph used by offline assets", () => {
+  const importedModules = new Set([
+    ...appSource.matchAll(/import\s+[^;]+from\s+["']\.\/(frontend\/[^"']+)["']/g),
+    ...appHybridRouterWiringSource.matchAll(/import\s+[^;]+from\s+["']\.\/(client_pipeline_router\.js)["']/g),
+    ...clientPipelineRouterSource.matchAll(/import\s+[^;]+from\s+["']\.\/(pipeline_stage_contract\.js)["']/g),
+    ...clientPipelineCapabilitiesSource.matchAll(/import\s+[^;]+from\s+["']\.\/(client_[^"']+\.js)["']/g),
+  ]
+    .map((match) => match[1].startsWith("frontend/") ? match[1] : `frontend/${match[1]}`));
+  const cachedAssets = new Set(
+    [...serviceWorkerSource.matchAll(/["'](frontend\/[^"']+\.js)["']/g)]
+      .map((match) => match[1]),
+  );
+
+  assert.deepEqual([...cachedAssets].sort(), [...importedModules].sort());
 });
 
 test("PWA shell starts from the hybrid pipeline router wiring contract", () => {

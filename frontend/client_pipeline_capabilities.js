@@ -20,8 +20,8 @@ const PIPELINE_STAGE_LABELS = {
 const PYTHON_FALLBACK_ENDPOINTS = {
   audioExtraction: ["POST /api/extract-audio"],
   vad: ["POST /api/segment-audio"],
-  transcription: ["POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
-  translation: ["POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
+  transcription: ["POST /api/transcribe-audio", "POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
+  translation: ["POST /api/translate-segments", "POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
 };
 
 export function collectClientPipelineCapabilities(environment = globalThis) {

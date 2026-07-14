@@ -54,7 +54,7 @@ test("client pipeline report includes demo-ready fallback labels and server endp
       {
         stage: "translation",
         label: "Translation",
-        endpoints: ["POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
+        endpoints: ["POST /api/translate-segments", "POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
       },
     ],
     stageRows: [
@@ -84,10 +84,35 @@ test("client pipeline report includes demo-ready fallback labels and server endp
         label: "Translation",
         runtimeLabel: "Python fallback",
         strategy: "unavailable",
-        fallbackEndpoints: ["POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
+        fallbackEndpoints: ["POST /api/translate-segments", "POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
       },
     ],
   });
+});
+
+test("client pipeline fallback endpoint metadata names direct backend fallbacks before subtitle jobs", () => {
+  const report = createClientPipelineCapabilityReport({
+    audioExtraction: { strategy: "unavailable" },
+    vad: { strategy: "unavailable" },
+    transcription: { strategy: "unavailable" },
+    translation: { strategy: "unavailable" },
+  });
+
+  assert.deepEqual(
+    report.demoSummary.serverFallbackEndpoints.map(({ stage, endpoints }) => ({ stage, endpoints })),
+    [
+      { stage: "audioExtraction", endpoints: ["POST /api/extract-audio"] },
+      { stage: "vad", endpoints: ["POST /api/segment-audio"] },
+      {
+        stage: "transcription",
+        endpoints: ["POST /api/transcribe-audio", "POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
+      },
+      {
+        stage: "translation",
+        endpoints: ["POST /api/translate-segments", "POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
+      },
+    ],
+  );
 });
 
 test("collectClientPipelineCapabilities builds a report from browser feature probes", () => {
