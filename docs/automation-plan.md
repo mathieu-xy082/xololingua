@@ -63,11 +63,12 @@ BRANCHE PRÊTE POUR REVIEW: <branch>
 |---|---|---|---:|---|---|
 | `885307802b8f` | XoloLingua backend-to-client migration — usable client milestone by 2026-07-22 | `ec/backend` | 4h | **pause** | Ancien job monolithique, conservé pour historique/contexte |
 | `589dc2f140b9` | XoloLingua urgent GitLab CI workstream | `ci/gitlab-pipeline` | 4h | active | Ajout urgent d'une CI GitLab PDM/Node pour `pdm run check` |
-| `36180c1d35d6` | XoloLingua browser audio extraction workstream | `ec/browser-audio-extraction` | 8h | active | WebCodecs/ffmpeg.wasm, bornage, release runtime, fallback audio |
-| `0feea85268be` | XoloLingua hybrid pipeline routing workstream | `ec/hybrid-pipeline-routing` | 8h | active | Orchestration browser/server, fallback Python, reporting pipeline, SRT |
-| `639f23a146c0` | XoloLingua client ML stages workstream | `ec/client-ml-stages` | 8h | active | VAD, transcription, traduction côté client, capability probes |
-| `63a1182beb92` | XoloLingua PWA offline integration workstream | `ec/pwa-offline-integration` | 12h | active | Service worker, PWA/offline, app wiring, backend client boundaries |
-| `89e76696343f` | XoloLingua backend review stabilization workstream | `ec/backend-review-stabilization` | 12h | active | Préparation review de la baseline massive `ec/backend`, checklist et stabilisation |
+| `36180c1d35d6` | XoloLingua browser audio extraction workstream | `ec/browser-audio-extraction` | 8h | active | **Priorité 2** — WebCodecs/ffmpeg.wasm, bornage, release runtime, fallback audio |
+| `0feea85268be` | XoloLingua hybrid pipeline routing workstream | `ec/hybrid-pipeline-routing` | 8h | pause | Intégré dans `ec/backend`; conservé pour historique/contexte |
+| `469e4544f5ce` | XoloLingua app hybrid router wiring workstream | `ec/app-hybrid-router-wiring` | 6h | active | **Priorité 1** — brancher `app.js` sur le router hybride, rapport stages browser/server |
+| `639f23a146c0` | XoloLingua client ML stages workstream | `ec/client-ml-stages` | 8h | pause | Temporairement dépriorisé pendant le focus priorités 1–2 |
+| `63a1182beb92` | XoloLingua PWA offline integration workstream | `ec/pwa-offline-integration` | 12h | pause | Temporairement dépriorisé hors pré-cache nécessaire au wiring router |
+| `89e76696343f` | XoloLingua backend review stabilization workstream | `ec/backend-review-stabilization` | 12h | pause | Intégré/clos; conservé pour historique/contexte |
 | `4e64fc0e1685` | XoloLingua tmp cleanup | n/a | quotidien 03:00 UTC | active | Nettoyage no-agent des fichiers temporaires hors repo |
 
 ## Branches surveillées
@@ -79,8 +80,12 @@ Branches principales :
 
 Branches spécialisées actives :
 
-- `ci/gitlab-pipeline`
+- `ec/app-hybrid-router-wiring`
 - `ec/browser-audio-extraction`
+
+Branches spécialisées temporairement en pause ou historiques :
+
+- `ci/gitlab-pipeline`
 - `ec/hybrid-pipeline-routing`
 - `ec/client-ml-stages`
 - `ec/pwa-offline-integration`
@@ -96,14 +101,13 @@ Branches historiques/follow-up à surveiller sans les réutiliser automatiquemen
 
 ## Ordre recommandé de review
 
-1. `ci/gitlab-pipeline` — urgent, car elle sécurise toutes les autres branches.
-2. `ec/backend-review-stabilization` — préparer la review de la baseline massive existante.
-3. `ec/browser-audio-extraction` — extraction audio navigateur et réduction pression serveur.
-4. `ec/hybrid-pipeline-routing` — orchestration browser/server.
-5. `ec/client-ml-stages` — VAD/transcription/traduction côté client.
-6. `ec/pwa-offline-integration` — PWA/offline/service worker/UI wiring.
-7. Branches follow-up explicitement créées après fermeture/merge d'une branche existante.
-8. Nettoyage de branches historiques uniquement après confirmation de Mathieu.
+1. `ec/app-hybrid-router-wiring` — priorité 1 : brancher `app.js` sur le router hybride et rendre visibles les stages browser/server.
+2. `ec/browser-audio-extraction` — priorité 2 : extraction audio navigateur et réduction pression serveur.
+3. `ci/gitlab-pipeline` — surveiller seulement si CI rouge ou validation remote nécessaire.
+4. `ec/client-ml-stages` — reprendre après preuve visible du flux hybride UI + extraction audio browser.
+5. `ec/pwa-offline-integration` — reprendre après le wiring router, sauf corrections de pré-cache nécessaires.
+6. Branches follow-up explicitement créées après fermeture/merge d'une branche existante.
+7. Nettoyage de branches historiques uniquement après confirmation de Mathieu.
 
 ## Commandes de validation utiles
 

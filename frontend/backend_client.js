@@ -81,6 +81,26 @@ export function createBackendClient({
       return payload.segments;
     },
 
+    async transcribeAudio({ audioId, sourceLanguage, segments }, onProgress = () => {}) {
+      onProgress({ stage: "transcribing", progress: 5 });
+
+      const response = await fetchImpl(endpoint("/api/transcribe-audio"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          audioId,
+          languageCode: sourceLanguage.code,
+          segments,
+        }),
+      });
+      const payload = await readJson(response, "Audio transcription failed.");
+
+      onProgress({ stage: "transcribing", progress: 100 });
+      return payload.segments;
+    },
+
     async createSubtitleJob({ extractedAudio, sourceLanguage, targetLanguage, segments }) {
       const response = await fetchImpl(endpoint("/api/subtitle-jobs"), {
         method: "POST",
@@ -95,6 +115,26 @@ export function createBackendClient({
         }),
       });
       return readJson(response, "Subtitle generation job could not start.");
+    },
+
+    async translateSegments({ sourceLanguage, targetLanguage, segments }, onProgress = () => {}) {
+      onProgress({ stage: "translating", progress: 10, translationProgress: 10 });
+
+      const response = await fetchImpl(endpoint("/api/translate-segments"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          sourceLanguage: sourceLanguage.code,
+          targetLanguage,
+          segments,
+        }),
+      });
+      const payload = await readJson(response, "Segment translation failed.");
+
+      onProgress({ stage: "translating", progress: 100, translationProgress: 100 });
+      return payload.segments;
     },
 
     async getSubtitleJob(jobId) {

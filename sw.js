@@ -4,7 +4,11 @@ const ASSETS = [
   "styles.css?v=2026-05-17-3",
   "app.js?v=2026-05-17-3",
   "frontend/backend_client.js",
+  "frontend/app_hybrid_router_wiring.js",
+  "frontend/client_pipeline_capabilities.js",
+  "frontend/client_pipeline_router.js",
   "frontend/client_srt_formatter.js",
+  "frontend/pipeline_stage_status.js",
   "manifest.webmanifest?v=2026-05-17-3",
   "assets/icon.svg?v=2026-05-17-3",
   "assets/babbel_parrot.png"

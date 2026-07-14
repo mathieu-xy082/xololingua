@@ -4,14 +4,36 @@ import { readFile } from "node:fs/promises";
 
 const appSource = await readFile(new URL("../app.js", import.meta.url), "utf8");
 const serviceWorkerSource = await readFile(new URL("../sw.js", import.meta.url), "utf8");
+const appHybridRouterWiringSource = await readFile(
+  new URL("../frontend/app_hybrid_router_wiring.js", import.meta.url),
+  "utf8",
+);
 
-test("service worker precaches JavaScript modules imported by the PWA shell", () => {
-  const importedModules = [...appSource.matchAll(/import\s+[^;]+from\s+["']\.\/(frontend\/[^"']+)["']/g)]
-    .map((match) => match[1])
+test("service worker precaches JavaScript modules imported by the PWA shell and app wiring", () => {
+  const importedModules = [
+    ...appSource.matchAll(/import\s+[^;]+from\s+["']\.\/(frontend\/[^"']+)["']/g),
+    ...appHybridRouterWiringSource.matchAll(/import\s+[^;]+from\s+["']\.\/(client_pipeline_router\.js)["']/g),
+  ]
+    .map((match) => match[1].startsWith("frontend/") ? match[1] : `frontend/${match[1]}`)
     .sort();
   const cachedAssets = [...serviceWorkerSource.matchAll(/["'](frontend\/[^"']+\.js)["']/g)]
     .map((match) => match[1])
     .sort();
 
   assert.deepEqual(cachedAssets, importedModules);
+});
+
+test("PWA shell starts from the hybrid pipeline router wiring contract", () => {
+  assert.match(
+    appSource,
+    /import\s+\{\s*collectClientPipelineCapabilities\s*\}\s+from\s+["']\.\/frontend\/client_pipeline_capabilities\.js["']/,
+  );
+  assert.match(
+    appSource,
+    /import\s+\{\s*createAppHybridPipelineRouter\s*\}\s+from\s+["']\.\/frontend\/app_hybrid_router_wiring\.js["']/,
+  );
+  assert.match(
+    appHybridRouterWiringSource,
+    /import\s+\{\s*createHybridPipelineRouter\s*\}\s+from\s+["']\.\/client_pipeline_router\.js["']/,
+  );
 });
