@@ -60,10 +60,22 @@ test("app hybrid router wiring keeps audio extraction and VAD on explicit Python
     ["vad", 100],
   ]);
   assert.deepEqual(extraction, {
+    stage: "audioExtraction",
     runtime: "server-fallback",
     strategy: "python-backend",
-    fallbackEndpoints: ["POST /api/extract-audio"],
-    payload: { audioId: "audio-123", audioFileName: "clip.wav", audioSizeBytes: 4096 },
+    payload: {
+      audioId: "audio-123",
+      audioBlob: null,
+      storage: "server",
+      mimeType: null,
+      sampleRateHz: null,
+      durationSeconds: null,
+    },
+    metadata: {
+      audioFileName: "clip.wav",
+      audioSizeBytes: 4096,
+      fallbackEndpoints: ["POST /api/extract-audio"],
+    },
   });
   assert.deepEqual(segmentation, {
     runtime: "server-fallback",
@@ -102,9 +114,21 @@ test("app hybrid router wiring uses the configured browser audio extraction adap
   assert.deepEqual(calls, [["browser-audio", "clip.mp4"]]);
   assert.deepEqual(progress, [100]);
   assert.deepEqual(extraction, {
+    stage: "audioExtraction",
     runtime: "browser",
     strategy: "ffmpeg.wasm",
-    payload: { audioId: "browser-audio", audioFileName: "clip.wav", audioSizeBytes: 4096 },
+    payload: {
+      audioId: "browser-audio",
+      audioBlob: null,
+      storage: "server",
+      mimeType: null,
+      sampleRateHz: null,
+      durationSeconds: null,
+    },
+    metadata: {
+      audioFileName: "clip.wav",
+      audioSizeBytes: 4096,
+    },
   });
 });
 
@@ -139,7 +163,7 @@ test("app hybrid router wiring downgrades browser-ready stages to Python fallbac
   assert.equal(extraction.runtime, "server-fallback");
   assert.equal(extraction.strategy, "ffmpeg.wasm");
   assert.equal(
-    extraction.browserFailureReason,
+    extraction.metadata.browserFailureReason,
     "Browser audio extraction adapter is not configured in app.js; using Python backend fallback.",
   );
   assert.equal(segmentation.runtime, "server-fallback");

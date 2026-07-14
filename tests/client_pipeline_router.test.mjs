@@ -32,9 +32,18 @@ test("hybrid pipeline router runs browser audio extraction when the stage is bro
   assert.deepEqual(calls, [["client", "clip.mp4"]]);
   assert.deepEqual(progress, [100]);
   assert.deepEqual(result, {
+    stage: "audioExtraction",
     runtime: "browser",
     strategy: "ffmpeg.wasm",
-    payload: { audioId: "browser-audio", sampleRate: 16000 },
+    payload: {
+      audioId: "browser-audio",
+      audioBlob: null,
+      storage: "server",
+      mimeType: null,
+      sampleRateHz: 16000,
+      durationSeconds: null,
+    },
+    metadata: {},
   });
 });
 
@@ -67,11 +76,22 @@ test("hybrid pipeline router falls back to the Python audio endpoint when browse
   assert.deepEqual(calls, [["client", "clip.mp4"], ["server", "clip.mp4"]]);
   assert.deepEqual(progress, [45]);
   assert.deepEqual(result, {
+    stage: "audioExtraction",
     runtime: "server-fallback",
     strategy: "ffmpeg.wasm",
-    fallbackEndpoints: ["POST /api/extract-audio"],
-    browserFailureReason: "ffmpeg.wasm failed to load",
-    payload: { audioId: "server-audio", audioFileName: "clip.wav" },
+    payload: {
+      audioId: "server-audio",
+      audioBlob: null,
+      storage: "server",
+      mimeType: null,
+      sampleRateHz: null,
+      durationSeconds: null,
+    },
+    metadata: {
+      audioFileName: "clip.wav",
+      fallbackEndpoints: ["POST /api/extract-audio"],
+      browserFailureReason: "ffmpeg.wasm failed to load",
+    },
   });
 });
 
@@ -104,10 +124,21 @@ test("hybrid pipeline router falls back to the Python audio endpoint when browse
   assert.deepEqual(calls, [["server", "clip.mp4"]]);
   assert.deepEqual(progress, [35]);
   assert.deepEqual(result, {
+    stage: "audioExtraction",
     runtime: "server-fallback",
     strategy: "unavailable",
-    fallbackEndpoints: ["POST /api/extract-audio"],
-    payload: { audioId: "server-audio", audioFileName: "clip.wav" },
+    payload: {
+      audioId: "server-audio",
+      audioBlob: null,
+      storage: "server",
+      mimeType: null,
+      sampleRateHz: null,
+      durationSeconds: null,
+    },
+    metadata: {
+      audioFileName: "clip.wav",
+      fallbackEndpoints: ["POST /api/extract-audio"],
+    },
   });
 });
 
