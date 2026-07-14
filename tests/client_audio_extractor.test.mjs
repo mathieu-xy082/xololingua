@@ -85,16 +85,40 @@ test("ffmpeg wasm audio extractor converts an MP4 file to mono 16 kHz WAV", asyn
   assert.ok(result.audioBlob instanceof Blob);
 });
 
-test("ffmpeg wasm audio extractor rejects videos over the browser demo duration limit", async () => {
+test("ffmpeg wasm audio extractor allows one-hour browser videos by default while CI can override a short demo limit", async () => {
+  const operations = [];
+  const ffmpeg = {
+    isLoaded() {
+      return true;
+    },
+    FS(command, path, data) {
+      operations.push(["FS", command, path, data ? data.byteLength : undefined]);
+      if (command === "readFile") return new Uint8Array([82, 73, 70, 70]);
+      return undefined;
+    },
+    async run(...args) {
+      operations.push(["run", ...args]);
+    },
+  };
   const extractor = createFfmpegWasmAudioExtractor({
+    ffmpeg,
+    fetchFile: async () => new Uint8Array([1, 2, 3]),
+  });
+
+  const result = await extractor({ name: "one-hour.mp4", size: 800 * 1024 * 1024, durationSeconds: 3600 });
+
+  assert.equal(result.audioFileName, "one-hour.wav");
+  assert.ok(operations.some(([operation]) => operation === "run"));
+
+  const shortDemoExtractor = createFfmpegWasmAudioExtractor({
     ffmpeg: {},
     fetchFile: async () => new Uint8Array(),
     maxDurationSeconds: 30,
   });
 
   await assert.rejects(
-    () => extractor({ name: "long.mp4", durationSeconds: 31 }),
-    /Browser ffmpeg\.wasm extraction is limited to short videos up to 30 seconds\./,
+    () => shortDemoExtractor({ name: "long.mp4", durationSeconds: 31 }),
+    /Browser ffmpeg\.wasm extraction is limited to videos up to 30 seconds\./,
   );
 });
 
@@ -477,7 +501,7 @@ test("ffmpeg wasm audio extractor rejects long real files using a duration probe
 
   await assert.rejects(
     () => extractor({ name: "long.mp4" }),
-    /Browser ffmpeg\.wasm extraction is limited to short videos up to 30 seconds\./,
+    /Browser ffmpeg\.wasm extraction is limited to videos up to 30 seconds\./,
   );
   assert.deepEqual(calls, [["durationProbe", "long.mp4"]]);
 });

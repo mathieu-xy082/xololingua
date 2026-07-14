@@ -12,8 +12,8 @@ export function detectClientAudioExtractionCapabilities(environment = globalThis
   };
 }
 
-const DEFAULT_BROWSER_EXTRACTION_MAX_DURATION_SECONDS = 60;
-const DEFAULT_BROWSER_EXTRACTION_MAX_INPUT_BYTES = 100 * 1024 * 1024;
+const DEFAULT_BROWSER_EXTRACTION_MAX_DURATION_SECONDS = 60 * 60;
+const DEFAULT_BROWSER_EXTRACTION_MAX_INPUT_BYTES = 800 * 1024 * 1024;
 const DEFAULT_BROWSER_METADATA_TIMEOUT_MS = 10_000;
 const FFMPEG_INPUT_NAME = "input.mp4";
 const FFMPEG_OUTPUT_NAME = "output.wav";
@@ -105,7 +105,7 @@ export function createFfmpegWasmAudioExtractor({
     }
     if (Number.isFinite(durationSeconds) && durationSeconds > maxDurationSeconds) {
       throw new Error(
-        `Browser ffmpeg.wasm extraction is limited to short videos up to ${maxDurationSeconds} seconds. ` +
+        `Browser ffmpeg.wasm extraction is limited to videos up to ${maxDurationSeconds} seconds. ` +
         "Use the Python fallback for longer videos.",
       );
     }
