@@ -55,6 +55,60 @@ test("app client adapters expose browser VAD segmentation for the strict E2E gua
   });
 });
 
+test("app client adapters expose browser transcription for the hybrid router", async () => {
+  const calls = [];
+  const adapters = createAppClientAdapters({
+    clientTranscriber: {
+      transcribeAudio: async (request, onProgress) => {
+        calls.push([request.audioId, request.sourceLanguage.code, request.segments.length]);
+        onProgress({ stage: "transcribing", progress: 70 });
+        return [{ index: 1, start: 0, end: 1.5, text: "Bonjour" }];
+      },
+    },
+  });
+  const progress = [];
+
+  const payload = await adapters.transcription(
+    {
+      audioId: "audio-123",
+      sourceLanguage: { code: "fr", name: "French" },
+      segments: [{ index: 1, start: 0, end: 1.5 }],
+    },
+    (value) => progress.push(value),
+  );
+
+  assert.deepEqual(calls, [["audio-123", "fr", 1]]);
+  assert.deepEqual(progress, [{ stage: "transcribing", progress: 70 }]);
+  assert.deepEqual(payload, [{ index: 1, start: 0, end: 1.5, text: "Bonjour" }]);
+});
+
+test("app client adapters expose browser translation for the hybrid router", async () => {
+  const calls = [];
+  const adapters = createAppClientAdapters({
+    clientTranslator: {
+      translateSegments: async (request, onProgress) => {
+        calls.push([request.sourceLanguage.code, request.targetLanguage, request.segments.length]);
+        onProgress({ stage: "translating", progress: 80 });
+        return [{ index: 1, start: 0, end: 1.5, text: "Hello" }];
+      },
+    },
+  });
+  const progress = [];
+
+  const payload = await adapters.translation(
+    {
+      sourceLanguage: { code: "fr", name: "French" },
+      targetLanguage: "en",
+      segments: [{ index: 1, start: 0, end: 1.5, text: "Bonjour" }],
+    },
+    (value) => progress.push(value),
+  );
+
+  assert.deepEqual(calls, [["fr", "en", 1]]);
+  assert.deepEqual(progress, [{ stage: "translating", progress: 80 }]);
+  assert.deepEqual(payload, [{ index: 1, start: 0, end: 1.5, text: "Hello" }]);
+});
+
 test("app hybrid router wiring keeps audio extraction and VAD on explicit Python fallback adapters", async () => {
   const calls = [];
   const backendClient = {
