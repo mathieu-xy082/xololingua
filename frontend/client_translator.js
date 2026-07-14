@@ -1,3 +1,5 @@
+import { mapClientMlProgress } from "./client_ml_progress.js";
+
 export function detectClientTranslationCapabilities(environment = globalThis) {
   const localTransformersJs = typeof environment?.Worker === "function"
     && Boolean(environment?.transformers?.pipeline || environment?.transformersJs);
@@ -45,7 +47,10 @@ export function createClientTranslator({
         throw new Error("Browser translation requires transformers.js or a configured cloud translation provider.");
       }
 
-      const result = await translate(request, onProgress);
+      const result = await translate(
+        request,
+        (event) => onProgress(mapClientMlProgress(event, "translating")),
+      );
       const translatedByIndex = new Map(
         (result.segments || []).map((segment) => [segment.index, segment]),
       );

@@ -1,3 +1,5 @@
+import { mapClientMlProgress } from "./client_ml_progress.js";
+
 export function detectClientTranscriptionCapabilities(environment = globalThis) {
   const transformersJs = typeof environment?.Worker === "function"
     && Boolean(environment?.transformers?.pipeline || environment?.transformersJs);
@@ -31,7 +33,10 @@ export function createClientTranscriber({
         throw new Error("Browser transcription requires transformers.js in a Web Worker or a configured transcription fallback.");
       }
 
-      const result = await transformerWorker(request, onProgress);
+      const result = await transformerWorker(
+        request,
+        (event) => onProgress(mapClientMlProgress(event, "transcribing")),
+      );
       return {
         strategy: "transformers.js",
         language: result.language || request.sourceLanguage || "unknown",

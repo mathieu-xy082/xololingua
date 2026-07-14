@@ -61,6 +61,35 @@ test("client translator delegates segment translation to an injected local trans
   });
 });
 
+test("client translator maps worker progress into bounded translation progress events", async () => {
+  const localTranslatorWorker = async (request, onProgress) => {
+    onProgress(0.5);
+    onProgress({ progress: -10 });
+    onProgress({ stage: "loading-model", progress: 30 });
+    return { segments: [{ index: 1, text: "Hello" }] };
+  };
+  const progress = [];
+  const translator = createClientTranslator({
+    environment: {},
+    localTranslatorWorker,
+  });
+
+  await translator.translateSegments(
+    {
+      segments: [{ index: 1, start: 0, end: 1, text: "Bonjour" }],
+      sourceLanguage: "fr",
+      targetLanguage: "en",
+    },
+    (event) => progress.push(event),
+  );
+
+  assert.deepEqual(progress, [
+    { stage: "translating", progress: 50 },
+    { stage: "translating", progress: 0 },
+    { stage: "loading-model", progress: 30 },
+  ]);
+});
+
 test("client translator rejects segment batches beyond the configured browser limit", async () => {
   let workerCalled = false;
   const translator = createClientTranslator({

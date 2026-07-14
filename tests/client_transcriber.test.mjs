@@ -69,6 +69,35 @@ test("client transcriber delegates PCM audio to an injected transformers.js work
   });
 });
 
+test("client transcriber maps worker progress into bounded transcription progress events", async () => {
+  const transformerWorker = async (request, onProgress) => {
+    onProgress(0.25);
+    onProgress({ progress: 150 });
+    onProgress({ stage: "loading-model", progress: 40 });
+    return { segments: [] };
+  };
+  const progress = [];
+  const transcriber = createClientTranscriber({
+    environment: {},
+    transformerWorker,
+  });
+
+  await transcriber.transcribeAudio(
+    {
+      audio: { pcm: new Float32Array([0.1]), sampleRate: 16000, channelCount: 1 },
+      segments: [],
+      sourceLanguage: "auto",
+    },
+    (event) => progress.push(event),
+  );
+
+  assert.deepEqual(progress, [
+    { stage: "transcribing", progress: 25 },
+    { stage: "transcribing", progress: 100 },
+    { stage: "loading-model", progress: 40 },
+  ]);
+});
+
 test("client transcriber rejects audio beyond the configured browser duration limit", async () => {
   let workerCalled = false;
   const transcriber = createClientTranscriber({
