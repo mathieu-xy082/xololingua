@@ -119,16 +119,19 @@ class PipelineIntegrationTests(unittest.TestCase):
                                 "segments": segments,
                             })
 
-            self.assertIn("jobId", job)
-            job_id = job["jobId"]
+                            self.assertIn("jobId", job)
+                            job_id = job["jobId"]
 
-            # --- poll until done (max 30 s) ---
-            deadline = time.time() + 30
-            while time.time() < deadline:
-                time.sleep(0.5)
-                status = self._get_json(f"/api/subtitle-jobs/{job_id}")
-                if status["status"] in ("succeeded", "failed"):
-                    break
+                            # Keep the mocked Whisper + Argos functions active while the async
+                            # subtitle worker runs. Slow CI runners may not start the queued job
+                            # until after the POST handler returns.
+                            deadline = time.time() + 30
+                            status = job
+                            while time.time() < deadline:
+                                time.sleep(0.5)
+                                status = self._get_json(f"/api/subtitle-jobs/{job_id}")
+                                if status["status"] in ("succeeded", "failed"):
+                                    break
 
             self.assertEqual(status["status"], "succeeded")
             self.assertEqual(status["stage"], "ready")
