@@ -15,6 +15,24 @@ import local_service
 from xololingua_service import http_api, runtime, transcription, translation
 
 
+class ImmediateFuture:
+    def __init__(self):
+        self._cancelled = False
+
+    def cancel(self):
+        self._cancelled = True
+        return False
+
+    def cancelled(self):
+        return self._cancelled
+
+
+class ImmediateExecutor:
+    def submit(self, fn, *args, **kwargs):
+        fn(*args, **kwargs)
+        return ImmediateFuture()
+
+
 @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "ffmpeg and ffprobe are required")
 class PipelineIntegrationTests(unittest.TestCase):
     """
@@ -110,29 +128,19 @@ class PipelineIntegrationTests(unittest.TestCase):
             runtime_available = {"backend": "faster-whisper", "available": True, "device": "cpu", "model": "base", "computeType": "int8", "cudaDevices": 0}
             with mock.patch.dict(runtime.WHISPER_RUNTIME, runtime_available):
                 with mock.patch.object(http_api, "translation_backend_available", return_value=True):
-                    with mock.patch.object(transcription, "transcribe_segments", return_value=transcribed):
-                        with mock.patch.object(translation, "translate_segments", return_value=translated):
-                            job = self._post_json("/api/subtitle-jobs", {
-                                "audioId": audio_id,
-                                "sourceLanguage": "fr",
-                                "targetLanguage": "en",
-                                "segments": segments,
-                            })
+                    with mock.patch.object(http_api, "JOBS_EXECUTOR", ImmediateExecutor()):
+                        with mock.patch.object(transcription, "transcribe_segments", return_value=transcribed):
+                            with mock.patch.object(translation, "translate_segments", return_value=translated):
+                                job = self._post_json("/api/subtitle-jobs", {
+                                    "audioId": audio_id,
+                                    "sourceLanguage": "fr",
+                                    "targetLanguage": "en",
+                                    "segments": segments,
+                                })
 
-                            self.assertIn("jobId", job)
-                            job_id = job["jobId"]
-
-                            # Keep the mocked Whisper + Argos functions active while the async
-                            # subtitle worker runs. Slow CI runners may not start the queued job
-                            # until after the POST handler returns.
-                            deadline = time.time() + 30
-                            status = job
-                            while time.time() < deadline:
-                                time.sleep(0.5)
-                                status = self._get_json(f"/api/subtitle-jobs/{job_id}")
-                                if status["status"] in ("succeeded", "failed"):
-                                    break
-
+            self.assertIn("jobId", job)
+            job_id = job["jobId"]
+            status = self._get_json(f"/api/subtitle-jobs/{job_id}")
             self.assertEqual(status["status"], "succeeded")
             self.assertEqual(status["stage"], "ready")
             self.assertTrue(all("translatedText" in s for s in status["segments"]))
