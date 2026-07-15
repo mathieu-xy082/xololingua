@@ -1,3 +1,5 @@
+import { normalizeVadStageResult } from "./pipeline_stage_contract.js";
+
 export function detectClientVadCapabilities(environment = globalThis) {
   const vadWeb = Boolean(environment?.vad?.MicVAD)
     || Boolean(environment?.vadWeb)
@@ -20,16 +22,12 @@ export function createClientVadSegmenter({
       if (typeof vadWebSegmenter === "function") {
         onProgress(0);
         const result = await vadWebSegmenter(audio, onProgress);
-        const segments = normalizeVadSegments(result);
-        return {
-          stage: "vad",
+        return normalizeVadStageResult({
           runtime: "browser",
           strategy: "vad-web",
-          payload: {
-            segments,
-          },
+          payload: normalizeVadPayload(result),
           metadata: normalizeVadMetadata(result),
-        };
+        });
       }
 
       throw new Error("Browser voice activity detection requires @ricky0123/vad-web or a configured fallback.");
@@ -37,16 +35,13 @@ export function createClientVadSegmenter({
   };
 }
 
-function normalizeVadSegments(result) {
+function normalizeVadPayload(result) {
   const segments = Array.isArray(result) ? result : result?.segments;
   if (!Array.isArray(segments)) {
     throw new Error("Browser VAD segmenter must return a segments array.");
   }
 
-  return segments.map((segment) => ({
-    start: segment.start,
-    end: segment.end,
-  }));
+  return { segments };
 }
 
 function normalizeVadMetadata(result) {

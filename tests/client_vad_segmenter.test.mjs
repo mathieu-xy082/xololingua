@@ -55,7 +55,7 @@ test("client VAD segmenter returns canonical browser VAD stage envelopes", async
     environment: {},
     vadWebSegmenter: async () => ({
       segments: [
-        { start: 0.12, end: 1.34, confidence: 0.98 },
+        { start: 0.12, end: 1.34, confidence: 0.98, speechProbability: 0.87 },
       ],
       diagnostics: {
         speechFrameCount: 42,
@@ -78,6 +78,9 @@ test("client VAD segmenter returns canonical browser VAD stage envelopes", async
       diagnostics: {
         speechFrameCount: 42,
       },
+      segmentDiagnostics: [
+        { index: 0, confidence: 0.98, speechProbability: 0.87 },
+      ],
     },
   });
 });
