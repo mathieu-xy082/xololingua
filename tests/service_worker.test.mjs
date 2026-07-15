@@ -89,3 +89,25 @@ test("PWA shell reads service metadata through the backend client boundary", () 
   assert.match(appSource, /backendClient\.getTranslationPairs\(\)/);
   assert.doesNotMatch(appSource, /fetch\(`\$\{LOCAL_SERVICE_URL\}\/api\/(?:health|translation-pairs)`\)/);
 });
+
+test("PWA shell displays honest offline asset and Python fallback metadata", () => {
+  assert.match(indexSource, /id=["']pwaOfflineScope["']/);
+  assert.match(indexSource, /id=["']pipelineBrowserStages["']/);
+  assert.match(indexSource, /id=["']pipelineFallbackStages["']/);
+  assert.match(indexSource, /id=["']pipelineFallbackEndpoints["']/);
+  assert.match(appSource, /clientPipelineCapabilities\.demoSummary/);
+  assert.match(appSource, /serverFallbackEndpoints/);
+  assert.match(appSource, /Offline assets available; ML stages may still need Python fallback/);
+});
+
+test("PWA asset cache version changes with the app shell version", () => {
+  const [, appAssetVersion] = appSource.match(/APP_ASSET_VERSION\s*=\s*["']([^"']+)["']/) || [];
+  const [, cacheName] = serviceWorkerSource.match(/CACHE_NAME\s*=\s*["']([^"']+)["']/) || [];
+
+  assert.ok(appAssetVersion);
+  assert.equal(cacheName, `xololingua-${appAssetVersion}`);
+  assert.match(indexSource, new RegExp(`app\\.js\\?v=${appAssetVersion}`));
+  assert.match(indexSource, new RegExp(`styles\\.css\\?v=${appAssetVersion}`));
+  assert.match(serviceWorkerSource, new RegExp(`app\\.js\\?v=${appAssetVersion}`));
+  assert.match(serviceWorkerSource, new RegExp(`styles\\.css\\?v=${appAssetVersion}`));
+});

@@ -6,16 +6,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#1f6f5b">
   <title>XoloLingua</title>
-  <link rel="manifest" href="manifest.webmanifest?v=2026-05-17-3">
-  <link rel="icon" href="assets/icon.svg?v=2026-05-17-3" type="image/svg+xml">
-  <link rel="stylesheet" href="styles.css?v=2026-05-17-3">
+  <link rel="manifest" href="manifest.webmanifest?v=2026-07-15-1">
+  <link rel="icon" href="assets/icon.svg?v=2026-07-15-1" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css?v=2026-07-15-1">
 </head>
 
 <body>
   <div class="app-shell">
     <header class="topbar">
       <a class="brand" href="/" aria-label="XoloLingua home">
-        <img src="assets/icon.svg?v=2026-05-17-3" alt="" width="40" height="40">
+        <img src="assets/icon.svg?v=2026-07-15-1" alt="" width="40" height="40">
         <span>XoloLingua</span>
       </a>
       <button class="install-button" id="installButton" type="button" hidden>Install</button>
@@ -56,6 +56,22 @@
               <dd id="serviceWhisperDevice">—</dd>
             </div>
           </dl>
+        </div>
+
+        <div class="service-status pipeline-capabilities" aria-label="PWA and pipeline capability status">
+          <p class="eyebrow">PWA / offline scope</p>
+          <p id="pwaOfflineScope">Offline assets available; ML stages may still need Python fallback.</p>
+          <dl class="service-facts">
+            <div>
+              <dt>Browser stages</dt>
+              <dd id="pipelineBrowserStages">—</dd>
+            </div>
+            <div>
+              <dt>Python fallback</dt>
+              <dd id="pipelineFallbackStages">—</dd>
+            </div>
+          </dl>
+          <ul class="fallback-endpoints" id="pipelineFallbackEndpoints"></ul>
         </div>
       </section>
 
@@ -211,10 +227,10 @@
     </main>
   </div>
 
-  <script src="node_modules/@ffmpeg/ffmpeg/dist/ffmpeg.min.js?v=2026-05-17-3"></script>
-  <script src="node_modules/onnxruntime-web/dist/ort.min.js?v=2026-05-17-3"></script>
-  <script src="node_modules/@ricky0123/vad-web/dist/bundle.min.js?v=2026-05-17-3"></script>
-  <script src="app.js?v=2026-05-17-3" type="module"></script>
+  <script src="node_modules/@ffmpeg/ffmpeg/dist/ffmpeg.min.js?v=2026-07-15-1"></script>
+  <script src="node_modules/onnxruntime-web/dist/ort.min.js?v=2026-07-15-1"></script>
+  <script src="node_modules/@ricky0123/vad-web/dist/bundle.min.js?v=2026-07-15-1"></script>
+  <script src="app.js?v=2026-07-15-1" type="module"></script>
 </body>
 
 </html>

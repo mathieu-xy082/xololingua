@@ -11,7 +11,7 @@ import { createVadWebRuntimeSegmenter } from "./frontend/vad_web_runtime.js";
 const MAX_DURATION_SECONDS = 2.5 * 60 * 60;
 const SEGMENT_SECONDS = 12;
 const LOCAL_SERVICE_URL = "http://127.0.0.1:8765";
-const APP_ASSET_VERSION = "2026-05-17-3";
+const APP_ASSET_VERSION = "2026-07-15-1";
 const backendClient = createBackendClient({ baseUrl: LOCAL_SERVICE_URL });
 const clientPipelineCapabilities = collectClientPipelineCapabilities();
 const appClientAdapters = createAppClientAdapters({
@@ -112,7 +112,11 @@ const els = {
   installButton: document.querySelector("#installButton"),
   serviceWhisperBackend: document.querySelector("#serviceWhisperBackend"),
   serviceWhisperModel: document.querySelector("#serviceWhisperModel"),
-  serviceWhisperDevice: document.querySelector("#serviceWhisperDevice")
+  serviceWhisperDevice: document.querySelector("#serviceWhisperDevice"),
+  pwaOfflineScope: document.querySelector("#pwaOfflineScope"),
+  pipelineBrowserStages: document.querySelector("#pipelineBrowserStages"),
+  pipelineFallbackStages: document.querySelector("#pipelineFallbackStages"),
+  pipelineFallbackEndpoints: document.querySelector("#pipelineFallbackEndpoints")
 };
 
 let deferredInstallPrompt = null;
@@ -121,6 +125,7 @@ let _pairsFetched = false;
 populateLanguages();
 bindEvents();
 bindInstallPrompt();
+renderPipelineCapabilitySummary();
 registerServiceWorker();
 render();
 fetchServiceStatus();
@@ -140,6 +145,25 @@ function populateLanguages() {
     option.textContent = language.name;
     els.targetLanguageSelect.append(option);
   });
+}
+
+function renderPipelineCapabilitySummary() {
+  const summary = clientPipelineCapabilities.demoSummary;
+  els.pwaOfflineScope.textContent = "Offline assets available; ML stages may still need Python fallback.";
+  els.pwaOfflineScope.title = summary.headline;
+  els.pipelineBrowserStages.textContent = summary.browserStageLabels.length > 0
+    ? summary.browserStageLabels.join(", ")
+    : "none";
+  els.pipelineFallbackStages.textContent = summary.serverFallbackStageLabels.length > 0
+    ? summary.serverFallbackStageLabels.join(", ")
+    : "none";
+  els.pipelineFallbackEndpoints.replaceChildren(
+    ...summary.serverFallbackEndpoints.map((fallback) => {
+      const item = document.createElement("li");
+      item.textContent = `${fallback.label}: ${fallback.endpoints.join(", ")}`;
+      return item;
+    }),
+  );
 }
 
 async function fetchTranslationPairs() {
