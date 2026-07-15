@@ -1,5 +1,7 @@
 import {
   normalizeAudioExtractionStageResult,
+  normalizeTranscriptionStageResult,
+  normalizeTranslationStageResult,
   normalizeVadStageResult,
 } from "./pipeline_stage_contract.js";
 
@@ -130,6 +132,7 @@ export function createHybridPipelineRouter({
       });
       onStageComplete(createUserStageReportRow("transcription", transcription));
 
+      const transcriptionSegments = transcription.payload?.segments || transcription.payload;
       const translation = await runStage({
         stageName: "translation",
         browserAdapterLabel: "Browser translation",
@@ -138,7 +141,7 @@ export function createHybridPipelineRouter({
           extractedAudio: audioExtraction.payload,
           sourceLanguage,
           targetLanguage,
-          segments: transcription.payload,
+          segments: transcriptionSegments,
         },
         onProgress: onTranslationProgress,
         capabilityReport,
@@ -154,7 +157,7 @@ export function createHybridPipelineRouter({
         translation,
       };
 
-      const translatedSegments = translation.payload;
+      const translatedSegments = translation.payload?.segments || translation.payload;
 
       return {
         audioExtraction,
@@ -269,16 +272,30 @@ async function runStage({
           payload,
           metadata: createStageMetadata({ stageName, stage, browserFailureReason, runtimeIsFallback: browserFailureReason || !useBrowser }),
         })
-      : {
-          runtime: browserFailureReason || !useBrowser ? "server-fallback" : "browser",
-          strategy: stage.strategy,
-          payload,
-        };
+      : stageName === "transcription"
+        ? normalizeTranscriptionStageResult({
+            runtime: browserFailureReason || !useBrowser ? "server-fallback" : "browser",
+            strategy: stage.strategy,
+            payload,
+            metadata: createStageMetadata({ stageName, stage, browserFailureReason, runtimeIsFallback: browserFailureReason || !useBrowser }),
+          })
+        : stageName === "translation"
+          ? normalizeTranslationStageResult({
+              runtime: browserFailureReason || !useBrowser ? "server-fallback" : "browser",
+              strategy: stage.strategy,
+              payload,
+              metadata: createStageMetadata({ stageName, stage, browserFailureReason, runtimeIsFallback: browserFailureReason || !useBrowser }),
+            })
+          : {
+              runtime: browserFailureReason || !useBrowser ? "server-fallback" : "browser",
+              strategy: stage.strategy,
+              payload,
+            };
 
-  if (stageName !== "audioExtraction" && stageName !== "vad" && result.runtime === "server-fallback") {
+  if (stageName !== "audioExtraction" && stageName !== "vad" && stageName !== "transcription" && stageName !== "translation" && result.runtime === "server-fallback") {
     result.fallbackEndpoints = stage.fallbackEndpoints || PYTHON_FALLBACK_ENDPOINTS[stageName];
   }
-  if (stageName !== "audioExtraction" && stageName !== "vad" && (browserFailureReason || stage.browserFailureReason)) {
+  if (stageName !== "audioExtraction" && stageName !== "vad" && stageName !== "transcription" && stageName !== "translation" && (browserFailureReason || stage.browserFailureReason)) {
     result.browserFailureReason = browserFailureReason || stage.browserFailureReason;
   }
 

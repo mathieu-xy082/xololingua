@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 
 import {
   normalizeAudioExtractionStageResult,
+  normalizeTranscriptionStageResult,
+  normalizeTranslationStageResult,
   normalizeVadStageResult,
 } from "../frontend/pipeline_stage_contract.js";
 
@@ -80,5 +82,61 @@ test("normalizes VAD segmentation arrays into the canonical stage envelope", () 
     metadata: {
       fallbackEndpoints: ["POST /api/segment-audio"],
     },
+  });
+});
+
+test("transcription stage normalization wraps Python fallback segments in the canonical envelope", () => {
+  const result = normalizeTranscriptionStageResult({
+    runtime: "server-fallback",
+    strategy: "faster-whisper",
+    payload: [
+      { index: 1, start: 0, end: 1.5, text: "Bonjour" },
+    ],
+    metadata: { fallbackEndpoints: ["POST /api/transcribe-audio"] },
+  });
+
+  assert.deepEqual(result, {
+    stage: "transcription",
+    runtime: "server-fallback",
+    strategy: "faster-whisper",
+    payload: {
+      segments: [
+        { index: 1, start: 0, end: 1.5, text: "Bonjour" },
+      ],
+    },
+    metadata: { fallbackEndpoints: ["POST /api/transcribe-audio"] },
+  });
+});
+
+test("transcription stage normalization rejects payloads without a segments handoff", () => {
+  assert.throws(
+    () => normalizeTranscriptionStageResult({
+      runtime: "browser",
+      strategy: "transformers-js",
+      payload: { transcript: "Bonjour" },
+    }),
+    /Transcription stage result requires a segments array payload\./,
+  );
+});
+
+test("translation stage normalization wraps browser translated segments in the canonical envelope", () => {
+  const result = normalizeTranslationStageResult({
+    runtime: "browser",
+    strategy: "local-transformers.js",
+    payload: [
+      { index: 1, text: "Bonjour", translatedText: "Hello" },
+    ],
+  });
+
+  assert.deepEqual(result, {
+    stage: "translation",
+    runtime: "browser",
+    strategy: "local-transformers.js",
+    payload: {
+      segments: [
+        { index: 1, text: "Bonjour", translatedText: "Hello" },
+      ],
+    },
+    metadata: {},
   });
 });

@@ -211,10 +211,15 @@ test("app hybrid router wiring runs transcription through the Python transcripti
   assert.deepEqual(calls, [["transcribeAudio", "audio-123", "fr", 1]]);
   assert.deepEqual(progress, [{ stage: "transcribing", progress: 55 }]);
   assert.deepEqual(result, {
+    stage: "transcription",
     runtime: "server-fallback",
     strategy: "python-backend",
-    fallbackEndpoints: ["POST /api/transcribe-audio"],
-    payload: [{ index: 1, start: 0, end: 1.5, text: "Bonjour" }],
+    payload: {
+      segments: [{ index: 1, start: 0, end: 1.5, text: "Bonjour" }],
+    },
+    metadata: {
+      fallbackEndpoints: ["POST /api/transcribe-audio"],
+    },
   });
 });
 
@@ -252,10 +257,15 @@ test("app hybrid router wiring translates already-transcribed segments through t
   assert.deepEqual(calls, [["translateSegments", "fr", "en", 1]]);
   assert.deepEqual(jobUpdates, [{ stage: "translating", progress: 100 }]);
   assert.deepEqual(result, {
+    stage: "translation",
     runtime: "server-fallback",
     strategy: "python-backend",
-    fallbackEndpoints: ["POST /api/translate-segments"],
-    payload: [{ index: 1, start: 0, end: 1.5, text: "Bonjour", translatedText: "Hello" }],
+    payload: {
+      segments: [{ index: 1, start: 0, end: 1.5, text: "Bonjour", translatedText: "Hello" }],
+    },
+    metadata: {
+      fallbackEndpoints: ["POST /api/translate-segments"],
+    },
   });
 });
 

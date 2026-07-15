@@ -31,7 +31,27 @@ export function normalizeVadStageResult({ runtime, strategy, payload = {}, metad
     stage: "vad",
     runtime,
     strategy,
-    payload: normalizeVadPayload(payload),
+    payload: normalizeSegmentsPayload(payload, "VAD"),
+    metadata,
+  });
+}
+
+export function normalizeTranscriptionStageResult({ runtime, strategy, payload = {}, metadata = {} } = {}) {
+  return createPipelineStageResult({
+    stage: "transcription",
+    runtime,
+    strategy,
+    payload: normalizeSegmentsPayload(payload, "Transcription"),
+    metadata,
+  });
+}
+
+export function normalizeTranslationStageResult({ runtime, strategy, payload = {}, metadata = {} } = {}) {
+  return createPipelineStageResult({
+    stage: "translation",
+    runtime,
+    strategy,
+    payload: normalizeSegmentsPayload(payload, "Translation"),
     metadata,
   });
 }
@@ -90,14 +110,14 @@ function normalizeAudioExtractionPayload(payload, runtime) {
   return { audioPayload, audioMetadata };
 }
 
-function normalizeVadPayload(payload) {
+function normalizeSegmentsPayload(payload, stageLabel) {
   if (Array.isArray(payload)) {
     return { segments: payload };
   }
   if (isPlainObject(payload) && Array.isArray(payload.segments)) {
     return { segments: payload.segments };
   }
-  throw new Error("VAD stage result requires a segments array payload.");
+  throw new Error(`${stageLabel} stage result requires a segments array payload.`);
 }
 
 function inferAudioStorage({ audioId, audioBlob, runtime }) {

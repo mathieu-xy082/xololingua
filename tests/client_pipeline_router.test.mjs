@@ -215,10 +215,15 @@ test("hybrid pipeline router falls back to the Python transcription endpoint whe
   assert.deepEqual(calls, [["server", "audio-123", "fr"]]);
   assert.deepEqual(progress, [{ transcriptionProgress: 100 }]);
   assert.deepEqual(result, {
+    stage: "transcription",
     runtime: "server-fallback",
     strategy: "unavailable",
-    fallbackEndpoints: ["POST /api/transcribe-audio"],
-    payload: [{ index: 1, text: "bonjour" }],
+    payload: {
+      segments: [{ index: 1, text: "bonjour" }],
+    },
+    metadata: {
+      fallbackEndpoints: ["POST /api/transcribe-audio"],
+    },
   });
 });
 
@@ -258,10 +263,15 @@ test("hybrid pipeline router falls back to the Python subtitle job endpoint when
   assert.deepEqual(calls, [["server", "fr", "en"]]);
   assert.deepEqual(progress, [{ translationProgress: 100 }]);
   assert.deepEqual(result, {
+    stage: "translation",
     runtime: "server-fallback",
     strategy: "unavailable",
-    fallbackEndpoints: ["POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
-    payload: [{ index: 1, translatedText: "Hello" }],
+    payload: {
+      segments: [{ index: 1, translatedText: "Hello" }],
+    },
+    metadata: {
+      fallbackEndpoints: ["POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
+    },
   });
 });
 
