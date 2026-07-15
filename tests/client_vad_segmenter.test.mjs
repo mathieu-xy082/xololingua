@@ -40,14 +40,46 @@ test("client VAD segmenter delegates PCM audio to an injected vad-web segmenter"
     vadWebSegmenter,
   });
 
-  const segments = await segmenter.segmentAudio(audio, (value) => progress.push(value));
+  const result = await segmenter.segmentAudio(audio, (value) => progress.push(value));
 
   assert.deepEqual(calls, [audio]);
   assert.deepEqual(progress, [0, 100]);
-  assert.deepEqual(segments, [
+  assert.deepEqual(result.payload.segments, [
     { start: 0.12, end: 1.34 },
     { start: 2.5, end: 3.75 },
   ]);
+});
+
+test("client VAD segmenter returns canonical browser VAD stage envelopes", async () => {
+  const segmenter = createClientVadSegmenter({
+    environment: {},
+    vadWebSegmenter: async () => ({
+      segments: [
+        { start: 0.12, end: 1.34, confidence: 0.98 },
+      ],
+      diagnostics: {
+        speechFrameCount: 42,
+      },
+    }),
+  });
+
+  const result = await segmenter.segmentAudio({ pcm: new Float32Array([0.1]), sampleRate: 16000 });
+
+  assert.deepEqual(result, {
+    stage: "vad",
+    runtime: "browser",
+    strategy: "vad-web",
+    payload: {
+      segments: [
+        { start: 0.12, end: 1.34 },
+      ],
+    },
+    metadata: {
+      diagnostics: {
+        speechFrameCount: 42,
+      },
+    },
+  });
 });
 
 test("client VAD segmenter fails explicitly when no browser VAD path is available", async () => {

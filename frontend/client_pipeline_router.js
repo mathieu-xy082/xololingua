@@ -146,7 +146,7 @@ export function createHybridPipelineRouter({
         stageName: "transcription",
         browserAdapterLabel: "Browser transcription",
         serverAdapterLabel: "Python fallback transcription",
-        input: { audioId, sourceLanguage, segments: vad.payload.segments },
+        input: { audioId, sourceLanguage, segments: extractVadSegments(vad) },
         onProgress: onTranscriptionProgress,
         capabilityReport,
         clientAdapters,
@@ -261,6 +261,45 @@ function createUserStageReportRow(stage, result) {
   return row;
 }
 
+function extractVadSegments(vadResult) {
+  if (Array.isArray(vadResult?.payload)) {
+    return vadResult.payload;
+  }
+  if (Array.isArray(vadResult?.payload?.segments)) {
+    return vadResult.payload.segments;
+  }
+  throw new Error("VAD stage result requires segments for transcription handoff.");
+}
+
+function isCanonicalStageResult(result, stageName) {
+  return result?.stage === stageName
+    && typeof result?.runtime === "string"
+    && typeof result?.strategy === "string"
+    && result?.payload !== undefined
+    && result?.metadata !== undefined;
+}
+
+function normalizeStageResult({ stageName, runtime, strategy, payload, metadata }) {
+  if (isCanonicalStageResult(payload, stageName)) {
+    return payload;
+  }
+
+  const normalizationInput = { runtime, strategy, payload, metadata };
+  if (stageName === "audioExtraction") {
+    return normalizeAudioExtractionStageResult(normalizationInput);
+  }
+  if (stageName === "vad") {
+    return normalizeVadStageResult(normalizationInput);
+  }
+  if (stageName === "transcription") {
+    return normalizeTranscriptionStageResult(normalizationInput);
+  }
+  if (stageName === "translation") {
+    return normalizeTranslationStageResult(normalizationInput);
+  }
+  return { runtime, strategy, payload, metadata };
+}
+
 async function runStage({
   stageName,
   browserAdapterLabel,
@@ -297,39 +336,20 @@ async function runStage({
     payload = await serverAdapters[stageName](input, onProgress);
   }
 
-  const result = stageName === "audioExtraction"
-    ? normalizeAudioExtractionStageResult({
-        runtime: browserFailureReason || !useBrowser ? "server-fallback" : "browser",
-        strategy: stage.strategy,
-        payload,
-        metadata: createStageMetadata({ stageName, stage, browserFailureReason, runtimeIsFallback: browserFailureReason || !useBrowser }),
-      })
-    : stageName === "vad"
-      ? normalizeVadStageResult({
-          runtime: browserFailureReason || !useBrowser ? "server-fallback" : "browser",
-          strategy: stage.strategy,
-          payload,
-          metadata: createStageMetadata({ stageName, stage, browserFailureReason, runtimeIsFallback: browserFailureReason || !useBrowser }),
-        })
-      : stageName === "transcription"
-        ? normalizeTranscriptionStageResult({
-            runtime: browserFailureReason || !useBrowser ? "server-fallback" : "browser",
-            strategy: stage.strategy,
-            payload,
-            metadata: createStageMetadata({ stageName, stage, browserFailureReason, runtimeIsFallback: browserFailureReason || !useBrowser }),
-          })
-        : stageName === "translation"
-          ? normalizeTranslationStageResult({
-              runtime: browserFailureReason || !useBrowser ? "server-fallback" : "browser",
-              strategy: stage.strategy,
-              payload,
-              metadata: createStageMetadata({ stageName, stage, browserFailureReason, runtimeIsFallback: browserFailureReason || !useBrowser }),
-            })
-          : {
-              runtime: browserFailureReason || !useBrowser ? "server-fallback" : "browser",
-              strategy: stage.strategy,
-              payload,
-            };
+  const runtime = browserFailureReason || !useBrowser ? "server-fallback" : "browser";
+  const metadata = createStageMetadata({
+    stageName,
+    stage,
+    browserFailureReason,
+    runtimeIsFallback: browserFailureReason || !useBrowser,
+  });
+  const result = normalizeStageResult({
+    stageName,
+    runtime,
+    strategy: stage.strategy,
+    payload,
+    metadata,
+  });
 
   if (stageName !== "audioExtraction" && stageName !== "vad" && stageName !== "transcription" && stageName !== "translation" && result.runtime === "server-fallback") {
     result.fallbackEndpoints = stage.fallbackEndpoints || PYTHON_FALLBACK_ENDPOINTS[stageName];
