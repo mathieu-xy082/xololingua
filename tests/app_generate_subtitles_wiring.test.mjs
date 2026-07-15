@@ -32,3 +32,18 @@ test("app segmentation no longer exposes legacy direct backend adapters outside 
 test("app consumes canonical VAD stage payload segments while preserving segment review", () => {
   assert.match(appSource, /finishSegmentation\(segmentation\.payload\.segments, stageReports\)/);
 });
+
+test("app consumes canonical transcription and translation stage payload segments", () => {
+  assert.match(appSource, /state\.segments = transcription\.payload\.segments;/);
+  assert.match(appSource, /segments: transcription\.payload\.segments,/);
+  assert.match(appSource, /state\.segments = translation\.payload\.segments;/);
+  assert.doesNotMatch(appSource, /state\.segments = transcription\.payload;/);
+  assert.doesNotMatch(appSource, /state\.segments = translation\.payload;/);
+});
+
+test("app uses the canonical SRT formatting stage output for downloads and reports", () => {
+  assert.match(appSource, /const srtFormatting = await hybridPipelineRouter\.runSrtFormatting\(/);
+  assert.match(appSource, /const srt = srtFormatting\.payload\.srtText;/);
+  assert.match(appSource, /\{ stage: "srtFormatting", \.\.\.srtFormatting \}/);
+  assert.doesNotMatch(appSource, /const srt = await generateSrtAdapter\(/);
+});

@@ -88,6 +88,25 @@ export function createHybridPipelineRouter({
       });
     },
 
+    async runSrtFormatting(segments, onProgress = () => {}) {
+      if (typeof srtFormatter !== "function") {
+        throw new Error("Browser SRT formatter is not configured.");
+      }
+      const normalizedSegments = Array.isArray(segments) ? segments : [];
+      for (const segment of normalizedSegments) {
+        onProgress(Math.round((segment.index / normalizedSegments.length) * 100));
+      }
+      return normalizeSrtFormattingStageResult({
+        runtime: "browser",
+        strategy: "client-srt-formatter",
+        payload: {
+          srtText: srtFormatter(normalizedSegments),
+          segments: normalizedSegments,
+          format: "srt",
+        },
+      });
+    },
+
     async runSubtitlePipeline(
       { file, sourceLanguage, targetLanguage },
       {

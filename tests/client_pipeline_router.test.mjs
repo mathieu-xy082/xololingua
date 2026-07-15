@@ -428,6 +428,29 @@ test("hybrid pipeline router returns canonical SRT formatting stage output when 
   });
 });
 
+test("hybrid pipeline router exposes direct canonical SRT formatting for app downloads", async () => {
+  const router = createHybridPipelineRouter({
+    srtFormatter: (segments) => segments.map((segment) => segment.translatedText).join("\n"),
+  });
+  const segments = [{ index: 1, start: 0, end: 1.5, translatedText: "Hello" }];
+  const progress = [];
+
+  const result = await router.runSrtFormatting(segments, (value) => progress.push(value));
+
+  assert.deepEqual(progress, [100]);
+  assert.deepEqual(result, {
+    stage: "srtFormatting",
+    runtime: "browser",
+    strategy: "client-srt-formatter",
+    payload: {
+      srtText: "Hello",
+      segments,
+      format: "srt",
+    },
+    metadata: {},
+  });
+});
+
 test("hybrid pipeline router summarizes Python fallback stages after a demo subtitle run", async () => {
   const router = createHybridPipelineRouter({
     capabilityReport: {

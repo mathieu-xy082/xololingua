@@ -374,7 +374,7 @@ async function generateSubtitles() {
         syncSubtitleProgress(job);
       },
     );
-    state.segments = transcription.payload;
+    state.segments = transcription.payload.segments;
     renderSegmentReview();
     els.subtitleStatus.textContent = `Subtitle generation: ${formatPipelineStageRuntime({ stage: "transcription", ...transcription })}. Translating subtitles...`;
 
@@ -383,7 +383,7 @@ async function generateSubtitles() {
         extractedAudio: state.extractedAudio,
         sourceLanguage: state.sourceLanguage,
         targetLanguage: state.targetLanguage,
-        segments: state.segments,
+        segments: transcription.payload.segments,
         onJobCreated: (job) => {
           state.subtitleJobId = job.jobId;
           render();
@@ -394,14 +394,16 @@ async function generateSubtitles() {
         syncSubtitleProgress(job);
       },
     );
-    state.segments = translation.payload;
+    state.segments = translation.payload.segments;
     state.pipelineStageReports = [...state.pipelineStageReports, { stage: "transcription", ...transcription }, { stage: "translation", ...translation }];
     renderSegmentReview();
     els.subtitleStatus.textContent = `Subtitle generation: ${formatPipelineStageRuntime({ stage: "translation", ...translation })}. Preparing translated SRT...`;
 
-    const srt = await generateSrtAdapter(state.segments, state.targetLanguage, (progress) => {
+    const srtFormatting = await hybridPipelineRouter.runSrtFormatting(state.segments, () => {
       setSubtitleProgress(100, 100);
     });
+    state.pipelineStageReports = [...state.pipelineStageReports, { stage: "srtFormatting", ...srtFormatting }];
+    const srt = srtFormatting.payload.srtText;
     const fileName = makeSubtitleFileName(state.videoFile.name, state.targetLanguage);
     const blob = new Blob([srt], { type: "application/x-subrip;charset=utf-8" });
 
@@ -528,16 +530,6 @@ function finishSegmentation(segments, stageReports = []) {
   state.busyStep = "";
   setProgress("segmentation", 100);
   render();
-}
-
-
-async function generateSrtAdapter(segments, targetLanguageCode, onProgress) {
-  for (const segment of segments) {
-    await delay(35);
-    onProgress(Math.round((segment.index / segments.length) * 100));
-  }
-
-  return formatSrt(segments);
 }
 
 function render() {
