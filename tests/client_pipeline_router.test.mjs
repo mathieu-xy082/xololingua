@@ -696,3 +696,45 @@ test("hybrid pipeline router returns an ordered user stage report with Python fa
     },
   ]);
 });
+
+test("hybrid pipeline router includes browser failure reasons in fallback stage summaries", async () => {
+  const router = createHybridPipelineRouter({
+    capabilityReport: {
+      stages: {
+        audioExtraction: { runtime: "browser", strategy: "ffmpeg.wasm" },
+        vad: { runtime: "server-fallback", strategy: "unavailable" },
+        transcription: { runtime: "browser", strategy: "transformers.js" },
+        translation: { runtime: "browser", strategy: "local-transformers.js" },
+      },
+    },
+    clientAdapters: {
+      audioExtraction: async () => ({ audioId: "audio-123" }),
+      transcription: async () => {
+        throw new Error("Transformers worker model is unavailable");
+      },
+      translation: async ({ segments }) => segments,
+    },
+    serverAdapters: {
+      vad: async () => [{ index: 1, start: 0, end: 1.5 }],
+      transcription: async ({ segments }) => segments.map((segment) => ({ ...segment, text: "Bonjour" })),
+    },
+  });
+
+  const result = await router.runSubtitlePipeline({
+    file: { name: "clip.mp4" },
+    sourceLanguage: "fr",
+    targetLanguage: "en",
+  });
+
+  assert.deepEqual(result.serverFallbackStages, [
+    {
+      stage: "vad",
+      endpoints: ["POST /api/segment-audio"],
+    },
+    {
+      stage: "transcription",
+      endpoints: ["POST /api/transcribe-audio"],
+      browserFailureReason: "Transformers worker model is unavailable",
+    },
+  ]);
+});
