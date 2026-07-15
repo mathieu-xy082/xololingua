@@ -13,11 +13,13 @@ export function formatPipelineStageRuntime(result) {
   const label = PIPELINE_STAGE_LABELS[result.stage] || result.stage || "Pipeline stage";
   const runtime = result.runtime === "browser" ? "Browser" : "Python fallback";
   const strategy = result.strategy ? ` (${result.strategy})` : "";
-  const fallback = result.fallbackEndpoints?.length
-    ? ` via ${result.fallbackEndpoints.join(", ")}`
+  const fallbackEndpoints = result.metadata?.fallbackEndpoints || result.fallbackEndpoints || [];
+  const browserFailureReason = result.metadata?.browserFailureReason || result.browserFailureReason;
+  const fallback = fallbackEndpoints.length
+    ? ` via ${fallbackEndpoints.join(", ")}`
     : "";
-  const reason = result.browserFailureReason
-    ? ` — fallback reason: ${result.browserFailureReason}`
+  const reason = browserFailureReason
+    ? ` — fallback reason: ${browserFailureReason}`
     : "";
   return `${label}: ${runtime}${strategy}${fallback}${reason}`;
 }
