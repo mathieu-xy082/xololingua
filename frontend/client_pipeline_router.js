@@ -221,8 +221,10 @@ function createStageMetadata({ stageName, stage, browserFailureReason, runtimeIs
   if (runtimeIsFallback) {
     metadata.fallbackEndpoints = stage.fallbackEndpoints || PYTHON_FALLBACK_ENDPOINTS[stageName];
   }
-  if (browserFailureReason || stage.browserFailureReason) {
-    metadata.browserFailureReason = browserFailureReason || stage.browserFailureReason;
+  const failureReason = browserFailureReason || stage.browserFailureReason;
+  if (failureReason) {
+    metadata.fallbackReason = failureReason;
+    metadata.browserFailureReason = failureReason;
   }
   if (browserFailureReason && stage.strategy && stage.strategy !== "unavailable") {
     metadata.attemptedBrowserStrategy = stage.strategy;
