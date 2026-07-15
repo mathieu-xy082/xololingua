@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   normalizeAudioExtractionStageResult,
+  normalizeSrtFormattingStageResult,
   normalizeTranscriptionStageResult,
   normalizeTranslationStageResult,
   normalizeVadStageResult,
@@ -139,4 +140,49 @@ test("translation stage normalization wraps browser translated segments in the c
     },
     metadata: {},
   });
+});
+
+test("SRT formatting stage normalization wraps final subtitle text in the canonical envelope", () => {
+  const result = normalizeSrtFormattingStageResult({
+    runtime: "browser",
+    strategy: "client-srt-formatter",
+    payload: {
+      srtText: "1\n00:00:00,000 --> 00:00:01,500\nHello\n",
+      segments: [
+        { index: 1, start: 0, end: 1.5, translatedText: "Hello" },
+      ],
+    },
+    metadata: {
+      format: "srt",
+      language: "en",
+    },
+  });
+
+  assert.deepEqual(result, {
+    stage: "srtFormatting",
+    runtime: "browser",
+    strategy: "client-srt-formatter",
+    payload: {
+      srtText: "1\n00:00:00,000 --> 00:00:01,500\nHello\n",
+      segments: [
+        { index: 1, start: 0, end: 1.5, translatedText: "Hello" },
+      ],
+      format: "srt",
+    },
+    metadata: {
+      format: "srt",
+      language: "en",
+    },
+  });
+});
+
+test("SRT formatting stage normalization rejects payloads without final SRT text", () => {
+  assert.throws(
+    () => normalizeSrtFormattingStageResult({
+      runtime: "browser",
+      strategy: "client-srt-formatter",
+      payload: { segments: [] },
+    }),
+    /SRT formatting stage result requires a string srtText payload\./,
+  );
 });

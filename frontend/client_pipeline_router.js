@@ -1,5 +1,6 @@
 import {
   normalizeAudioExtractionStageResult,
+  normalizeSrtFormattingStageResult,
   normalizeTranscriptionStageResult,
   normalizeTranslationStageResult,
   normalizeVadStageResult,
@@ -17,6 +18,7 @@ const PIPELINE_STAGE_ORDER = [
   "vad",
   "transcription",
   "translation",
+  "srtFormatting",
 ];
 
 const PIPELINE_STAGE_LABELS = {
@@ -24,6 +26,7 @@ const PIPELINE_STAGE_LABELS = {
   vad: "VAD / segmentation",
   transcription: "Transcription",
   translation: "Translation",
+  srtFormatting: "SRT formatting",
 };
 
 export function createHybridPipelineRouter({
@@ -150,30 +153,45 @@ export function createHybridPipelineRouter({
       });
       onStageComplete(createUserStageReportRow("translation", translation));
 
+      const translatedSegments = translation.payload?.segments || translation.payload;
+      const srtText = typeof srtFormatter === "function" ? srtFormatter(translatedSegments) : undefined;
+      const srtFormatting = typeof srtText === "string"
+        ? normalizeSrtFormattingStageResult({
+            runtime: "browser",
+            strategy: "client-srt-formatter",
+            payload: {
+              srtText,
+              segments: translatedSegments,
+              format: "srt",
+            },
+          })
+        : undefined;
+
       const stageResults = {
         audioExtraction,
         vad,
         transcription,
         translation,
+        ...(srtFormatting ? { srtFormatting } : {}),
       };
-
-      const translatedSegments = translation.payload?.segments || translation.payload;
 
       return {
         audioExtraction,
         vad,
         transcription,
         translation,
+        ...(srtFormatting ? { srtFormatting } : {}),
         stageRuntimes: {
           audioExtraction: audioExtraction.runtime,
           vad: vad.runtime,
           transcription: transcription.runtime,
           translation: translation.runtime,
+          ...(srtFormatting ? { srtFormatting: srtFormatting.runtime } : {}),
         },
         userStageReport: createUserStageReport(stageResults),
         serverFallbackStages: summarizeServerFallbackStages(stageResults),
         translatedSegments,
-        srtText: typeof srtFormatter === "function" ? srtFormatter(translatedSegments) : undefined,
+        srtText,
       };
     },
   };
@@ -200,7 +218,9 @@ function summarizeServerFallbackStages(stageResults) {
 }
 
 function createUserStageReport(stageResults) {
-  return PIPELINE_STAGE_ORDER.map((stage) => createUserStageReportRow(stage, stageResults[stage]));
+  return PIPELINE_STAGE_ORDER
+    .filter((stage) => stageResults[stage])
+    .map((stage) => createUserStageReportRow(stage, stageResults[stage]));
 }
 
 function createUserStageReportRow(stage, result) {

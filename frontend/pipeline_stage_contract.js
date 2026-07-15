@@ -56,6 +56,16 @@ export function normalizeTranslationStageResult({ runtime, strategy, payload = {
   });
 }
 
+export function normalizeSrtFormattingStageResult({ runtime, strategy, payload = {}, metadata = {} } = {}) {
+  return createPipelineStageResult({
+    stage: "srtFormatting",
+    runtime,
+    strategy,
+    payload: normalizeSrtFormattingPayload(payload),
+    metadata,
+  });
+}
+
 export function createPipelineStageResult({ stage, runtime, strategy, payload = {}, metadata = {} } = {}) {
   if (!PIPELINE_STAGES.has(stage)) {
     throw new Error(`Pipeline stage result requires a valid stage; received ${String(stage)}.`);
@@ -118,6 +128,17 @@ function normalizeSegmentsPayload(payload, stageLabel) {
     return { segments: payload.segments };
   }
   throw new Error(`${stageLabel} stage result requires a segments array payload.`);
+}
+
+function normalizeSrtFormattingPayload(payload) {
+  if (!isPlainObject(payload) || typeof payload.srtText !== "string") {
+    throw new Error("SRT formatting stage result requires a string srtText payload.");
+  }
+  return {
+    srtText: payload.srtText,
+    segments: Array.isArray(payload.segments) ? payload.segments : [],
+    format: payload.format ?? "srt",
+  };
 }
 
 function inferAudioStorage({ audioId, audioBlob, runtime }) {

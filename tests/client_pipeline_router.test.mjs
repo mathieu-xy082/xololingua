@@ -364,7 +364,7 @@ test("hybrid pipeline router runs a demo subtitle pipeline with explicit stage r
   ]);
 });
 
-test("hybrid pipeline router returns formatted SRT text when a demo pipeline formatter is configured", async () => {
+test("hybrid pipeline router returns canonical SRT formatting stage output when a demo formatter is configured", async () => {
   const router = createHybridPipelineRouter({
     capabilityReport: {
       stages: {
@@ -397,6 +397,35 @@ test("hybrid pipeline router returns formatted SRT text when a demo pipeline for
   });
 
   assert.equal(result.srtText, "1\n0 --> 1.5\nEN:Bonjour");
+  assert.deepEqual(result.srtFormatting, {
+    stage: "srtFormatting",
+    runtime: "browser",
+    strategy: "client-srt-formatter",
+    payload: {
+      srtText: "1\n0 --> 1.5\nEN:Bonjour",
+      segments: [
+        { index: 1, start: 0, end: 1.5, text: "Bonjour", translatedText: "EN:Bonjour" },
+      ],
+      format: "srt",
+    },
+    metadata: {},
+  });
+  assert.deepEqual(result.stageRuntimes, {
+    audioExtraction: "browser",
+    vad: "server-fallback",
+    transcription: "server-fallback",
+    translation: "browser",
+    srtFormatting: "browser",
+  });
+  assert.deepEqual(result.userStageReport.at(-1), {
+    stage: "srtFormatting",
+    label: "SRT formatting",
+    runtime: "browser",
+    runtimeLabel: "Browser",
+    strategy: "client-srt-formatter",
+    status: "completed",
+    fallbackEndpoints: [],
+  });
 });
 
 test("hybrid pipeline router summarizes Python fallback stages after a demo subtitle run", async () => {

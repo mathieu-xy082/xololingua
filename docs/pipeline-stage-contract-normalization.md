@@ -62,7 +62,25 @@ Rules:
 2. Normalize VAD segmentation output.
 3. Normalize transcription output.
 4. Normalize translation output.
-5. Normalize SRT formatting / final download output if needed.
+5. Normalize SRT formatting / final subtitle text output.
+
+## SRT formatting payload contract
+
+The final formatting stage also uses the canonical envelope. Its payload carries the generated subtitle text plus the translated segments that produced it:
+
+```js
+{
+  srtText: string,
+  segments: Array<object>,
+  format: "srt"
+}
+```
+
+Rules:
+
+- `srtText` is required and must be a string, even when empty.
+- `segments` preserves the translated segment handoff used to generate the final text.
+- The router may keep the legacy top-level `srtText` convenience field, but the canonical source of truth for the final formatting step is `srtFormatting.payload.srtText`.
 
 ## Acceptance criteria
 
