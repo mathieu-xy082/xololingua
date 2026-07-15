@@ -125,6 +125,33 @@ test("client transcriber rejects audio beyond the configured browser duration li
   assert.equal(workerCalled, false);
 });
 
+test("client transcriber rejects audio beyond the configured browser size limit", async () => {
+  let workerCalled = false;
+  const transcriber = createClientTranscriber({
+    environment: {},
+    transformerWorker: async () => {
+      workerCalled = true;
+      return { segments: [] };
+    },
+    maxAudioBytes: 4,
+  });
+
+  await assert.rejects(
+    () => transcriber.transcribeAudio({
+      audio: {
+        pcm: new Float32Array([0.1, -0.1]),
+        sampleRate: 16000,
+        channelCount: 1,
+        sizeBytes: 8,
+      },
+      segments: [],
+      sourceLanguage: "auto",
+    }),
+    /Browser transcription limit exceeded: audio size 8 bytes is greater than the 4 bytes limit\./,
+  );
+  assert.equal(workerCalled, false);
+});
+
 test("client transcriber fails explicitly when no local transcription path is available", async () => {
   const transcriber = createClientTranscriber({ environment: {} });
 
