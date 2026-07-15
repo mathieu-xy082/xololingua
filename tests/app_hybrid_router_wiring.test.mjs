@@ -78,10 +78,15 @@ test("app hybrid router wiring keeps audio extraction and VAD on explicit Python
     },
   });
   assert.deepEqual(segmentation, {
+    stage: "vad",
     runtime: "server-fallback",
     strategy: "python-backend",
-    fallbackEndpoints: ["POST /api/segment-audio"],
-    payload: [{ index: 1, start: 0, end: 1.5, text: "Speech segment 1" }],
+    payload: {
+      segments: [{ index: 1, start: 0, end: 1.5, text: "Speech segment 1" }],
+    },
+    metadata: {
+      fallbackEndpoints: ["POST /api/segment-audio"],
+    },
   });
 });
 
@@ -169,7 +174,7 @@ test("app hybrid router wiring downgrades browser-ready stages to Python fallbac
   assert.equal(segmentation.runtime, "server-fallback");
   assert.equal(segmentation.strategy, "web-audio-vad");
   assert.equal(
-    segmentation.browserFailureReason,
+    segmentation.metadata.browserFailureReason,
     "Browser VAD / segmentation adapter is not configured in app.js; using Python backend fallback.",
   );
 });

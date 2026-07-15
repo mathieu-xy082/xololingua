@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   normalizeAudioExtractionStageResult,
+  normalizeVadStageResult,
 } from "../frontend/pipeline_stage_contract.js";
 
 test("normalizes browser audio extraction into the canonical stage envelope", () => {
@@ -51,4 +52,33 @@ test("rejects successful audio extraction envelopes without a browser blob or se
     }),
     /Audio extraction stage result requires audioId or audioBlob for downstream handoff\./,
   );
+});
+
+test("normalizes VAD segmentation arrays into the canonical stage envelope", () => {
+  const result = normalizeVadStageResult({
+    runtime: "server-fallback",
+    strategy: "python-vad",
+    payload: [
+      { start: 0.12, end: 1.34, confidence: 0.91 },
+      { start: 2.5, end: 3.75 },
+    ],
+    metadata: {
+      fallbackEndpoints: ["POST /api/segment-audio"],
+    },
+  });
+
+  assert.deepEqual(result, {
+    stage: "vad",
+    runtime: "server-fallback",
+    strategy: "python-vad",
+    payload: {
+      segments: [
+        { start: 0.12, end: 1.34, confidence: 0.91 },
+        { start: 2.5, end: 3.75 },
+      ],
+    },
+    metadata: {
+      fallbackEndpoints: ["POST /api/segment-audio"],
+    },
+  });
 });

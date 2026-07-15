@@ -26,6 +26,16 @@ export function normalizeAudioExtractionStageResult({ runtime, strategy, payload
   });
 }
 
+export function normalizeVadStageResult({ runtime, strategy, payload = {}, metadata = {} } = {}) {
+  return createPipelineStageResult({
+    stage: "vad",
+    runtime,
+    strategy,
+    payload: normalizeVadPayload(payload),
+    metadata,
+  });
+}
+
 export function createPipelineStageResult({ stage, runtime, strategy, payload = {}, metadata = {} } = {}) {
   if (!PIPELINE_STAGES.has(stage)) {
     throw new Error(`Pipeline stage result requires a valid stage; received ${String(stage)}.`);
@@ -78,6 +88,16 @@ function normalizeAudioExtractionPayload(payload, runtime) {
   }
 
   return { audioPayload, audioMetadata };
+}
+
+function normalizeVadPayload(payload) {
+  if (Array.isArray(payload)) {
+    return { segments: payload };
+  }
+  if (isPlainObject(payload) && Array.isArray(payload.segments)) {
+    return { segments: payload.segments };
+  }
+  throw new Error("VAD stage result requires a segments array payload.");
 }
 
 function inferAudioStorage({ audioId, audioBlob, runtime }) {

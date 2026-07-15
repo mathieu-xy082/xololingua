@@ -341,7 +341,7 @@ async function segmentAudio() {
       setProgress("segmentation", scaledProgress);
     });
     stageReports.push({ stage: "vad", ...segmentation });
-    finishSegmentation(segmentation.payload, stageReports);
+    finishSegmentation(segmentation.payload.segments, stageReports);
   } catch (segmentationError) {
     els.segmentationStatus.textContent = `${segmentationError.message} Falling back to prototype segmentation.`;
     const segments = await segmentAudioAdapter(state.duration, (progress) => {

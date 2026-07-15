@@ -171,10 +171,15 @@ test("hybrid pipeline router falls back to the Python segmentation endpoint when
   assert.deepEqual(calls, [["server", "audio-123"]]);
   assert.deepEqual(progress, [100]);
   assert.deepEqual(result, {
+    stage: "vad",
     runtime: "server-fallback",
     strategy: "unavailable",
-    fallbackEndpoints: ["POST /api/segment-audio"],
-    payload: [{ start: 0, end: 1.5 }],
+    payload: {
+      segments: [{ start: 0, end: 1.5 }],
+    },
+    metadata: {
+      fallbackEndpoints: ["POST /api/segment-audio"],
+    },
   });
 });
 

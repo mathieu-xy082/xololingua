@@ -28,3 +28,7 @@ test("app segmentation no longer exposes legacy direct backend adapters outside 
   assert.doesNotMatch(appSource, /function extractAudioAdapter\(/);
   assert.doesNotMatch(appSource, /function serviceSegmentAudioAdapter\(/);
 });
+
+test("app consumes canonical VAD stage payload segments while preserving segment review", () => {
+  assert.match(appSource, /finishSegmentation\(segmentation\.payload\.segments, stageReports\)/);
+});

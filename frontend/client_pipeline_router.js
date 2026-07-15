@@ -1,4 +1,7 @@
-import { normalizeAudioExtractionStageResult } from "./pipeline_stage_contract.js";
+import {
+  normalizeAudioExtractionStageResult,
+  normalizeVadStageResult,
+} from "./pipeline_stage_contract.js";
 
 const PYTHON_FALLBACK_ENDPOINTS = {
   audioExtraction: ["POST /api/extract-audio"],
@@ -119,7 +122,7 @@ export function createHybridPipelineRouter({
         stageName: "transcription",
         browserAdapterLabel: "Browser transcription",
         serverAdapterLabel: "Python fallback transcription",
-        input: { audioId, sourceLanguage, segments: vad.payload },
+        input: { audioId, sourceLanguage, segments: vad.payload.segments },
         onProgress: onTranscriptionProgress,
         capabilityReport,
         clientAdapters,
@@ -259,16 +262,23 @@ async function runStage({
         payload,
         metadata: createStageMetadata({ stageName, stage, browserFailureReason, runtimeIsFallback: browserFailureReason || !useBrowser }),
       })
-    : {
-        runtime: browserFailureReason || !useBrowser ? "server-fallback" : "browser",
-        strategy: stage.strategy,
-        payload,
-      };
+    : stageName === "vad"
+      ? normalizeVadStageResult({
+          runtime: browserFailureReason || !useBrowser ? "server-fallback" : "browser",
+          strategy: stage.strategy,
+          payload,
+          metadata: createStageMetadata({ stageName, stage, browserFailureReason, runtimeIsFallback: browserFailureReason || !useBrowser }),
+        })
+      : {
+          runtime: browserFailureReason || !useBrowser ? "server-fallback" : "browser",
+          strategy: stage.strategy,
+          payload,
+        };
 
-  if (stageName !== "audioExtraction" && result.runtime === "server-fallback") {
+  if (stageName !== "audioExtraction" && stageName !== "vad" && result.runtime === "server-fallback") {
     result.fallbackEndpoints = stage.fallbackEndpoints || PYTHON_FALLBACK_ENDPOINTS[stageName];
   }
-  if (stageName !== "audioExtraction" && (browserFailureReason || stage.browserFailureReason)) {
+  if (stageName !== "audioExtraction" && stageName !== "vad" && (browserFailureReason || stage.browserFailureReason)) {
     result.browserFailureReason = browserFailureReason || stage.browserFailureReason;
   }
 
