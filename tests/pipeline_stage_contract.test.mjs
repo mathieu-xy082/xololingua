@@ -76,12 +76,49 @@ test("normalizes VAD segmentation arrays into the canonical stage envelope", () 
     strategy: "python-vad",
     payload: {
       segments: [
-        { start: 0.12, end: 1.34, confidence: 0.91 },
+        { start: 0.12, end: 1.34 },
         { start: 2.5, end: 3.75 },
       ],
     },
     metadata: {
       fallbackEndpoints: ["POST /api/segment-audio"],
+      segmentDiagnostics: [
+        { index: 0, confidence: 0.91 },
+      ],
+    },
+  });
+});
+
+test("VAD stage normalization keeps timing handoff in payload and diagnostics in metadata", () => {
+  const result = normalizeVadStageResult({
+    runtime: "browser",
+    strategy: "vad-web",
+    payload: {
+      segments: [
+        { start: 0.12, end: 1.34, confidence: 0.91, speechProbability: 0.87 },
+        { start: 2.5, end: 3.75 },
+      ],
+    },
+    metadata: {
+      model: "silero-v5",
+    },
+  });
+
+  assert.deepEqual(result, {
+    stage: "vad",
+    runtime: "browser",
+    strategy: "vad-web",
+    payload: {
+      segments: [
+        { start: 0.12, end: 1.34 },
+        { start: 2.5, end: 3.75 },
+      ],
+    },
+    metadata: {
+      model: "silero-v5",
+      segmentDiagnostics: [
+        { index: 0, confidence: 0.91, speechProbability: 0.87 },
+      ],
     },
   });
 });

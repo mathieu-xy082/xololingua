@@ -27,12 +27,13 @@ export function normalizeAudioExtractionStageResult({ runtime, strategy, payload
 }
 
 export function normalizeVadStageResult({ runtime, strategy, payload = {}, metadata = {} } = {}) {
+  const { segmentsPayload, vadMetadata } = normalizeVadSegmentsPayload(payload, metadata);
   return createPipelineStageResult({
     stage: "vad",
     runtime,
     strategy,
-    payload: normalizeSegmentsPayload(payload, "VAD"),
-    metadata,
+    payload: segmentsPayload,
+    metadata: vadMetadata,
   });
 }
 
@@ -128,6 +129,39 @@ function normalizeSegmentsPayload(payload, stageLabel) {
     return { segments: payload.segments };
   }
   throw new Error(`${stageLabel} stage result requires a segments array payload.`);
+}
+
+function normalizeVadSegmentsPayload(payload, metadata) {
+  const { segments } = normalizeSegmentsPayload(payload, "VAD");
+  const segmentDiagnostics = [];
+  const normalizedSegments = segments.map((segment, index) => {
+    const { diagnostics, normalizedSegment } = splitVadSegmentDiagnostics(segment);
+    if (Object.keys(diagnostics).length > 0) {
+      segmentDiagnostics.push({ index, ...diagnostics });
+    }
+    return normalizedSegment;
+  });
+
+  return {
+    segmentsPayload: { segments: normalizedSegments },
+    vadMetadata: segmentDiagnostics.length > 0
+      ? { ...metadata, segmentDiagnostics }
+      : metadata,
+  };
+}
+
+function splitVadSegmentDiagnostics(segment) {
+  const diagnosticKeys = new Set(["confidence", "speechProbability", "probability", "score"]);
+  const normalizedSegment = {};
+  const diagnostics = {};
+  for (const [key, value] of Object.entries(segment)) {
+    if (diagnosticKeys.has(key)) {
+      diagnostics[key] = value;
+    } else {
+      normalizedSegment[key] = value;
+    }
+  }
+  return { normalizedSegment, diagnostics };
 }
 
 function normalizeSrtFormattingPayload(payload) {
