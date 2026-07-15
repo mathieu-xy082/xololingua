@@ -60,16 +60,33 @@ test("app hybrid router wiring keeps audio extraction and VAD on explicit Python
     ["vad", 100],
   ]);
   assert.deepEqual(extraction, {
+    stage: "audioExtraction",
     runtime: "server-fallback",
     strategy: "python-backend",
-    fallbackEndpoints: ["POST /api/extract-audio"],
-    payload: { audioId: "audio-123", audioFileName: "clip.wav", audioSizeBytes: 4096 },
+    payload: {
+      audioId: "audio-123",
+      audioBlob: null,
+      storage: "server",
+      mimeType: null,
+      sampleRateHz: null,
+      durationSeconds: null,
+    },
+    metadata: {
+      audioFileName: "clip.wav",
+      audioSizeBytes: 4096,
+      fallbackEndpoints: ["POST /api/extract-audio"],
+    },
   });
   assert.deepEqual(segmentation, {
+    stage: "vad",
     runtime: "server-fallback",
     strategy: "python-backend",
-    fallbackEndpoints: ["POST /api/segment-audio"],
-    payload: [{ index: 1, start: 0, end: 1.5, text: "Speech segment 1" }],
+    payload: {
+      segments: [{ index: 1, start: 0, end: 1.5, text: "Speech segment 1" }],
+    },
+    metadata: {
+      fallbackEndpoints: ["POST /api/segment-audio"],
+    },
   });
 });
 
@@ -102,9 +119,21 @@ test("app hybrid router wiring uses the configured browser audio extraction adap
   assert.deepEqual(calls, [["browser-audio", "clip.mp4"]]);
   assert.deepEqual(progress, [100]);
   assert.deepEqual(extraction, {
+    stage: "audioExtraction",
     runtime: "browser",
     strategy: "ffmpeg.wasm",
-    payload: { audioId: "browser-audio", audioFileName: "clip.wav", audioSizeBytes: 4096 },
+    payload: {
+      audioId: "browser-audio",
+      audioBlob: null,
+      storage: "server",
+      mimeType: null,
+      sampleRateHz: null,
+      durationSeconds: null,
+    },
+    metadata: {
+      audioFileName: "clip.wav",
+      audioSizeBytes: 4096,
+    },
   });
 });
 
@@ -139,13 +168,13 @@ test("app hybrid router wiring downgrades browser-ready stages to Python fallbac
   assert.equal(extraction.runtime, "server-fallback");
   assert.equal(extraction.strategy, "ffmpeg.wasm");
   assert.equal(
-    extraction.browserFailureReason,
+    extraction.metadata.browserFailureReason,
     "Browser audio extraction adapter is not configured in app.js; using Python backend fallback.",
   );
   assert.equal(segmentation.runtime, "server-fallback");
   assert.equal(segmentation.strategy, "web-audio-vad");
   assert.equal(
-    segmentation.browserFailureReason,
+    segmentation.metadata.browserFailureReason,
     "Browser VAD / segmentation adapter is not configured in app.js; using Python backend fallback.",
   );
 });
@@ -182,10 +211,15 @@ test("app hybrid router wiring runs transcription through the Python transcripti
   assert.deepEqual(calls, [["transcribeAudio", "audio-123", "fr", 1]]);
   assert.deepEqual(progress, [{ stage: "transcribing", progress: 55 }]);
   assert.deepEqual(result, {
+    stage: "transcription",
     runtime: "server-fallback",
     strategy: "python-backend",
-    fallbackEndpoints: ["POST /api/transcribe-audio"],
-    payload: [{ index: 1, start: 0, end: 1.5, text: "Bonjour" }],
+    payload: {
+      segments: [{ index: 1, start: 0, end: 1.5, text: "Bonjour" }],
+    },
+    metadata: {
+      fallbackEndpoints: ["POST /api/transcribe-audio"],
+    },
   });
 });
 
@@ -223,10 +257,15 @@ test("app hybrid router wiring translates already-transcribed segments through t
   assert.deepEqual(calls, [["translateSegments", "fr", "en", 1]]);
   assert.deepEqual(jobUpdates, [{ stage: "translating", progress: 100 }]);
   assert.deepEqual(result, {
+    stage: "translation",
     runtime: "server-fallback",
     strategy: "python-backend",
-    fallbackEndpoints: ["POST /api/translate-segments"],
-    payload: [{ index: 1, start: 0, end: 1.5, text: "Bonjour", translatedText: "Hello" }],
+    payload: {
+      segments: [{ index: 1, start: 0, end: 1.5, text: "Bonjour", translatedText: "Hello" }],
+    },
+    metadata: {
+      fallbackEndpoints: ["POST /api/translate-segments"],
+    },
   });
 });
 

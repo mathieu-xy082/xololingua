@@ -1,4 +1,4 @@
-const CACHE_NAME = "xololingua-v9";
+const CACHE_NAME = "xololingua-v10";
 const ASSETS = [
   ".",
   "styles.css?v=2026-05-17-3",
@@ -7,6 +7,7 @@ const ASSETS = [
   "frontend/app_hybrid_router_wiring.js",
   "frontend/client_pipeline_capabilities.js",
   "frontend/client_pipeline_router.js",
+  "frontend/pipeline_stage_contract.js",
   "frontend/client_srt_formatter.js",
   "frontend/pipeline_stage_status.js",
   "manifest.webmanifest?v=2026-05-17-3",

@@ -32,9 +32,18 @@ test("hybrid pipeline router runs browser audio extraction when the stage is bro
   assert.deepEqual(calls, [["client", "clip.mp4"]]);
   assert.deepEqual(progress, [100]);
   assert.deepEqual(result, {
+    stage: "audioExtraction",
     runtime: "browser",
     strategy: "ffmpeg.wasm",
-    payload: { audioId: "browser-audio", sampleRate: 16000 },
+    payload: {
+      audioId: "browser-audio",
+      audioBlob: null,
+      storage: "server",
+      mimeType: null,
+      sampleRateHz: 16000,
+      durationSeconds: null,
+    },
+    metadata: {},
   });
 });
 
@@ -67,11 +76,22 @@ test("hybrid pipeline router falls back to the Python audio endpoint when browse
   assert.deepEqual(calls, [["client", "clip.mp4"], ["server", "clip.mp4"]]);
   assert.deepEqual(progress, [45]);
   assert.deepEqual(result, {
+    stage: "audioExtraction",
     runtime: "server-fallback",
     strategy: "ffmpeg.wasm",
-    fallbackEndpoints: ["POST /api/extract-audio"],
-    browserFailureReason: "ffmpeg.wasm failed to load",
-    payload: { audioId: "server-audio", audioFileName: "clip.wav" },
+    payload: {
+      audioId: "server-audio",
+      audioBlob: null,
+      storage: "server",
+      mimeType: null,
+      sampleRateHz: null,
+      durationSeconds: null,
+    },
+    metadata: {
+      audioFileName: "clip.wav",
+      fallbackEndpoints: ["POST /api/extract-audio"],
+      browserFailureReason: "ffmpeg.wasm failed to load",
+    },
   });
 });
 
@@ -104,10 +124,21 @@ test("hybrid pipeline router falls back to the Python audio endpoint when browse
   assert.deepEqual(calls, [["server", "clip.mp4"]]);
   assert.deepEqual(progress, [35]);
   assert.deepEqual(result, {
+    stage: "audioExtraction",
     runtime: "server-fallback",
     strategy: "unavailable",
-    fallbackEndpoints: ["POST /api/extract-audio"],
-    payload: { audioId: "server-audio", audioFileName: "clip.wav" },
+    payload: {
+      audioId: "server-audio",
+      audioBlob: null,
+      storage: "server",
+      mimeType: null,
+      sampleRateHz: null,
+      durationSeconds: null,
+    },
+    metadata: {
+      audioFileName: "clip.wav",
+      fallbackEndpoints: ["POST /api/extract-audio"],
+    },
   });
 });
 
@@ -140,10 +171,15 @@ test("hybrid pipeline router falls back to the Python segmentation endpoint when
   assert.deepEqual(calls, [["server", "audio-123"]]);
   assert.deepEqual(progress, [100]);
   assert.deepEqual(result, {
+    stage: "vad",
     runtime: "server-fallback",
     strategy: "unavailable",
-    fallbackEndpoints: ["POST /api/segment-audio"],
-    payload: [{ start: 0, end: 1.5 }],
+    payload: {
+      segments: [{ start: 0, end: 1.5 }],
+    },
+    metadata: {
+      fallbackEndpoints: ["POST /api/segment-audio"],
+    },
   });
 });
 
@@ -179,10 +215,15 @@ test("hybrid pipeline router falls back to the Python transcription endpoint whe
   assert.deepEqual(calls, [["server", "audio-123", "fr"]]);
   assert.deepEqual(progress, [{ transcriptionProgress: 100 }]);
   assert.deepEqual(result, {
+    stage: "transcription",
     runtime: "server-fallback",
     strategy: "unavailable",
-    fallbackEndpoints: ["POST /api/transcribe-audio"],
-    payload: [{ index: 1, text: "bonjour" }],
+    payload: {
+      segments: [{ index: 1, text: "bonjour" }],
+    },
+    metadata: {
+      fallbackEndpoints: ["POST /api/transcribe-audio"],
+    },
   });
 });
 
@@ -222,10 +263,15 @@ test("hybrid pipeline router falls back to the Python subtitle job endpoint when
   assert.deepEqual(calls, [["server", "fr", "en"]]);
   assert.deepEqual(progress, [{ translationProgress: 100 }]);
   assert.deepEqual(result, {
+    stage: "translation",
     runtime: "server-fallback",
     strategy: "unavailable",
-    fallbackEndpoints: ["POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
-    payload: [{ index: 1, translatedText: "Hello" }],
+    payload: {
+      segments: [{ index: 1, translatedText: "Hello" }],
+    },
+    metadata: {
+      fallbackEndpoints: ["POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
+    },
   });
 });
 
@@ -318,7 +364,7 @@ test("hybrid pipeline router runs a demo subtitle pipeline with explicit stage r
   ]);
 });
 
-test("hybrid pipeline router returns formatted SRT text when a demo pipeline formatter is configured", async () => {
+test("hybrid pipeline router returns canonical SRT formatting stage output when a demo formatter is configured", async () => {
   const router = createHybridPipelineRouter({
     capabilityReport: {
       stages: {
@@ -351,6 +397,58 @@ test("hybrid pipeline router returns formatted SRT text when a demo pipeline for
   });
 
   assert.equal(result.srtText, "1\n0 --> 1.5\nEN:Bonjour");
+  assert.deepEqual(result.srtFormatting, {
+    stage: "srtFormatting",
+    runtime: "browser",
+    strategy: "client-srt-formatter",
+    payload: {
+      srtText: "1\n0 --> 1.5\nEN:Bonjour",
+      segments: [
+        { index: 1, start: 0, end: 1.5, text: "Bonjour", translatedText: "EN:Bonjour" },
+      ],
+      format: "srt",
+    },
+    metadata: {},
+  });
+  assert.deepEqual(result.stageRuntimes, {
+    audioExtraction: "browser",
+    vad: "server-fallback",
+    transcription: "server-fallback",
+    translation: "browser",
+    srtFormatting: "browser",
+  });
+  assert.deepEqual(result.userStageReport.at(-1), {
+    stage: "srtFormatting",
+    label: "SRT formatting",
+    runtime: "browser",
+    runtimeLabel: "Browser",
+    strategy: "client-srt-formatter",
+    status: "completed",
+    fallbackEndpoints: [],
+  });
+});
+
+test("hybrid pipeline router exposes direct canonical SRT formatting for app downloads", async () => {
+  const router = createHybridPipelineRouter({
+    srtFormatter: (segments) => segments.map((segment) => segment.translatedText).join("\n"),
+  });
+  const segments = [{ index: 1, start: 0, end: 1.5, translatedText: "Hello" }];
+  const progress = [];
+
+  const result = await router.runSrtFormatting(segments, (value) => progress.push(value));
+
+  assert.deepEqual(progress, [100]);
+  assert.deepEqual(result, {
+    stage: "srtFormatting",
+    runtime: "browser",
+    strategy: "client-srt-formatter",
+    payload: {
+      srtText: "Hello",
+      segments,
+      format: "srt",
+    },
+    metadata: {},
+  });
 });
 
 test("hybrid pipeline router summarizes Python fallback stages after a demo subtitle run", async () => {
