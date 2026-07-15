@@ -25,6 +25,8 @@ git@gitlab.com:android-app-games/xololingua.git
 - Les validations doivent distinguer clairement : unitaires, frontend, `pdm run check`, API E2E, browser/user E2E.
 - Les artefacts temporaires/générés doivent rester hors repo, sous `/root/.cache/xololingua/tmp` si nécessaire.
 - Après des commits uniquement documentaires sur `ec/backend`, ne pas rebaser toutes les branches immédiatement; attendre environ 3–4 commits docs ou 5 jours max, sauf changement code/contrat/CI.
+- Ne pas confondre branche intégrée et branche placeholder : une branche active avec `0` commit unique vs `ec/backend` est à démarrer/débloquer, pas à considérer terminée.
+- Après intégration réelle d'une branche feature dans sa target et pause du job associé, supprimer la branche remote feature après vérification de containment.
 
 ## État d'intégration courant
 
@@ -33,7 +35,7 @@ git@gitlab.com:android-app-games/xololingua.git
 - router hybride et reporting de stages browser/server;
 - extraction audio navigateur WebCodecs/ffmpeg.wasm + fallback Python;
 - wiring audio runtime actuellement aligné avec `ec/backend`;
-- VAD segmentation branchée au même commit que `ec/backend` à la date de ce plan.
+- les anciennes branches de migration audio/router/review ont été absorbées dans `ec/backend` puis supprimées du remote pour éviter les faux workstreams.
 
 Le prochain risque architectural est l'incompatibilité subtile entre résultats navigateur et fallback Python. La priorité est donc maintenant la normalisation canonique du contrat de sortie de chaque stage.
 
@@ -74,14 +76,14 @@ BRANCHE PRÊTE POUR REVIEW: <branch>
 
 | Job ID | Nom | Branche | État | Note |
 |---|---|---|---|---|
-| `5ae54a428d43` | XoloLingua P0 browser audio contract/runtime wiring | `ec/browser-audio-runtime-wiring` | pause | Branche sans commit propre vs `ec/backend`; conservée pour historique |
+| `5ae54a428d43` | XoloLingua P0 browser audio contract/runtime wiring | `ec/browser-audio-runtime-wiring` | pause | Placeholder sans commit propre vs `ec/backend`; branche remote supprimée après vérification de containment |
 | `885307802b8f` | XoloLingua backend-to-client migration — usable client milestone by 2026-07-22 | `ec/backend` | pause | Ancien job monolithique |
-| `36180c1d35d6` | XoloLingua browser audio extraction workstream | `ec/browser-audio-extraction` | historique/intégré | Socle extraction audio déjà dans `ec/backend` |
-| `0feea85268be` | XoloLingua hybrid pipeline routing workstream | `ec/hybrid-pipeline-routing` | pause | Intégré dans `ec/backend` |
-| `469e4544f5ce` | XoloLingua app hybrid router wiring workstream | `ec/app-hybrid-router-wiring` | historique/intégré | Socle app/router déjà dans `ec/backend` |
+| `36180c1d35d6` | XoloLingua browser audio extraction workstream | `ec/browser-audio-extraction` | historique/intégré | Socle extraction audio dans `ec/backend`; branche remote supprimée |
+| `0feea85268be` | XoloLingua hybrid pipeline routing workstream | `ec/hybrid-pipeline-routing` | pause | Intégré dans `ec/backend`; branche remote supprimée |
+| `469e4544f5ce` | XoloLingua app hybrid router wiring workstream | `ec/app-hybrid-router-wiring` | historique/intégré | Socle app/router dans `ec/backend`; branche remote supprimée |
 | `639f23a146c0` | XoloLingua client ML stages workstream | `ec/client-ml-stages` | remplacé/ancien | Remplacé par `46a6795cd1ff` dans le pilotage actuel |
 | `63a1182beb92` | XoloLingua PWA offline integration workstream | `ec/pwa-offline-integration` | remplacé/ancien | Remplacé par `5263f6352045` dans le pilotage actuel |
-| `89e76696343f` | XoloLingua backend review stabilization workstream | `ec/backend-review-stabilization` | pause | Intégré/clos |
+| `89e76696343f` | XoloLingua backend review stabilization workstream | `ec/backend-review-stabilization` | pause | Intégré/clos; branche remote supprimée |
 
 ## Branches surveillées
 
@@ -97,13 +99,8 @@ Branches spécialisées actives :
 - `ec/client-ml-stages`
 - `ec/pwa-offline-integration`
 
-Branches historiques/follow-up à surveiller sans les réutiliser automatiquement :
+Branches historiques/follow-up encore présentes à surveiller sans les réutiliser automatiquement :
 
-- `ec/browser-audio-runtime-wiring`
-- `ec/browser-audio-extraction`
-- `ec/hybrid-pipeline-routing`
-- `ec/app-hybrid-router-wiring`
-- `ec/backend-review-stabilization`
 - `ec/more-languages`
 - `follow/more-languages`
 - `ec/many-languages`
