@@ -33,6 +33,11 @@ test("app consumes canonical VAD stage payload segments while preserving segment
   assert.match(appSource, /finishSegmentation\(segmentation\.payload\.segments, stageReports\)/);
 });
 
+test("app carries canonical audio extraction metadata into segmentation status details", () => {
+  assert.match(appSource, /state\.extractedAudio = \{ \.\.\.extraction\.payload, \.\.\.extraction\.metadata \};/);
+  assert.match(appSource, /formatBytes\(state\.extractedAudio\.audioSizeBytes\)/);
+});
+
 test("app consumes canonical transcription and translation stage payload segments", () => {
   assert.match(appSource, /state\.segments = transcription\.payload\.segments;/);
   assert.match(appSource, /segments: transcription\.payload\.segments,/);

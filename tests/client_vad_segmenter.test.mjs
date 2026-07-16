@@ -120,6 +120,48 @@ test("client VAD segmenter uses the environment segmenter when no explicit injec
   });
 });
 
+test("client VAD segmenter adapts vad-web non-real-time segments into canonical VAD envelopes", async () => {
+  const runCalls = [];
+  const environment = {
+    vad: {
+      NonRealTimeVAD: {
+        new: async () => ({
+          async *run(pcm, sampleRate) {
+            runCalls.push({ pcm, sampleRate });
+            yield { start: 1600, end: 3200, confidence: 0.92 };
+            yield { start: 0.5, end: 0.75, probability: 0.81 };
+          },
+        }),
+      },
+    },
+  };
+  const audio = { pcm: new Float32Array([0.1, -0.1]), sampleRate: 16000 };
+  const progress = [];
+  const segmenter = createClientVadSegmenter({ environment });
+
+  const result = await segmenter.segmentAudio(audio, (value) => progress.push(value));
+
+  assert.deepEqual(runCalls, [{ pcm: audio.pcm, sampleRate: 16000 }]);
+  assert.deepEqual(progress, [0, 100]);
+  assert.deepEqual(result, {
+    stage: "vad",
+    runtime: "browser",
+    strategy: "vad-web",
+    payload: {
+      segments: [
+        { start: 0.1, end: 0.2 },
+        { start: 0.5, end: 0.75 },
+      ],
+    },
+    metadata: {
+      segmentDiagnostics: [
+        { index: 0, confidence: 0.92 },
+        { index: 1, probability: 0.81 },
+      ],
+    },
+  });
+});
+
 test("client VAD segmenter fails explicitly when no browser VAD path is available", async () => {
   const segmenter = createClientVadSegmenter({ environment: {} });
 

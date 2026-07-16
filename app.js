@@ -321,7 +321,7 @@ async function segmentAudio() {
         setProgress("segmentation", progress);
       });
       stageReports.push({ stage: "audioExtraction", ...extraction });
-      state.extractedAudio = extraction.payload;
+      state.extractedAudio = { ...extraction.payload, ...extraction.metadata };
       els.segmentationStatus.textContent = `${formatPipelineStageRuntime({ stage: "audioExtraction", ...extraction })}. Segmenting speech audio...`;
     } catch (extractionError) {
       els.segmentationStatus.textContent = `${extractionError.message} Falling back to prototype segmentation.`;
