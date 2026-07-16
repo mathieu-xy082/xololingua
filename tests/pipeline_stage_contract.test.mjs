@@ -123,6 +123,21 @@ test("VAD stage normalization keeps timing handoff in payload and diagnostics in
   });
 });
 
+test("VAD stage normalization rejects segments without numeric timing handoff", () => {
+  assert.throws(
+    () => normalizeVadStageResult({
+      runtime: "browser",
+      strategy: "vad-web",
+      payload: {
+        segments: [
+          { start: 0.12, end: "1.34", confidence: 0.91 },
+        ],
+      },
+    }),
+    /VAD stage segment 0 requires numeric start and end values\./,
+  );
+});
+
 test("transcription stage normalization wraps Python fallback segments in the canonical envelope", () => {
   const result = normalizeTranscriptionStageResult({
     runtime: "server-fallback",

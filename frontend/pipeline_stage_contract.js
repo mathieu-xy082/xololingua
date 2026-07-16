@@ -136,6 +136,9 @@ function normalizeVadSegmentsPayload(payload, metadata) {
   const segmentDiagnostics = [];
   const normalizedSegments = segments.map((segment, index) => {
     const { diagnostics, normalizedSegment } = splitVadSegmentDiagnostics(segment);
+    if (typeof normalizedSegment.start !== "number" || typeof normalizedSegment.end !== "number") {
+      throw new Error(`VAD stage segment ${index} requires numeric start and end values.`);
+    }
     if (Object.keys(diagnostics).length > 0) {
       segmentDiagnostics.push({ index, ...diagnostics });
     }
