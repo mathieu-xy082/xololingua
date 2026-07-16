@@ -47,6 +47,7 @@ test("client pipeline report includes demo-ready fallback labels and server endp
 
   assert.deepEqual(report.demoSummary, {
     headline: "Hybrid PWA: 2 browser stages, 2 Python fallback stages",
+    offlineScopeLabel: "Offline assets available; processing is partial and VAD / segmentation, Translation still need Python fallback.",
     browserStageLabels: ["Audio extraction", "Transcription"],
     serverFallbackStageLabels: ["VAD / segmentation", "Translation"],
     serverFallbackEndpoints: [
@@ -112,6 +113,26 @@ test("client pipeline fallback endpoint metadata names direct backend fallbacks 
         endpoints: ["POST /api/translate-segments", "POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
       },
     ],
+  );
+});
+
+test("client pipeline report separates offline shell assets from backend-only processing stages", () => {
+  const report = createClientPipelineCapabilityReport({
+    audioExtraction: { strategy: "ffmpeg.wasm" },
+    vad: { strategy: "unavailable" },
+    transcription: { strategy: "unavailable" },
+    translation: { strategy: "unavailable" },
+  });
+
+  assert.deepEqual(report.offlineAvailability, {
+    assets: "available",
+    processing: "partial-browser-with-python-fallback",
+    offlineCapableStages: ["audioExtraction"],
+    backendRequiredStages: ["vad", "transcription", "translation"],
+  });
+  assert.equal(
+    report.demoSummary.offlineScopeLabel,
+    "Offline assets available; processing is partial and VAD / segmentation, Transcription, Translation still need Python fallback.",
   );
 });
 

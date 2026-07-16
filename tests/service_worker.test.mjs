@@ -96,6 +96,7 @@ test("PWA shell displays honest offline asset and Python fallback metadata", () 
   assert.match(indexSource, /id=["']pipelineFallbackStages["']/);
   assert.match(indexSource, /id=["']pipelineFallbackEndpoints["']/);
   assert.match(appSource, /clientPipelineCapabilities\.demoSummary/);
+  assert.match(appSource, /summary\.offlineScopeLabel/);
   assert.match(appSource, /serverFallbackEndpoints/);
   assert.match(appSource, /Offline assets available; ML stages may still need Python fallback/);
 });

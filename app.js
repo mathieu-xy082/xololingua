@@ -149,7 +149,7 @@ function populateLanguages() {
 
 function renderPipelineCapabilitySummary() {
   const summary = clientPipelineCapabilities.demoSummary;
-  els.pwaOfflineScope.textContent = "Offline assets available; ML stages may still need Python fallback.";
+  els.pwaOfflineScope.textContent = summary.offlineScopeLabel || "Offline assets available; ML stages may still need Python fallback.";
   els.pwaOfflineScope.title = summary.headline;
   els.pipelineBrowserStages.textContent = summary.browserStageLabels.length > 0
     ? summary.browserStageLabels.join(", ")

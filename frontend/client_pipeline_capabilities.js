@@ -57,25 +57,45 @@ export function createClientPipelineCapabilityReport(capabilitiesByStage) {
   }
 
   const mode = serverFallbackStages.length === 0 ? "client-side" : "hybrid-fallback";
+  const offlineAvailability = createOfflineAvailability({ browserStages, serverFallbackStages });
 
   return {
     mode,
     stages,
     browserStages,
     serverFallbackStages,
-    demoSummary: createDemoSummary({ mode, stages, browserStages, serverFallbackStages }),
+    offlineAvailability,
+    demoSummary: createDemoSummary({ mode, stages, browserStages, serverFallbackStages, offlineAvailability }),
   };
 }
 
-function createDemoSummary({ mode, stages, browserStages, serverFallbackStages }) {
+function createOfflineAvailability({ browserStages, serverFallbackStages }) {
+  const processing = serverFallbackStages.length === 0
+    ? "browser-only"
+    : browserStages.length > 0
+      ? "partial-browser-with-python-fallback"
+      : "backend-required";
+
+  return {
+    assets: "available",
+    processing,
+    offlineCapableStages: [...browserStages],
+    backendRequiredStages: [...serverFallbackStages],
+  };
+}
+
+function createDemoSummary({ mode, stages, browserStages, serverFallbackStages, offlineAvailability }) {
   const browserCount = browserStages.length;
   const fallbackCount = serverFallbackStages.length;
   const headline = mode === "client-side"
     ? `Client-side PWA: ${browserCount} browser stages, no Python fallback stages`
     : `Hybrid PWA: ${browserCount} browser stages, ${fallbackCount} Python fallback stages`;
 
+  const offlineScopeLabel = createOfflineScopeLabel(offlineAvailability);
+
   return {
     headline,
+    offlineScopeLabel,
     browserStageLabels: browserStages.map((stageName) => PIPELINE_STAGE_LABELS[stageName]),
     serverFallbackStageLabels: serverFallbackStages.map((stageName) => PIPELINE_STAGE_LABELS[stageName]),
     serverFallbackEndpoints: serverFallbackStages.map((stageName) => ({
@@ -91,4 +111,20 @@ function createDemoSummary({ mode, stages, browserStages, serverFallbackStages }
       fallbackEndpoints: stages[stageName].runtime === "browser" ? [] : PYTHON_FALLBACK_ENDPOINTS[stageName],
     })),
   };
+}
+
+function createOfflineScopeLabel(offlineAvailability) {
+  if (offlineAvailability.backendRequiredStages.length === 0) {
+    return "Offline assets available; configured processing stages can run in the browser.";
+  }
+
+  const fallbackLabels = offlineAvailability.backendRequiredStages
+    .map((stageName) => PIPELINE_STAGE_LABELS[stageName])
+    .join(", ");
+
+  if (offlineAvailability.offlineCapableStages.length === 0) {
+    return `Offline assets available; processing still needs Python fallback for ${fallbackLabels}.`;
+  }
+
+  return `Offline assets available; processing is partial and ${fallbackLabels} still need Python fallback.`;
 }
