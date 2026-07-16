@@ -20,6 +20,7 @@ export function detectClientTranslationCapabilities(environment = globalThis) {
 export function createClientTranslator({
   environment = globalThis,
   localTranslatorWorker,
+  workerUrl,
   cloudTranslator,
   maxSegments,
 } = {}) {
@@ -36,10 +37,13 @@ export function createClientTranslator({
         throw new Error(`Browser translation limit exceeded: ${segmentCount} segments is greater than the ${maxSegments} ${segmentLabel} limit.`);
       }
 
-      const translate = typeof localTranslatorWorker === "function"
+      const localTranslate = typeof localTranslatorWorker === "function"
         ? localTranslatorWorker
+        : createTranslationWorkerClient({ environment, workerUrl });
+      const translate = typeof localTranslate === "function"
+        ? localTranslate
         : cloudTranslator;
-      const strategy = typeof localTranslatorWorker === "function"
+      const strategy = typeof localTranslate === "function"
         ? "local-transformers.js"
         : "cloud-provider";
 
@@ -69,4 +73,42 @@ export function createClientTranslator({
       };
     },
   };
+}
+
+function createTranslationWorkerClient({ environment, workerUrl }) {
+  if (!workerUrl || typeof environment?.Worker !== "function") {
+    return undefined;
+  }
+
+  return (request, onProgress) => new Promise((resolve, reject) => {
+    const worker = new environment.Worker(workerUrl, { type: "module" });
+    const cleanup = () => {
+      if (typeof worker.terminate === "function") {
+        worker.terminate();
+      }
+    };
+
+    worker.onerror = (event) => {
+      cleanup();
+      reject(new Error(event?.message || "Browser translation worker failed."));
+    };
+    worker.onmessage = (event) => {
+      const message = event?.data || {};
+      if (message.type === "progress") {
+        onProgress(message.event);
+        return;
+      }
+      if (message.type === "error") {
+        cleanup();
+        reject(new Error(message.error || "Browser translation worker failed."));
+        return;
+      }
+      if (message.type === "result") {
+        cleanup();
+        resolve(message.result || {});
+      }
+    };
+
+    worker.postMessage({ type: "translate", request });
+  });
 }

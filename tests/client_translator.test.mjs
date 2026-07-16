@@ -61,6 +61,63 @@ test("client translator delegates segment translation to an injected local trans
   });
 });
 
+test("client translator runs local translation through a configured Web Worker boundary", async () => {
+  const workerInstances = [];
+  class FakeWorker {
+    constructor(url, options) {
+      this.url = url;
+      this.options = options;
+      this.messages = [];
+      this.terminated = false;
+      workerInstances.push(this);
+    }
+
+    postMessage(message) {
+      this.messages.push(message);
+      queueMicrotask(() => {
+        this.onmessage({ data: { type: "progress", event: { stage: "loading-model", progress: 35 } } });
+        this.onmessage({
+          data: {
+            type: "result",
+            result: {
+              segments: [{ index: 3, text: "Hello" }],
+            },
+          },
+        });
+      });
+    }
+
+    terminate() {
+      this.terminated = true;
+    }
+  }
+  const sourceSegments = [{ index: 3, start: 0, end: 1, text: "Bonjour" }];
+  const progress = [];
+  const translator = createClientTranslator({
+    environment: { Worker: FakeWorker },
+    workerUrl: "/workers/translator.js",
+  });
+
+  const result = await translator.translateSegments(
+    { segments: sourceSegments, sourceLanguage: "fr", targetLanguage: "en" },
+    (event) => progress.push(event),
+  );
+
+  assert.equal(workerInstances.length, 1);
+  assert.equal(workerInstances[0].url, "/workers/translator.js");
+  assert.deepEqual(workerInstances[0].options, { type: "module" });
+  assert.deepEqual(workerInstances[0].messages, [{
+    type: "translate",
+    request: { segments: sourceSegments, sourceLanguage: "fr", targetLanguage: "en" },
+  }]);
+  assert.equal(workerInstances[0].terminated, true);
+  assert.deepEqual(progress, [{ stage: "loading-model", progress: 35 }]);
+  assert.deepEqual(result, {
+    strategy: "local-transformers.js",
+    segments: [{ index: 3, start: 0, end: 1, text: "Hello" }],
+  });
+});
+
 test("client translator maps worker progress into bounded translation progress events", async () => {
   const localTranslatorWorker = async (request, onProgress) => {
     onProgress(0.5);
