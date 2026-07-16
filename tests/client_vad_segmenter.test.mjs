@@ -85,6 +85,41 @@ test("client VAD segmenter returns canonical browser VAD stage envelopes", async
   });
 });
 
+test("client VAD segmenter uses the environment segmenter when no explicit injection is provided", async () => {
+  const calls = [];
+  const environment = {
+    createVadSegmenter: async (audio, onProgress) => {
+      calls.push(audio.sampleRate);
+      onProgress(80);
+      return {
+        segments: [{ start: 0.25, end: 0.75 }],
+        diagnostics: { source: "environment" },
+      };
+    },
+  };
+  const progress = [];
+  const segmenter = createClientVadSegmenter({ environment });
+
+  const result = await segmenter.segmentAudio(
+    { pcm: new Float32Array([0.1, 0.2]), sampleRate: 16000 },
+    (value) => progress.push(value),
+  );
+
+  assert.deepEqual(calls, [16000]);
+  assert.deepEqual(progress, [0, 80]);
+  assert.deepEqual(result, {
+    stage: "vad",
+    runtime: "browser",
+    strategy: "vad-web",
+    payload: {
+      segments: [{ start: 0.25, end: 0.75 }],
+    },
+    metadata: {
+      diagnostics: { source: "environment" },
+    },
+  });
+});
+
 test("client VAD segmenter fails explicitly when no browser VAD path is available", async () => {
   const segmenter = createClientVadSegmenter({ environment: {} });
 

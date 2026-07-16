@@ -19,9 +19,12 @@ export function createClientVadSegmenter({
     capabilities: detectClientVadCapabilities(environment),
 
     async segmentAudio(audio, onProgress = () => {}) {
-      if (typeof vadWebSegmenter === "function") {
+      const segmenter = typeof vadWebSegmenter === "function"
+        ? vadWebSegmenter
+        : environment?.createVadSegmenter;
+      if (typeof segmenter === "function") {
         onProgress(0);
-        const result = await vadWebSegmenter(audio, onProgress);
+        const result = await segmenter(audio, onProgress);
         return normalizeVadStageResult({
           runtime: "browser",
           strategy: "vad-web",
