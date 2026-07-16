@@ -17,6 +17,7 @@ export function createClientTranscriber({
   transformerWorker,
   maxDurationSeconds,
   maxAudioBytes,
+  maxSegments,
 } = {}) {
   return {
     capabilities: detectClientTranscriptionCapabilities(environment),
@@ -37,6 +38,15 @@ export function createClientTranscriber({
       ) {
         const byteLabel = maxAudioBytes === 1 ? "byte" : "bytes";
         throw new Error(`Browser transcription limit exceeded: audio size ${request.audio.sizeBytes} bytes is greater than the ${maxAudioBytes} ${byteLabel} limit.`);
+      }
+
+      const segmentCount = request?.segments?.length || 0;
+      if (
+        Number.isFinite(maxSegments)
+        && segmentCount > maxSegments
+      ) {
+        const segmentLabel = maxSegments === 1 ? "segment" : "segments";
+        throw new Error(`Browser transcription limit exceeded: ${segmentCount} segments is greater than the ${maxSegments} ${segmentLabel} limit.`);
       }
 
       if (typeof transformerWorker !== "function") {
