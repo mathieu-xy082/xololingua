@@ -69,6 +69,72 @@ test("client transcriber delegates PCM audio to an injected transformers.js work
   });
 });
 
+test("client transcriber runs transcription through a configured Web Worker boundary", async () => {
+  const workerInstances = [];
+  class FakeWorker {
+    constructor(url, options) {
+      this.url = url;
+      this.options = options;
+      this.messages = [];
+      this.terminated = false;
+      workerInstances.push(this);
+    }
+
+    postMessage(message) {
+      this.messages.push(message);
+      queueMicrotask(() => {
+        this.onmessage({ data: { type: "progress", event: { stage: "loading-model", progress: 25 } } });
+        this.onmessage({
+          data: {
+            type: "result",
+            result: {
+              language: "fr",
+              segments: [{ index: 7, start: 0, end: 1, text: "Salut" }],
+            },
+          },
+        });
+      });
+    }
+
+    terminate() {
+      this.terminated = true;
+    }
+  }
+  const progress = [];
+  const transcriber = createClientTranscriber({
+    environment: { Worker: FakeWorker },
+    workerUrl: "/workers/transcriber.js",
+  });
+
+  const result = await transcriber.transcribeAudio(
+    {
+      audio: { audioId: "audio-123", durationSeconds: 3 },
+      segments: [{ index: 7, start: 0, end: 1 }],
+      sourceLanguage: "fr",
+    },
+    (event) => progress.push(event),
+  );
+
+  assert.equal(workerInstances.length, 1);
+  assert.equal(workerInstances[0].url, "/workers/transcriber.js");
+  assert.deepEqual(workerInstances[0].options, { type: "module" });
+  assert.deepEqual(workerInstances[0].messages, [{
+    type: "transcribe",
+    request: {
+      audio: { audioId: "audio-123", durationSeconds: 3 },
+      segments: [{ index: 7, start: 0, end: 1 }],
+      sourceLanguage: "fr",
+    },
+  }]);
+  assert.equal(workerInstances[0].terminated, true);
+  assert.deepEqual(progress, [{ stage: "loading-model", progress: 25 }]);
+  assert.deepEqual(result, {
+    strategy: "transformers.js",
+    language: "fr",
+    segments: [{ index: 7, start: 0, end: 1, text: "Salut" }],
+  });
+});
+
 test("client transcriber maps worker progress into bounded transcription progress events", async () => {
   const transformerWorker = async (request, onProgress) => {
     onProgress(0.25);

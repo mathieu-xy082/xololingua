@@ -15,6 +15,7 @@ export function detectClientTranscriptionCapabilities(environment = globalThis) 
 export function createClientTranscriber({
   environment = globalThis,
   transformerWorker,
+  workerUrl,
   maxDurationSeconds,
   maxAudioBytes,
   maxSegments,
@@ -49,11 +50,15 @@ export function createClientTranscriber({
         throw new Error(`Browser transcription limit exceeded: ${segmentCount} segments is greater than the ${maxSegments} ${segmentLabel} limit.`);
       }
 
-      if (typeof transformerWorker !== "function") {
+      const transcribe = typeof transformerWorker === "function"
+        ? transformerWorker
+        : createTranscriptionWorkerClient({ environment, workerUrl });
+
+      if (typeof transcribe !== "function") {
         throw new Error("Browser transcription requires transformers.js in a Web Worker or a configured transcription fallback.");
       }
 
-      const result = await transformerWorker(
+      const result = await transcribe(
         request,
         (event) => onProgress(mapClientMlProgress(event, "transcribing")),
       );
@@ -69,4 +74,42 @@ export function createClientTranscriber({
       };
     },
   };
+}
+
+function createTranscriptionWorkerClient({ environment, workerUrl }) {
+  if (!workerUrl || typeof environment?.Worker !== "function") {
+    return undefined;
+  }
+
+  return (request, onProgress) => new Promise((resolve, reject) => {
+    const worker = new environment.Worker(workerUrl, { type: "module" });
+    const cleanup = () => {
+      if (typeof worker.terminate === "function") {
+        worker.terminate();
+      }
+    };
+
+    worker.onerror = (event) => {
+      cleanup();
+      reject(new Error(event?.message || "Browser transcription worker failed."));
+    };
+    worker.onmessage = (event) => {
+      const message = event?.data || {};
+      if (message.type === "progress") {
+        onProgress(message.event);
+        return;
+      }
+      if (message.type === "error") {
+        cleanup();
+        reject(new Error(message.error || "Browser transcription worker failed."));
+        return;
+      }
+      if (message.type === "result") {
+        cleanup();
+        resolve(message.result || {});
+      }
+    };
+
+    worker.postMessage({ type: "transcribe", request });
+  });
 }
