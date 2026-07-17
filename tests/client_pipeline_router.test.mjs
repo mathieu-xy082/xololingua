@@ -78,7 +78,7 @@ test("hybrid pipeline router falls back to the Python audio endpoint when browse
   assert.deepEqual(result, {
     stage: "audioExtraction",
     runtime: "server-fallback",
-    strategy: "ffmpeg.wasm",
+    strategy: "python-backend",
     payload: {
       audioId: "server-audio",
       audioBlob: null,
@@ -91,6 +91,7 @@ test("hybrid pipeline router falls back to the Python audio endpoint when browse
       audioFileName: "clip.wav",
       fallbackEndpoints: ["POST /api/extract-audio"],
       browserFailureReason: "ffmpeg.wasm failed to load",
+      attemptedBrowserStrategy: "ffmpeg.wasm",
     },
   });
 });
@@ -669,10 +670,11 @@ test("hybrid pipeline router returns an ordered user stage report with Python fa
       label: "VAD / segmentation",
       runtime: "server-fallback",
       runtimeLabel: "Python fallback",
-      strategy: "web-audio-vad",
+      strategy: "python-backend",
       status: "completed-via-fallback",
       fallbackEndpoints: ["POST /api/segment-audio"],
       browserFailureReason: "VAD model unavailable",
+      attemptedBrowserStrategy: "web-audio-vad",
     },
     {
       stage: "transcription",

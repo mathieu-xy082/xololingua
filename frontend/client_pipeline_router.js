@@ -224,6 +224,9 @@ function createStageMetadata({ stageName, stage, browserFailureReason, runtimeIs
   if (browserFailureReason || stage.browserFailureReason) {
     metadata.browserFailureReason = browserFailureReason || stage.browserFailureReason;
   }
+  if (browserFailureReason && stage.strategy && stage.strategy !== "unavailable") {
+    metadata.attemptedBrowserStrategy = stage.strategy;
+  }
   return metadata;
 }
 
@@ -256,6 +259,11 @@ function createUserStageReportRow(stage, result) {
   const browserFailureReason = result.metadata?.browserFailureReason || result.browserFailureReason;
   if (browserFailureReason) {
     row.browserFailureReason = browserFailureReason;
+  }
+
+  const attemptedBrowserStrategy = result.metadata?.attemptedBrowserStrategy || result.attemptedBrowserStrategy;
+  if (attemptedBrowserStrategy) {
+    row.attemptedBrowserStrategy = attemptedBrowserStrategy;
   }
 
   return row;
@@ -337,6 +345,7 @@ async function runStage({
   }
 
   const runtime = browserFailureReason || !useBrowser ? "server-fallback" : "browser";
+  const strategy = browserFailureReason ? "python-backend" : stage.strategy;
   const metadata = createStageMetadata({
     stageName,
     stage,
@@ -346,7 +355,7 @@ async function runStage({
   const result = normalizeStageResult({
     stageName,
     runtime,
-    strategy: stage.strategy,
+    strategy,
     payload,
     metadata,
   });
