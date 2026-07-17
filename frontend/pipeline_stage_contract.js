@@ -154,14 +154,14 @@ function normalizeVadSegmentsPayload(payload, metadata) {
 }
 
 function splitVadSegmentDiagnostics(segment) {
-  const diagnosticKeys = new Set(["confidence", "speechProbability", "probability", "score"]);
+  const payloadKeys = new Set(["index", "start", "end", "text"]);
   const normalizedSegment = {};
   const diagnostics = {};
   for (const [key, value] of Object.entries(segment)) {
-    if (diagnosticKeys.has(key)) {
-      diagnostics[key] = value;
-    } else {
+    if (payloadKeys.has(key)) {
       normalizedSegment[key] = value;
+    } else {
+      diagnostics[key] = value;
     }
   }
   return { normalizedSegment, diagnostics };

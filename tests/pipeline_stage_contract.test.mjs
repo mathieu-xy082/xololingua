@@ -123,6 +123,34 @@ test("VAD stage normalization keeps timing handoff in payload and diagnostics in
   });
 });
 
+test("VAD stage normalization moves implementation-specific segment fields into metadata", () => {
+  const result = normalizeVadStageResult({
+    runtime: "browser",
+    strategy: "vad-web",
+    payload: {
+      segments: [
+        { start: 0.25, end: 1.5, frameStart: 4000, frameEnd: 24000, speechFrames: 18 },
+      ],
+    },
+  });
+
+  assert.deepEqual(result, {
+    stage: "vad",
+    runtime: "browser",
+    strategy: "vad-web",
+    payload: {
+      segments: [
+        { start: 0.25, end: 1.5 },
+      ],
+    },
+    metadata: {
+      segmentDiagnostics: [
+        { index: 0, frameStart: 4000, frameEnd: 24000, speechFrames: 18 },
+      ],
+    },
+  });
+});
+
 test("VAD stage normalization rejects segments without numeric timing handoff", () => {
   assert.throws(
     () => normalizeVadStageResult({
