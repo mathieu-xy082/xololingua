@@ -93,10 +93,13 @@ function normalizeVadPayload(result) {
 }
 
 function normalizeVadMetadata(result) {
-  if (Array.isArray(result) || result?.diagnostics === undefined) {
+  if (Array.isArray(result) || !result || typeof result !== "object") {
     return {};
   }
-  return {
-    diagnostics: result.diagnostics,
-  };
+
+  const { segments: _segments, diagnostics, ...metadata } = result;
+  if (diagnostics !== undefined) {
+    metadata.diagnostics = diagnostics;
+  }
+  return metadata;
 }

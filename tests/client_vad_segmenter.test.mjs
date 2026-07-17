@@ -85,6 +85,26 @@ test("client VAD segmenter returns canonical browser VAD stage envelopes", async
   });
 });
 
+test("client VAD segmenter preserves segmenter diagnostics in metadata", async () => {
+  const segmenter = createClientVadSegmenter({
+    environment: {},
+    vadWebSegmenter: async () => ({
+      segments: [{ start: 0.12, end: 1.34 }],
+      diagnostics: { speechFrameCount: 42 },
+      model: "silero-v5",
+      frameDurationMs: 32,
+    }),
+  });
+
+  const result = await segmenter.segmentAudio({ pcm: new Float32Array([0.1]), sampleRate: 16000 });
+
+  assert.deepEqual(result.metadata, {
+    diagnostics: { speechFrameCount: 42 },
+    model: "silero-v5",
+    frameDurationMs: 32,
+  });
+});
+
 test("client VAD segmenter uses the environment segmenter when no explicit injection is provided", async () => {
   const calls = [];
   const environment = {
