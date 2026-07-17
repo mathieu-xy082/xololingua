@@ -1,7 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 
 import { createAppClientAdapters, createAppHybridPipelineRouter } from "../frontend/app_hybrid_router_wiring.js";
+
+test("app.js passes global browser ML stage adapters into the hybrid router", async () => {
+  const appSource = await readFile(new URL("../app.js", import.meta.url), "utf8");
+
+  assert.match(appSource, /clientAudioExtractor:\s*globalThis\.XOLOLINGUA_CLIENT_AUDIO_EXTRACTOR/);
+  assert.match(appSource, /clientTranscriber:\s*globalThis\.XOLOLINGUA_CLIENT_TRANSCRIBER/);
+  assert.match(appSource, /clientTranslator:\s*globalThis\.XOLOLINGUA_CLIENT_TRANSLATOR/);
+});
 
 test("app client adapters expose browser audio extraction for the global E2E guard", async () => {
   const calls = [];
