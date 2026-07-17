@@ -172,6 +172,82 @@ test("client translator rejects segment batches beyond the configured browser li
   assert.equal(workerCalled, false);
 });
 
+test("client translator sends long translation inputs through bounded worker batches", async () => {
+  const calls = [];
+  const translator = createClientTranslator({
+    environment: {},
+    maxBatchSize: 2,
+    localTranslatorWorker: async (request) => {
+      calls.push(request.segments.map((segment) => segment.index));
+      return {
+        segments: request.segments.map((segment) => ({
+          index: segment.index,
+          text: `EN:${segment.text}`,
+        })),
+      };
+    },
+  });
+  const segments = [
+    { index: 1, start: 0, end: 1, text: "un" },
+    { index: 2, start: 1, end: 2, text: "deux" },
+    { index: 3, start: 2, end: 3, text: "trois" },
+    { index: 4, start: 3, end: 4, text: "quatre" },
+    { index: 5, start: 4, end: 5, text: "cinq" },
+  ];
+
+  const result = await translator.translateSegments({
+    segments,
+    sourceLanguage: "fr",
+    targetLanguage: "en",
+  });
+
+  assert.deepEqual(calls, [[1, 2], [3, 4], [5]]);
+  assert.deepEqual(result, {
+    strategy: "local-transformers.js",
+    segments: [
+      { index: 1, start: 0, end: 1, text: "EN:un" },
+      { index: 2, start: 1, end: 2, text: "EN:deux" },
+      { index: 3, start: 2, end: 3, text: "EN:trois" },
+      { index: 4, start: 3, end: 4, text: "EN:quatre" },
+      { index: 5, start: 4, end: 5, text: "EN:cinq" },
+    ],
+  });
+});
+
+test("client translator maps batched worker progress onto the full translation range", async () => {
+  const progress = [];
+  const translator = createClientTranslator({
+    environment: {},
+    maxBatchSize: 1,
+    localTranslatorWorker: async (request, onProgress) => {
+      onProgress({ stage: "translating", progress: 50 });
+      onProgress({ stage: "translating", progress: 100 });
+      return {
+        segments: request.segments.map((segment) => ({ index: segment.index, text: `EN:${segment.text}` })),
+      };
+    },
+  });
+
+  await translator.translateSegments(
+    {
+      segments: [
+        { index: 1, start: 0, end: 1, text: "un" },
+        { index: 2, start: 1, end: 2, text: "deux" },
+      ],
+      sourceLanguage: "fr",
+      targetLanguage: "en",
+    },
+    (event) => progress.push(event),
+  );
+
+  assert.deepEqual(progress, [
+    { stage: "translating", progress: 25 },
+    { stage: "translating", progress: 50 },
+    { stage: "translating", progress: 75 },
+    { stage: "translating", progress: 100 },
+  ]);
+});
+
 test("client translator fails explicitly when no local or cloud translation path is configured", async () => {
   const translator = createClientTranslator({ environment: {} });
 

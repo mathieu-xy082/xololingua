@@ -23,6 +23,7 @@ export function createClientTranslator({
   workerUrl,
   cloudTranslator,
   maxSegments,
+  maxBatchSize,
 } = {}) {
   return {
     capabilities: detectClientTranslationCapabilities(environment),
@@ -51,12 +52,21 @@ export function createClientTranslator({
         throw new Error("Browser translation requires transformers.js or a configured cloud translation provider.");
       }
 
-      const result = await translate(
-        request,
-        (event) => onProgress(mapClientMlProgress(event, "translating")),
-      );
+      const batches = createSegmentBatches(request.segments, maxBatchSize);
+      const translatedSegments = [];
+      for (const [batchIndex, batch] of batches.entries()) {
+        const result = await translate(
+          { ...request, segments: batch },
+          (event) => onProgress(mapBatchProgress(
+            mapClientMlProgress(event, "translating"),
+            batchIndex,
+            batches.length,
+          )),
+        );
+        translatedSegments.push(...(result.segments || []));
+      }
       const translatedByIndex = new Map(
-        (result.segments || []).map((segment) => [segment.index, segment]),
+        translatedSegments.map((segment) => [segment.index, segment]),
       );
 
       return {
@@ -72,6 +82,29 @@ export function createClientTranslator({
         }),
       };
     },
+  };
+}
+
+function createSegmentBatches(segments = [], maxBatchSize) {
+  if (!Number.isFinite(maxBatchSize) || maxBatchSize < 1) {
+    return [segments];
+  }
+
+  const batches = [];
+  for (let index = 0; index < segments.length; index += maxBatchSize) {
+    batches.push(segments.slice(index, index + maxBatchSize));
+  }
+  return batches.length > 0 ? batches : [[]];
+}
+
+function mapBatchProgress(event, batchIndex, batchCount) {
+  if (batchCount <= 1) {
+    return event;
+  }
+  const batchWidth = 100 / batchCount;
+  return {
+    ...event,
+    progress: Math.round((batchIndex * batchWidth) + ((event.progress / 100) * batchWidth)),
   };
 }
 
