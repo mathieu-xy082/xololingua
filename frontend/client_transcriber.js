@@ -19,6 +19,7 @@ export function createClientTranscriber({
   maxDurationSeconds,
   maxAudioBytes,
   maxSegments,
+  maxWorkerResponseMs,
 } = {}) {
   return {
     capabilities: detectClientTranscriptionCapabilities(environment),
@@ -52,7 +53,7 @@ export function createClientTranscriber({
 
       const transcribe = typeof transformerWorker === "function"
         ? transformerWorker
-        : createTranscriptionWorkerClient({ environment, workerUrl });
+        : createTranscriptionWorkerClient({ environment, workerUrl, maxWorkerResponseMs });
 
       if (typeof transcribe !== "function") {
         throw new Error("Browser transcription requires transformers.js in a Web Worker or a configured transcription fallback.");
@@ -76,22 +77,40 @@ export function createClientTranscriber({
   };
 }
 
-function createTranscriptionWorkerClient({ environment, workerUrl }) {
+function createTranscriptionWorkerClient({ environment, workerUrl, maxWorkerResponseMs }) {
   if (!workerUrl || typeof environment?.Worker !== "function") {
     return undefined;
   }
 
   return (request, onProgress) => new Promise((resolve, reject) => {
     const worker = new environment.Worker(workerUrl, { type: "module" });
+    let settled = false;
+    let timeoutId;
     const cleanup = () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
       if (typeof worker.terminate === "function") {
         worker.terminate();
       }
     };
+    const settle = (callback, value) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      callback(value);
+    };
+
+    if (Number.isFinite(maxWorkerResponseMs) && maxWorkerResponseMs > 0) {
+      timeoutId = setTimeout(() => {
+        settle(reject, new Error(`Browser transcription worker timed out after ${maxWorkerResponseMs}ms.`));
+      }, maxWorkerResponseMs);
+    }
 
     worker.onerror = (event) => {
-      cleanup();
-      reject(new Error(event?.message || "Browser transcription worker failed."));
+      settle(reject, new Error(event?.message || "Browser transcription worker failed."));
     };
     worker.onmessage = (event) => {
       const message = event?.data || {};
@@ -100,13 +119,11 @@ function createTranscriptionWorkerClient({ environment, workerUrl }) {
         return;
       }
       if (message.type === "error") {
-        cleanup();
-        reject(new Error(message.error || "Browser transcription worker failed."));
+        settle(reject, new Error(message.error || "Browser transcription worker failed."));
         return;
       }
       if (message.type === "result") {
-        cleanup();
-        resolve(message.result || {});
+        settle(resolve, message.result || {});
       }
     };
 

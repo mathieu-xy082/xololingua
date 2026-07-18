@@ -135,6 +135,38 @@ test("client transcriber runs transcription through a configured Web Worker boun
   });
 });
 
+test("client transcriber rejects a stalled configured Web Worker with an explicit timeout", async () => {
+  const workerInstances = [];
+  class StalledWorker {
+    constructor() {
+      this.terminated = false;
+      workerInstances.push(this);
+    }
+
+    postMessage() {}
+
+    terminate() {
+      this.terminated = true;
+    }
+  }
+  const transcriber = createClientTranscriber({
+    environment: { Worker: StalledWorker },
+    workerUrl: "/workers/transcriber.js",
+    maxWorkerResponseMs: 1,
+  });
+
+  await assert.rejects(
+    () => transcriber.transcribeAudio({
+      audio: { audioId: "audio-123", durationSeconds: 3 },
+      segments: [],
+      sourceLanguage: "fr",
+    }),
+    /Browser transcription worker timed out after 1ms\./,
+  );
+  assert.equal(workerInstances.length, 1);
+  assert.equal(workerInstances[0].terminated, true);
+});
+
 test("client transcriber maps worker progress into bounded transcription progress events", async () => {
   const transformerWorker = async (request, onProgress) => {
     onProgress(0.25);
