@@ -10,15 +10,25 @@ export function mapClientMlProgress(event, defaultStage) {
     return event;
   }
 
-  if (!Number.isFinite(event.progress)) {
+  const progress = Number.isFinite(event.progress)
+    ? event.progress
+    : calculateLoadedProgress(event);
+  if (!Number.isFinite(progress)) {
     return event;
   }
 
   return {
     ...event,
     stage: event.stage || defaultStage,
-    progress: normalizeProgressValue(event.progress),
+    progress: normalizeProgressValue(progress),
   };
+}
+
+function calculateLoadedProgress(event) {
+  if (!Number.isFinite(event.loaded) || !Number.isFinite(event.total) || event.total <= 0) {
+    return undefined;
+  }
+  return (event.loaded / event.total) * 100;
 }
 
 function normalizeProgressValue(value) {

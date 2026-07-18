@@ -164,6 +164,33 @@ test("client transcriber maps worker progress into bounded transcription progres
   ]);
 });
 
+test("client transcriber maps loaded and total worker progress into subtitle progress", async () => {
+  const transformerWorker = async (request, onProgress) => {
+    onProgress({ status: "progress", loaded: 3, total: 12 });
+    onProgress({ stage: "loading-model", loaded: 9, total: 12 });
+    return { segments: [] };
+  };
+  const progress = [];
+  const transcriber = createClientTranscriber({
+    environment: {},
+    transformerWorker,
+  });
+
+  await transcriber.transcribeAudio(
+    {
+      audio: { pcm: new Float32Array([0.1]), sampleRate: 16000, channelCount: 1 },
+      segments: [],
+      sourceLanguage: "auto",
+    },
+    (event) => progress.push(event),
+  );
+
+  assert.deepEqual(progress, [
+    { status: "progress", loaded: 3, total: 12, stage: "transcribing", progress: 25 },
+    { stage: "loading-model", loaded: 9, total: 12, progress: 75 },
+  ]);
+});
+
 test("client transcriber rejects audio beyond the configured browser duration limit", async () => {
   let workerCalled = false;
   const transcriber = createClientTranscriber({
