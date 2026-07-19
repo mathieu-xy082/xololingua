@@ -1,9 +1,12 @@
 import { createHybridPipelineRouter } from "./client_pipeline_router.js";
 
-export function createAppClientAdapters({ clientAudioExtractor } = {}) {
+export function createAppClientAdapters({ clientAudioExtractor, clientVadSegmenter } = {}) {
   const adapters = {};
   if (typeof clientAudioExtractor?.extractAudio === "function") {
     adapters.audioExtraction = (file, onProgress) => clientAudioExtractor.extractAudio(file, onProgress);
+  }
+  if (typeof clientVadSegmenter?.segmentAudio === "function") {
+    adapters.vad = (audio, onProgress) => clientVadSegmenter.segmentAudio(audio, onProgress);
   }
   return adapters;
 }

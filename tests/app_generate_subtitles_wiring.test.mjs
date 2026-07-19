@@ -52,3 +52,11 @@ test("app uses the canonical SRT formatting stage output for downloads and repor
   assert.match(appSource, /\{ stage: "srtFormatting", \.\.\.srtFormatting \}/);
   assert.doesNotMatch(appSource, /const srt = await generateSrtAdapter\(/);
 });
+
+test("app configures browser VAD segmentation adapter when browser VAD is available", () => {
+  assert.match(appSource, /createClientAudioExtractor/);
+  assert.match(appSource, /createClientVadSegmenter/);
+  assert.match(appSource, /clientAudioExtractor:/);
+  assert.match(appSource, /clientVadSegmenter:/);
+  assert.match(appSource, /XOLOLINGUA_CLIENT_VAD_SEGMENTER/);
+});

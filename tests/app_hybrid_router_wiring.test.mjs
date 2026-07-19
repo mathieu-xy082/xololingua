@@ -23,6 +23,38 @@ test("app client adapters expose browser audio extraction for the global E2E gua
   assert.deepEqual(payload, { audioId: "browser-audio", audioFileName: "clip.wav", audioSizeBytes: 2048 });
 });
 
+test("app client adapters expose browser VAD segmentation for the strict E2E guard", async () => {
+  const calls = [];
+  const adapters = createAppClientAdapters({
+    clientVadSegmenter: {
+      segmentAudio: async (audio, onProgress) => {
+        calls.push([audio.audioId]);
+        onProgress(100);
+        return {
+          stage: "vad",
+          runtime: "browser",
+          strategy: "vad-web",
+          payload: { segments: [{ start: 0.1, end: 0.9 }] },
+          metadata: { diagnostics: { source: "test-vad" } },
+        };
+      },
+    },
+  });
+  const progress = [];
+
+  const payload = await adapters.vad({ audioId: "browser-audio" }, (value) => progress.push(value));
+
+  assert.deepEqual(calls, [["browser-audio"]]);
+  assert.deepEqual(progress, [100]);
+  assert.deepEqual(payload, {
+    stage: "vad",
+    runtime: "browser",
+    strategy: "vad-web",
+    payload: { segments: [{ start: 0.1, end: 0.9 }] },
+    metadata: { diagnostics: { source: "test-vad" } },
+  });
+});
+
 test("app hybrid router wiring keeps audio extraction and VAD on explicit Python fallback adapters", async () => {
   const calls = [];
   const backendClient = {

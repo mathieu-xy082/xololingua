@@ -1,7 +1,9 @@
 import { createBackendClient } from "./frontend/backend_client.js";
 import { createAppClientAdapters, createAppHybridPipelineRouter } from "./frontend/app_hybrid_router_wiring.js";
+import { createClientAudioExtractor } from "./frontend/client_audio_extractor.js";
 import { collectClientPipelineCapabilities } from "./frontend/client_pipeline_capabilities.js";
 import { formatSrt, formatSrtTime } from "./frontend/client_srt_formatter.js";
+import { createClientVadSegmenter } from "./frontend/client_vad_segmenter.js";
 import { formatPipelineStageRuntime, formatPipelineStageSummary } from "./frontend/pipeline_stage_status.js";
 
 const MAX_DURATION_SECONDS = 2.5 * 60 * 60;
@@ -11,7 +13,8 @@ const APP_ASSET_VERSION = "2026-05-17-3";
 const backendClient = createBackendClient({ baseUrl: LOCAL_SERVICE_URL });
 const clientPipelineCapabilities = collectClientPipelineCapabilities();
 const appClientAdapters = createAppClientAdapters({
-  clientAudioExtractor: globalThis.XOLOLINGUA_CLIENT_AUDIO_EXTRACTOR,
+  clientAudioExtractor: globalThis.XOLOLINGUA_CLIENT_AUDIO_EXTRACTOR || createClientAudioExtractor(),
+  clientVadSegmenter: globalThis.XOLOLINGUA_CLIENT_VAD_SEGMENTER || createClientVadSegmenter(),
 });
 const hybridPipelineRouter = createAppHybridPipelineRouter({
   backendClient,

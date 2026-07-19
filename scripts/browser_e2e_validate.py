@@ -96,6 +96,11 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Fail unless the final pipeline status proves audio extraction ran in the browser.",
     )
+    parser.add_argument(
+        "--require-browser-vad",
+        action="store_true",
+        help="Fail unless the final pipeline status proves VAD segmentation ran in the browser.",
+    )
     return parser.parse_args(argv)
 
 
@@ -182,6 +187,14 @@ def assert_browser_audio_runtime(pipeline_status: str) -> None:
         )
 
 
+def assert_browser_vad_runtime(pipeline_status: str) -> None:
+    if not re.search(r"VAD\s*/\s*segmentation:\s*Browser\b", pipeline_status):
+        raise AssertionError(
+            "Expected browser VAD segmentation in final pipeline status, "
+            f"got: {pipeline_status!r}"
+        )
+
+
 def log_step(message: str) -> None:
     print(f"[browser-e2e] {message}", flush=True)
 
@@ -226,6 +239,11 @@ def run_browser_workflow(args: argparse.Namespace) -> Path:
             page.locator("#segmentButton").click()
             expect(page.locator("#generateButton")).to_be_enabled(timeout=args.segmentation_timeout_ms)
             expect(page.locator("#segmentationStatus")).to_contain_text("speech segments prepared")
+            segmentation_pipeline_status = page.locator("#segmentationStatus").inner_text()
+            if args.require_browser_audio:
+                assert_browser_audio_runtime(segmentation_pipeline_status)
+            if args.require_browser_vad:
+                assert_browser_vad_runtime(segmentation_pipeline_status)
 
             log_step("Clicking Generate subtitles")
             page.locator("#generateButton").click()
@@ -235,6 +253,8 @@ def run_browser_workflow(args: argparse.Namespace) -> Path:
             final_pipeline_status = page.locator("#subtitleStatus").inner_text()
             if args.require_browser_audio:
                 assert_browser_audio_runtime(final_pipeline_status)
+            if args.require_browser_vad:
+                assert_browser_vad_runtime(final_pipeline_status)
 
             log_step("Capturing SRT download")
             with page.expect_download(timeout=60_000) as download_info:
