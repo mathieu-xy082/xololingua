@@ -76,7 +76,9 @@ docker run \
     python -m pip install --upgrade pip "pdm==$PDM_VERSION"
     pdm --version
     node --version
+    npm --version
     ffmpeg -version | sed -n "1p"
+    npm ci
     PDM_IGNORE_ACTIVE_VENV=1 pdm install -G test --frozen-lockfile
     PDM_IGNORE_ACTIVE_VENV=1 pdm run check
   '

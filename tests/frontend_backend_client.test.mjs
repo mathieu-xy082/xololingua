@@ -59,6 +59,40 @@ test("extractAudio checks service health, posts the video, and reports bounded p
   ]);
 });
 
+test("registerAudio posts browser-extracted WAV audio and reports handoff progress", async () => {
+  const calls = [];
+  const fetchImpl = async (url, options = {}) => {
+    calls.push({ url, options });
+    return jsonResponse(true, {
+      audioId: "registered-123",
+      audioFileName: "registered.wav",
+      audioSizeBytes: 32768,
+    });
+  };
+  const progress = [];
+  const client = createBackendClient({
+    baseUrl: "http://service.test",
+    fetchImpl,
+    FormDataImpl: FakeFormData,
+  });
+  const audioBlob = new Blob([new Uint8Array([1, 2, 3])], { type: "audio/wav" });
+
+  const payload = await client.registerAudio({ audioBlob, audioFileName: "clip.wav" }, (value) => progress.push(value));
+
+  assert.deepEqual(payload, {
+    audioId: "registered-123",
+    audioFileName: "registered.wav",
+    audioSizeBytes: 32768,
+  });
+  assert.deepEqual(progress, [20, 35]);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "http://service.test/api/register-audio");
+  assert.equal(calls[0].options.method, "POST");
+  assert.deepEqual(calls[0].options.body.entries, [
+    { name: "audio", value: audioBlob, filename: "clip.wav" },
+  ]);
+});
+
 test("extractAudio exposes local-service unavailability as an explicit fallback reason", async () => {
   const client = createBackendClient({
     baseUrl: "http://service.test/",

@@ -26,7 +26,19 @@ export function createAppHybridPipelineRouter({
     clientAdapters,
     serverAdapters: {
       audioExtraction: (file, onProgress) => backendClient.extractAudio(file, onProgress),
-      vad: (audioId, onProgress) => backendClient.segmentAudio(audioId, onProgress),
+      vad: async (audio, onProgress) => {
+        const audioId = typeof audio === "string" ? audio : audio?.audioId;
+        if (audioId) {
+          return backendClient.segmentAudio(audioId, onProgress);
+        }
+        if (typeof backendClient.registerAudio !== "function") {
+          throw new Error("Python VAD fallback requires an audio id or browser audio registration endpoint.");
+        }
+        const registered = await backendClient.registerAudio(audio, (progress) => {
+          onProgress(Math.min(35, progress));
+        });
+        return backendClient.segmentAudio(registered.audioId, onProgress);
+      },
       transcription: (request, onProgress) => backendClient.transcribeAudio(request, onProgress),
       translation: async (request, onProgress) => {
         if (typeof backendClient.translateSegments === "function") {

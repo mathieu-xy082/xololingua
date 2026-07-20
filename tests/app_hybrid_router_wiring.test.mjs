@@ -122,6 +122,44 @@ test("app hybrid router wiring keeps audio extraction and VAD on explicit Python
   });
 });
 
+test("app hybrid router wiring registers browser WAV before Python VAD fallback when audio has no server id", async () => {
+  const calls = [];
+  const backendClient = {
+    registerAudio: async (audio, onProgress) => {
+      calls.push(["registerAudio", audio.audioFileName]);
+      onProgress(25);
+      return { audioId: "registered-audio", audioFileName: "registered.wav" };
+    },
+    segmentAudio: async (audioId, onProgress) => {
+      calls.push(["segmentAudio", audioId]);
+      onProgress(100);
+      return [{ index: 1, start: 0, end: 1.5 }];
+    },
+  };
+  const router = createAppHybridPipelineRouter({
+    backendClient,
+    capabilityReport: {
+      stages: {
+        vad: { runtime: "server-fallback", strategy: "python-backend" },
+      },
+    },
+  });
+  const progress = [];
+
+  const segmentation = await router.runVadSegmentation(
+    { audioBlob: new Blob([new Uint8Array([1])], { type: "audio/wav" }), audioFileName: "browser.wav" },
+    (value) => progress.push(value),
+  );
+
+  assert.deepEqual(calls, [
+    ["registerAudio", "browser.wav"],
+    ["segmentAudio", "registered-audio"],
+  ]);
+  assert.deepEqual(progress, [25, 100]);
+  assert.equal(segmentation.runtime, "server-fallback");
+  assert.deepEqual(segmentation.payload.segments, [{ index: 1, start: 0, end: 1.5 }]);
+});
+
 test("app hybrid router wiring uses the configured browser audio extraction adapter when audio extraction is browser-ready", async () => {
   const calls = [];
   const router = createAppHybridPipelineRouter({

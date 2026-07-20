@@ -6,6 +6,7 @@ const ASSETS = [
   "frontend/backend_client.js",
   "frontend/app_hybrid_router_wiring.js",
   "frontend/client_audio_extractor.js",
+  "frontend/ffmpeg_wasm_runtime.js",
   "frontend/client_pipeline_capabilities.js",
   "frontend/client_pipeline_router.js",
   "frontend/pipeline_stage_contract.js",

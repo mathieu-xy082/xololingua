@@ -60,3 +60,9 @@ test("app configures browser VAD segmentation adapter when browser VAD is availa
   assert.match(appSource, /clientVadSegmenter:/);
   assert.match(appSource, /XOLOLINGUA_CLIENT_VAD_SEGMENTER/);
 });
+
+test("app configures local ffmpeg wasm audio extraction instead of relying on WebCodecs-only detection", () => {
+  assert.match(appSource, /createAppFfmpegWasmAudioExtractor/);
+  assert.match(appSource, /ffmpegWasmExtractor:\s*createAppFfmpegWasmAudioExtractor\(\)/);
+  assert.match(appSource, /globalThis\.XOLOLINGUA_CLIENT_AUDIO_EXTRACTOR \|\| createClientAudioExtractor\(\{/);
+});

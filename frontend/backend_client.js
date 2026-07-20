@@ -65,6 +65,27 @@ export function createBackendClient({
       return payload;
     },
 
+    async registerAudio(audio, onProgress = () => {}) {
+      const audioBlob = audio?.audioBlob || audio;
+      if (!audioBlob) {
+        throw new Error("Browser audio handoff requires an audio blob.");
+      }
+      const audioFileName = audio?.audioFileName || "browser-audio.wav";
+
+      const formData = new FormDataImpl();
+      formData.append("audio", audioBlob, audioFileName);
+      onProgress(20);
+
+      const response = await fetchImpl(endpoint("/api/register-audio"), {
+        method: "POST",
+        body: formData,
+      });
+      const payload = await readJson(response, "Browser audio handoff failed.");
+
+      onProgress(35);
+      return payload;
+    },
+
     async segmentAudio(audioId, onProgress = () => {}) {
       onProgress(10);
 
