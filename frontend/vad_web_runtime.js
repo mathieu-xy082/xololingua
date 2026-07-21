@@ -86,8 +86,8 @@ export function createVadWebRuntimeSegmenter({
     for await (const segment of vad.run(pcm, sourceSampleRate)) {
       rawSegmentCount += 1;
       segments.push({
-        start: segment.start,
-        end: segment.end,
+        start: normalizeVadTimestamp(segment.start, sourceSampleRate),
+        end: normalizeVadTimestamp(segment.end, sourceSampleRate),
       });
     }
 
@@ -106,6 +106,13 @@ export function createVadWebRuntimeSegmenter({
       frameDurationMs,
     };
   };
+}
+
+function normalizeVadTimestamp(value, sampleRate) {
+  if (typeof value !== "number" || typeof sampleRate !== "number" || sampleRate <= 0) {
+    return value;
+  }
+  return Number.isInteger(value) && value >= 1000 ? value / sampleRate : value;
 }
 
 export {

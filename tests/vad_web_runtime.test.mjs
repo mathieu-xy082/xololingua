@@ -104,6 +104,38 @@ test("createVadWebRuntimeSegmenter decodes browser WAV blobs and runs NonRealTim
   });
 });
 
+test("createVadWebRuntimeSegmenter defensively converts sample-index VAD timings to seconds", async () => {
+  const audioBlob = new Blob([new Uint8Array([1, 2, 3])], { type: "audio/wav" });
+  const pcm = new Float32Array(48000);
+  const environment = {
+    vad: {
+      utils: {
+        audioFileToArray: async () => ({ audio: pcm, sampleRate: 16000 }),
+      },
+      NonRealTimeVAD: {
+        new: async (options) => {
+          options.ortConfig(environment.ort);
+          return {
+            async *run() {
+              yield { start: 16000, end: 32000 };
+              yield { start: 40000, end: 48000 };
+            },
+          };
+        },
+      },
+    },
+    ort: { env: { wasm: {} } },
+  };
+
+  const segmenter = createVadWebRuntimeSegmenter({ environment });
+  const result = await segmenter({ audioBlob, audioFileName: "browser.wav" });
+
+  assert.deepEqual(result.segments, [
+    { start: 1, end: 2 },
+    { start: 2.5, end: 3 },
+  ]);
+});
+
 test("createVadWebRuntimeSegmenter fails explicitly when browser VAD assets are not loaded", async () => {
   const segmenter = createVadWebRuntimeSegmenter({ environment: {} });
 
