@@ -92,9 +92,19 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--subtitle-timeout-ms", type=int, default=900_000)
     parser.add_argument("--min-srt-blocks", type=int, default=1, help="Minimum number of SRT blocks expected in the download.")
     parser.add_argument(
+        "--stop-after-segmentation",
+        action="store_true",
+        help="Stop after segmentation runtime assertions instead of generating subtitles.",
+    )
+    parser.add_argument(
         "--require-browser-audio",
         action="store_true",
         help="Fail unless the final pipeline status proves audio extraction ran in the browser.",
+    )
+    parser.add_argument(
+        "--require-browser-vad",
+        action="store_true",
+        help="Fail unless the final pipeline status proves VAD segmentation ran in the browser.",
     )
     return parser.parse_args(argv)
 
@@ -182,11 +192,19 @@ def assert_browser_audio_runtime(pipeline_status: str) -> None:
         )
 
 
+def assert_browser_vad_runtime(pipeline_status: str) -> None:
+    if not re.search(r"VAD\s*/\s*segmentation:\s*Browser\b", pipeline_status):
+        raise AssertionError(
+            "Expected browser VAD segmentation in final pipeline status, "
+            f"got: {pipeline_status!r}"
+        )
+
+
 def log_step(message: str) -> None:
     print(f"[browser-e2e] {message}", flush=True)
 
 
-def run_browser_workflow(args: argparse.Namespace) -> Path:
+def run_browser_workflow(args: argparse.Namespace) -> Path | None:
     expect, sync_playwright = require_playwright()
     if not args.video.is_file():
         raise SystemExit(f"Video fixture not found: {args.video}")
@@ -226,6 +244,15 @@ def run_browser_workflow(args: argparse.Namespace) -> Path:
             page.locator("#segmentButton").click()
             expect(page.locator("#generateButton")).to_be_enabled(timeout=args.segmentation_timeout_ms)
             expect(page.locator("#segmentationStatus")).to_contain_text("speech segments prepared")
+            segmentation_pipeline_status = page.locator("#segmentationStatus").inner_text()
+            if args.require_browser_audio:
+                assert_browser_audio_runtime(segmentation_pipeline_status)
+            if args.require_browser_vad:
+                assert_browser_vad_runtime(segmentation_pipeline_status)
+
+            if args.stop_after_segmentation:
+                destination = None
+                return destination
 
             log_step("Clicking Generate subtitles")
             page.locator("#generateButton").click()
@@ -235,6 +262,8 @@ def run_browser_workflow(args: argparse.Namespace) -> Path:
             final_pipeline_status = page.locator("#subtitleStatus").inner_text()
             if args.require_browser_audio:
                 assert_browser_audio_runtime(final_pipeline_status)
+            if args.require_browser_vad:
+                assert_browser_vad_runtime(final_pipeline_status)
 
             log_step("Capturing SRT download")
             with page.expect_download(timeout=60_000) as download_info:
@@ -249,6 +278,9 @@ def run_browser_workflow(args: argparse.Namespace) -> Path:
             context.close()
             browser.close()
 
+    if destination is None:
+        return destination
+
     validate_srt(destination, args.min_srt_blocks)
     return destination
 
@@ -259,8 +291,11 @@ def main(argv: Iterable[str] | None = None) -> int:
     try:
         processes = maybe_start_servers(args)
         downloaded = run_browser_workflow(args)
-        print(f"Browser E2E succeeded for target={args.target}: {downloaded}")
-        print(f"Downloaded SRT size: {downloaded.stat().st_size} bytes")
+        if downloaded is None:
+            print(f"Browser E2E segmentation guards succeeded for target={args.target}")
+        else:
+            print(f"Browser E2E succeeded for target={args.target}: {downloaded}")
+            print(f"Downloaded SRT size: {downloaded.stat().st_size} bytes")
         return 0
     finally:
         if not args.keep_servers:

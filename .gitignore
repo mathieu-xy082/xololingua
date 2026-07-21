@@ -7,3 +7,5 @@ __pycache__/
 .cache/
 tmp/
 .DS_Store
+node_modules/
+.hermes/

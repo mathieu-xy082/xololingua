@@ -3,12 +3,13 @@ export function detectClientAudioExtractionCapabilities(environment = globalThis
     && typeof environment.AudioDecoder === "function"
     && typeof environment.AudioContext === "function";
   const ffmpegWasm = typeof environment.createFFmpeg === "function"
+    || typeof environment.FFmpeg?.createFFmpeg === "function"
     || Boolean(environment.ffmpegWasm);
 
   return {
     webCodecs,
     ffmpegWasm,
-    strategy: webCodecs ? "webcodecs" : ffmpegWasm ? "ffmpeg.wasm" : "unavailable",
+    strategy: ffmpegWasm ? "ffmpeg.wasm" : webCodecs ? "webcodecs" : "unavailable",
   };
 }
 

@@ -1,9 +1,12 @@
 import { createHybridPipelineRouter } from "./client_pipeline_router.js";
 
-export function createAppClientAdapters({ clientAudioExtractor } = {}) {
+export function createAppClientAdapters({ clientAudioExtractor, clientVadSegmenter } = {}) {
   const adapters = {};
   if (typeof clientAudioExtractor?.extractAudio === "function") {
     adapters.audioExtraction = (file, onProgress) => clientAudioExtractor.extractAudio(file, onProgress);
+  }
+  if (typeof clientVadSegmenter?.segmentAudio === "function") {
+    adapters.vad = (audio, onProgress) => clientVadSegmenter.segmentAudio(audio, onProgress);
   }
   return adapters;
 }
@@ -23,7 +26,19 @@ export function createAppHybridPipelineRouter({
     clientAdapters,
     serverAdapters: {
       audioExtraction: (file, onProgress) => backendClient.extractAudio(file, onProgress),
-      vad: (audioId, onProgress) => backendClient.segmentAudio(audioId, onProgress),
+      vad: async (audio, onProgress) => {
+        const audioId = typeof audio === "string" ? audio : audio?.audioId;
+        if (audioId) {
+          return backendClient.segmentAudio(audioId, onProgress);
+        }
+        if (typeof backendClient.registerAudio !== "function") {
+          throw new Error("Python VAD fallback requires an audio id or browser audio registration endpoint.");
+        }
+        const registered = await backendClient.registerAudio(audio, (progress) => {
+          onProgress(Math.min(35, progress));
+        });
+        return backendClient.segmentAudio(registered.audioId, onProgress);
+      },
       transcription: (request, onProgress) => backendClient.transcribeAudio(request, onProgress),
       translation: async (request, onProgress) => {
         if (typeof backendClient.translateSegments === "function") {

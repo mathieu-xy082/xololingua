@@ -95,6 +95,27 @@ class BrowserE2EScriptTests(unittest.TestCase):
                 "Subtitle file ready. Pipeline: Audio extraction: Python fallback via POST /api/extract-audio."
             )
 
+    def test_browser_e2e_exposes_require_browser_vad_guard(self):
+        module = self.load_module()
+        args = module.parse_args(["--require-browser-vad"])
+
+        self.assertTrue(args.require_browser_vad)
+
+    def test_browser_e2e_asserts_browser_vad_runtime_from_pipeline_status(self):
+        module = self.load_module()
+
+        module.assert_browser_vad_runtime(
+            "Subtitle file ready. Pipeline: Audio extraction: Browser (ffmpeg.wasm); "
+            "VAD / segmentation: Browser (vad-web); "
+            "Transcription: Python fallback via POST /api/subtitle-jobs."
+        )
+
+        with self.assertRaisesRegex(AssertionError, "Expected browser VAD segmentation"):
+            module.assert_browser_vad_runtime(
+                "Subtitle file ready. Pipeline: Audio extraction: Browser (ffmpeg.wasm); "
+                "VAD / segmentation: Python fallback via POST /api/segment-audio."
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

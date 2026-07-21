@@ -79,6 +79,9 @@ class LocalServiceHandler(BaseHTTPRequestHandler):
         if self.path == "/api/extract-audio":
             self.handle_extract_audio()
             return
+        if self.path == "/api/register-audio":
+            self.handle_register_audio()
+            return
         if self.path == "/api/detect-language":
             self.handle_detect_language()
             return
@@ -114,6 +117,17 @@ class LocalServiceHandler(BaseHTTPRequestHandler):
             self.send_error_json(HTTPStatus.SERVICE_UNAVAILABLE, str(error))
         except subprocess.CalledProcessError as error:
             self.send_error_json(HTTPStatus.BAD_REQUEST, error.stderr.strip() or "Audio extraction failed.")
+
+    def handle_register_audio(self) -> None:
+        try:
+            registered = self.receive_audio_upload()
+            self.send_json(registered)
+        except ValueError as error:
+            self.send_error_json(HTTPStatus.BAD_REQUEST, str(error))
+        except RuntimeError as error:
+            self.send_error_json(HTTPStatus.SERVICE_UNAVAILABLE, str(error))
+        except subprocess.CalledProcessError as error:
+            self.send_error_json(HTTPStatus.BAD_REQUEST, error.stderr.strip() or "Audio registration failed.")
 
     def handle_detect_language(self) -> None:
         if not whisper_runtime.WHISPER_RUNTIME.get("available"):
@@ -214,6 +228,64 @@ class LocalServiceHandler(BaseHTTPRequestHandler):
             "originalFileName": original_name,
             "uploadPath": upload_path,
             "durationSeconds": duration,
+        }
+
+    def receive_audio_upload(self) -> dict:
+        if not shutil.which("ffprobe"):
+            raise RuntimeError("ffprobe is required.")
+
+        content_type = self.headers.get("Content-Type", "")
+        if "multipart/form-data" not in content_type:
+            raise ValueError("Expected multipart/form-data.")
+
+        form = cgi.FieldStorage(
+            fp=self.rfile,
+            headers=self.headers,
+            environ={
+                "REQUEST_METHOD": "POST",
+                "CONTENT_TYPE": content_type,
+            },
+        )
+        item = form["audio"] if "audio" in form else None
+        if item is None or not getattr(item, "filename", ""):
+            raise ValueError("Missing audio file.")
+
+        original_name = Path(item.filename).name
+        if not original_name.lower().endswith(".wav"):
+            raise ValueError("Only WAV audio files are accepted for browser audio handoff.")
+
+        WORK_DIR.mkdir(parents=True, exist_ok=True)
+        request_id = uuid.uuid4().hex
+        audio_path = WORK_DIR / f"{request_id}.wav"
+
+        with audio_path.open("wb") as destination:
+            shutil.copyfileobj(item.file, destination, length=1024 * 1024)
+
+        try:
+            duration = probe_duration(audio_path)
+        except Exception:
+            audio_path.unlink(missing_ok=True)
+            raise
+        if duration <= 0:
+            audio_path.unlink(missing_ok=True)
+            raise ValueError("Could not read audio duration.")
+        if duration > MAX_DURATION_SECONDS:
+            audio_path.unlink(missing_ok=True)
+            raise ValueError("Audio exceeds the 2 h 30 min limit.")
+
+        return {
+            "audioId": request_id,
+            "originalFileName": original_name,
+            "audioFileName": audio_path.name,
+            "audioPath": str(audio_path),
+            "audioSizeBytes": audio_path.stat().st_size,
+            "durationSeconds": duration,
+            "format": {
+                "container": "wav",
+                "codec": "pcm_s16le",
+                "sampleRateHz": 16000,
+                "channels": 1,
+            },
         }
 
     def detect_language_from_video(self, video_path: Path, duration: float) -> dict:

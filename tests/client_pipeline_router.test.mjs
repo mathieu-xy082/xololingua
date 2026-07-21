@@ -183,6 +183,60 @@ test("hybrid pipeline router falls back to the Python segmentation endpoint when
   });
 });
 
+test("hybrid pipeline router passes canonical browser VAD segments to transcription", async () => {
+  const calls = [];
+  const router = createHybridPipelineRouter({
+    capabilityReport: {
+      stages: {
+        audioExtraction: { runtime: "browser", strategy: "ffmpeg.wasm" },
+        vad: { runtime: "browser", strategy: "vad-web" },
+        transcription: { runtime: "server-fallback", strategy: "unavailable" },
+        translation: { runtime: "server-fallback", strategy: "unavailable" },
+      },
+    },
+    clientAdapters: {
+      audioExtraction: async () => ({ audioId: "browser-audio" }),
+      vad: async () => ({
+        stage: "vad",
+        runtime: "browser",
+        strategy: "vad-web",
+        payload: {
+          segments: [{ start: 0.2, end: 1.4 }],
+        },
+        metadata: {
+          diagnostics: { speechFrameCount: 9 },
+        },
+      }),
+    },
+    serverAdapters: {
+      transcription: async (request) => {
+        calls.push(["server-transcription", request.segments]);
+        return request.segments.map((segment) => ({ ...segment, text: "Bonjour" }));
+      },
+      translation: async ({ segments }) => segments,
+    },
+  });
+
+  const result = await router.runSubtitlePipeline({
+    file: { name: "clip.mp4" },
+    sourceLanguage: "fr",
+    targetLanguage: "en",
+  });
+
+  assert.deepEqual(calls, [["server-transcription", [{ start: 0.2, end: 1.4 }]]]);
+  assert.deepEqual(result.vad, {
+    stage: "vad",
+    runtime: "browser",
+    strategy: "vad-web",
+    payload: {
+      segments: [{ start: 0.2, end: 1.4 }],
+    },
+    metadata: {
+      diagnostics: { speechFrameCount: 9 },
+    },
+  });
+});
+
 test("hybrid pipeline router falls back to the Python transcription endpoint when browser transcription is unavailable", async () => {
   const calls = [];
   const router = createHybridPipelineRouter({

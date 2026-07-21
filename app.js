@@ -1,8 +1,12 @@
 import { createBackendClient } from "./frontend/backend_client.js";
 import { createAppClientAdapters, createAppHybridPipelineRouter } from "./frontend/app_hybrid_router_wiring.js";
+import { createClientAudioExtractor } from "./frontend/client_audio_extractor.js";
 import { collectClientPipelineCapabilities } from "./frontend/client_pipeline_capabilities.js";
 import { formatSrt, formatSrtTime } from "./frontend/client_srt_formatter.js";
+import { createClientVadSegmenter } from "./frontend/client_vad_segmenter.js";
+import { createAppFfmpegWasmAudioExtractor } from "./frontend/ffmpeg_wasm_runtime.js";
 import { formatPipelineStageRuntime, formatPipelineStageSummary } from "./frontend/pipeline_stage_status.js";
+import { createVadWebRuntimeSegmenter } from "./frontend/vad_web_runtime.js";
 
 const MAX_DURATION_SECONDS = 2.5 * 60 * 60;
 const SEGMENT_SECONDS = 12;
@@ -11,7 +15,12 @@ const APP_ASSET_VERSION = "2026-05-17-3";
 const backendClient = createBackendClient({ baseUrl: LOCAL_SERVICE_URL });
 const clientPipelineCapabilities = collectClientPipelineCapabilities();
 const appClientAdapters = createAppClientAdapters({
-  clientAudioExtractor: globalThis.XOLOLINGUA_CLIENT_AUDIO_EXTRACTOR,
+  clientAudioExtractor: globalThis.XOLOLINGUA_CLIENT_AUDIO_EXTRACTOR || createClientAudioExtractor({
+    ffmpegWasmExtractor: createAppFfmpegWasmAudioExtractor(),
+  }),
+  clientVadSegmenter: globalThis.XOLOLINGUA_CLIENT_VAD_SEGMENTER || createClientVadSegmenter({
+    vadWebSegmenter: createVadWebRuntimeSegmenter(),
+  }),
 });
 const hybridPipelineRouter = createAppHybridPipelineRouter({
   backendClient,
@@ -321,7 +330,7 @@ async function segmentAudio() {
         setProgress("segmentation", progress);
       });
       stageReports.push({ stage: "audioExtraction", ...extraction });
-      state.extractedAudio = extraction.payload;
+      state.extractedAudio = { ...extraction.payload, ...extraction.metadata };
       els.segmentationStatus.textContent = `${formatPipelineStageRuntime({ stage: "audioExtraction", ...extraction })}. Segmenting speech audio...`;
     } catch (extractionError) {
       els.segmentationStatus.textContent = `${extractionError.message} Falling back to prototype segmentation.`;
@@ -329,15 +338,23 @@ async function segmentAudio() {
         const scaledProgress = 35 + Math.round(progress * 0.65);
         setProgress("segmentation", scaledProgress);
       });
-      finishSegmentation(segments);
+      finishSegmentation(segments, stageReports);
       return;
     }
   }
 
   els.segmentationStatus.textContent = `Audio extracted: ${formatBytes(state.extractedAudio.audioSizeBytes)} WAV. Segmenting speech audio...`;
   try {
-    const segmentation = await hybridPipelineRouter.runVadSegmentation(state.extractedAudio.audioId, (progress) => {
-      const scaledProgress = 35 + Math.round(progress * 0.65);
+    if (!state.extractedAudio.audioId && state.extractedAudio.audioBlob) {
+      els.segmentationStatus.textContent = "Registering browser-extracted audio for Python fallback stages...";
+      const registeredAudio = await backendClient.registerAudio(state.extractedAudio, (progress) => {
+        const scaledProgress = 35 + Math.round(progress * 0.15);
+        setProgress("segmentation", scaledProgress);
+      });
+      state.extractedAudio = { ...state.extractedAudio, ...registeredAudio };
+    }
+    const segmentation = await hybridPipelineRouter.runVadSegmentation(state.extractedAudio, (progress) => {
+      const scaledProgress = 50 + Math.round(progress * 0.5);
       setProgress("segmentation", scaledProgress);
     });
     stageReports.push({ stage: "vad", ...segmentation });
@@ -348,7 +365,7 @@ async function segmentAudio() {
       const scaledProgress = 35 + Math.round(progress * 0.65);
       setProgress("segmentation", scaledProgress);
     });
-    finishSegmentation(segments);
+    finishSegmentation(segments, stageReports);
   }
 }
 

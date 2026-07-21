@@ -33,6 +33,11 @@ test("app consumes canonical VAD stage payload segments while preserving segment
   assert.match(appSource, /finishSegmentation\(segmentation\.payload\.segments, stageReports\)/);
 });
 
+test("app carries canonical audio extraction metadata into segmentation status details", () => {
+  assert.match(appSource, /state\.extractedAudio = \{ \.\.\.extraction\.payload, \.\.\.extraction\.metadata \};/);
+  assert.match(appSource, /formatBytes\(state\.extractedAudio\.audioSizeBytes\)/);
+});
+
 test("app consumes canonical transcription and translation stage payload segments", () => {
   assert.match(appSource, /state\.segments = transcription\.payload\.segments;/);
   assert.match(appSource, /segments: transcription\.payload\.segments,/);
@@ -46,4 +51,18 @@ test("app uses the canonical SRT formatting stage output for downloads and repor
   assert.match(appSource, /const srt = srtFormatting\.payload\.srtText;/);
   assert.match(appSource, /\{ stage: "srtFormatting", \.\.\.srtFormatting \}/);
   assert.doesNotMatch(appSource, /const srt = await generateSrtAdapter\(/);
+});
+
+test("app configures browser VAD segmentation adapter when browser VAD is available", () => {
+  assert.match(appSource, /createClientAudioExtractor/);
+  assert.match(appSource, /createClientVadSegmenter/);
+  assert.match(appSource, /clientAudioExtractor:/);
+  assert.match(appSource, /clientVadSegmenter:/);
+  assert.match(appSource, /XOLOLINGUA_CLIENT_VAD_SEGMENTER/);
+});
+
+test("app configures local ffmpeg wasm audio extraction instead of relying on WebCodecs-only detection", () => {
+  assert.match(appSource, /createAppFfmpegWasmAudioExtractor/);
+  assert.match(appSource, /ffmpegWasmExtractor:\s*createAppFfmpegWasmAudioExtractor\(\)/);
+  assert.match(appSource, /globalThis\.XOLOLINGUA_CLIENT_AUDIO_EXTRACTOR \|\| createClientAudioExtractor\(\{/);
 });
