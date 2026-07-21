@@ -6,6 +6,7 @@ import { formatSrt, formatSrtTime } from "./frontend/client_srt_formatter.js";
 import { createClientVadSegmenter } from "./frontend/client_vad_segmenter.js";
 import { createAppFfmpegWasmAudioExtractor } from "./frontend/ffmpeg_wasm_runtime.js";
 import { formatPipelineStageRuntime, formatPipelineStageSummary } from "./frontend/pipeline_stage_status.js";
+import { createVadWebRuntimeSegmenter } from "./frontend/vad_web_runtime.js";
 
 const MAX_DURATION_SECONDS = 2.5 * 60 * 60;
 const SEGMENT_SECONDS = 12;
@@ -17,7 +18,9 @@ const appClientAdapters = createAppClientAdapters({
   clientAudioExtractor: globalThis.XOLOLINGUA_CLIENT_AUDIO_EXTRACTOR || createClientAudioExtractor({
     ffmpegWasmExtractor: createAppFfmpegWasmAudioExtractor(),
   }),
-  clientVadSegmenter: globalThis.XOLOLINGUA_CLIENT_VAD_SEGMENTER || createClientVadSegmenter(),
+  clientVadSegmenter: globalThis.XOLOLINGUA_CLIENT_VAD_SEGMENTER || createClientVadSegmenter({
+    vadWebSegmenter: createVadWebRuntimeSegmenter(),
+  }),
 });
 const hybridPipelineRouter = createAppHybridPipelineRouter({
   backendClient,

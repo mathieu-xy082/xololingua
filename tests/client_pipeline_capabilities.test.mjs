@@ -95,7 +95,11 @@ test("collectClientPipelineCapabilities builds a report from browser feature pro
     VideoDecoder: function VideoDecoder() {},
     AudioDecoder: function AudioDecoder() {},
     AudioContext: function AudioContext() {},
-    vad: { MicVAD: function MicVAD() {} },
+    vad: {
+      NonRealTimeVAD: { new: async () => ({}) },
+      utils: { audioFileToArray: async () => ({ audio: new Float32Array(), sampleRate: 16000 }) },
+    },
+    ort: { env: { wasm: {} } },
     Worker: function Worker() {},
     navigator: { gpu: {} },
     transformers: { pipeline: function pipeline() {} },

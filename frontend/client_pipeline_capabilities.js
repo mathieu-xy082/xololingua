@@ -1,5 +1,5 @@
 import { detectClientAudioExtractionCapabilities } from "./client_audio_extractor.js";
-import { detectClientVadCapabilities } from "./client_vad_segmenter.js";
+import { detectVadWebRuntimeCapabilities } from "./vad_web_runtime.js";
 import { detectClientTranscriptionCapabilities } from "./client_transcriber.js";
 import { detectClientTranslationCapabilities } from "./client_translator.js";
 
@@ -27,7 +27,7 @@ const PYTHON_FALLBACK_ENDPOINTS = {
 export function collectClientPipelineCapabilities(environment = globalThis) {
   return createClientPipelineCapabilityReport({
     audioExtraction: detectClientAudioExtractionCapabilities(environment),
-    vad: detectClientVadCapabilities(environment),
+    vad: detectVadWebRuntimeCapabilities(environment),
     transcription: detectClientTranscriptionCapabilities(environment),
     translation: detectClientTranslationCapabilities(environment),
   });

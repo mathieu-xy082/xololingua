@@ -53,3 +53,10 @@ test("PWA shell loads ffmpeg wasm browser assets before the module app starts", 
   assert.match(indexSource, /node_modules\/@ffmpeg\/ffmpeg\/dist\/ffmpeg\.min\.js/);
   assert.match(ffmpegWasmRuntimeSource, /node_modules\/@ffmpeg\/core\/dist\/ffmpeg-core\.js/);
 });
+
+test("PWA shell loads vad-web and ONNX Runtime browser assets before the module app starts", () => {
+  assert.match(indexSource, /node_modules\/onnxruntime-web\/dist\/ort\.min\.js/);
+  assert.match(indexSource, /node_modules\/@ricky0123\/vad-web\/dist\/bundle\.min\.js/);
+  assert.match(serviceWorkerSource, /node_modules\/onnxruntime-web\/dist\/ort-wasm-simd\.wasm/);
+  assert.match(serviceWorkerSource, /node_modules\/@ricky0123\/vad-web\/dist\/silero_vad_legacy\.onnx/);
+});
