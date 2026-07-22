@@ -216,6 +216,21 @@ p {
   font-family: monospace;
 }
 
+.pipeline-capabilities p {
+  margin-bottom: 12px;
+  font-size: 0.88rem;
+}
+
+.fallback-endpoints {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
 dt {
   color: var(--muted);
   font-weight: 750;

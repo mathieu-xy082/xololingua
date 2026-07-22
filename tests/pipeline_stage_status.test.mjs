@@ -24,3 +24,22 @@ test("pipeline stage summary names browser and Python fallback stages with endpo
     "Audio extraction: Browser (ffmpeg.wasm); VAD / segmentation: Python fallback (python-backend) via POST /api/segment-audio — fallback reason: WebAudio VAD unavailable",
   );
 });
+
+test("pipeline stage summary reads fallback endpoints and reason from canonical metadata", () => {
+  const summary = formatPipelineStageSummary([
+    {
+      stage: "transcription",
+      runtime: "server-fallback",
+      strategy: "python-backend",
+      metadata: {
+        fallbackEndpoints: ["POST /api/transcribe-audio", "POST /api/subtitle-jobs"],
+        browserFailureReason: "WebGPU unavailable",
+      },
+    },
+  ]);
+
+  assert.equal(
+    summary,
+    "Transcription: Python fallback (python-backend) via POST /api/transcribe-audio, POST /api/subtitle-jobs — fallback reason: WebGPU unavailable",
+  );
+});

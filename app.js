@@ -11,7 +11,7 @@ import { createVadWebRuntimeSegmenter } from "./frontend/vad_web_runtime.js";
 const MAX_DURATION_SECONDS = 2.5 * 60 * 60;
 const SEGMENT_SECONDS = 12;
 const LOCAL_SERVICE_URL = "http://127.0.0.1:8765";
-const APP_ASSET_VERSION = "2026-05-17-3";
+const APP_ASSET_VERSION = "2026-07-15-1";
 const backendClient = createBackendClient({ baseUrl: LOCAL_SERVICE_URL });
 const clientPipelineCapabilities = collectClientPipelineCapabilities();
 const appClientAdapters = createAppClientAdapters({
@@ -112,7 +112,11 @@ const els = {
   installButton: document.querySelector("#installButton"),
   serviceWhisperBackend: document.querySelector("#serviceWhisperBackend"),
   serviceWhisperModel: document.querySelector("#serviceWhisperModel"),
-  serviceWhisperDevice: document.querySelector("#serviceWhisperDevice")
+  serviceWhisperDevice: document.querySelector("#serviceWhisperDevice"),
+  pwaOfflineScope: document.querySelector("#pwaOfflineScope"),
+  pipelineBrowserStages: document.querySelector("#pipelineBrowserStages"),
+  pipelineFallbackStages: document.querySelector("#pipelineFallbackStages"),
+  pipelineFallbackEndpoints: document.querySelector("#pipelineFallbackEndpoints")
 };
 
 let deferredInstallPrompt = null;
@@ -121,6 +125,7 @@ let _pairsFetched = false;
 populateLanguages();
 bindEvents();
 bindInstallPrompt();
+renderPipelineCapabilitySummary();
 registerServiceWorker();
 render();
 fetchServiceStatus();
@@ -142,13 +147,30 @@ function populateLanguages() {
   });
 }
 
+function renderPipelineCapabilitySummary() {
+  const summary = clientPipelineCapabilities.demoSummary;
+  els.pwaOfflineScope.textContent = summary.offlineScopeLabel || "Offline assets available; ML stages may still need Python fallback.";
+  els.pwaOfflineScope.title = summary.headline;
+  els.pipelineBrowserStages.textContent = summary.browserStageLabels.length > 0
+    ? summary.browserStageLabels.join(", ")
+    : "none";
+  els.pipelineFallbackStages.textContent = summary.serverFallbackStageLabels.length > 0
+    ? summary.serverFallbackStageLabels.join(", ")
+    : "none";
+  els.pipelineFallbackEndpoints.replaceChildren(
+    ...summary.serverFallbackEndpoints.map((fallback) => {
+      const item = document.createElement("li");
+      item.textContent = `${fallback.label}: ${fallback.endpoints.join(", ")}`;
+      return item;
+    }),
+  );
+}
+
 async function fetchTranslationPairs() {
   if (_pairsFetched) return;
   try {
-    const response = await fetch(`${LOCAL_SERVICE_URL}/api/translation-pairs`);
-    if (!response.ok) return;
-    const data = await response.json();
-    for (const { source, target } of data.pairs) {
+    const pairs = await backendClient.getTranslationPairs();
+    for (const { source, target } of pairs) {
       supportedLanguagePairs.add(`${source}:${target}`);
     }
     _pairsFetched = true;
@@ -160,9 +182,7 @@ async function fetchTranslationPairs() {
 
 async function fetchServiceStatus() {
   try {
-    const response = await fetch(`${LOCAL_SERVICE_URL}/api/health`);
-    if (!response.ok) return;
-    const health = await response.json();
+    const health = await backendClient.getHealth();
     const backend = health.whisperBackend || "whisper-cli";
     const model = health.whisperModel || "?";
     const device = health.whisperDevice || "?";
@@ -476,8 +496,9 @@ async function cancelSubtitleJobAdapter(jobId) {
 }
 
 async function identifyLanguageAdapter(file, onProgress = () => {}, onStatus = () => {}) {
-  const health = await fetch(`${LOCAL_SERVICE_URL}/api/health`);
-  if (!health.ok) {
+  try {
+    await backendClient.getHealth();
+  } catch {
     throw new Error("Local audio service is not available for language detection.");
   }
 

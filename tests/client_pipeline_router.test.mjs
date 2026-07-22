@@ -78,7 +78,7 @@ test("hybrid pipeline router falls back to the Python audio endpoint when browse
   assert.deepEqual(result, {
     stage: "audioExtraction",
     runtime: "server-fallback",
-    strategy: "ffmpeg.wasm",
+    strategy: "python-backend",
     payload: {
       audioId: "server-audio",
       audioBlob: null,
@@ -91,6 +91,7 @@ test("hybrid pipeline router falls back to the Python audio endpoint when browse
       audioFileName: "clip.wav",
       fallbackEndpoints: ["POST /api/extract-audio"],
       browserFailureReason: "ffmpeg.wasm failed to load",
+      attemptedBrowserStrategy: "ffmpeg.wasm",
     },
   });
 });
@@ -276,7 +277,7 @@ test("hybrid pipeline router falls back to the Python transcription endpoint whe
       segments: [{ index: 1, text: "bonjour" }],
     },
     metadata: {
-      fallbackEndpoints: ["POST /api/transcribe-audio"],
+      fallbackEndpoints: ["POST /api/transcribe-audio", "POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
     },
   });
 });
@@ -324,7 +325,11 @@ test("hybrid pipeline router falls back to the Python subtitle job endpoint when
       segments: [{ index: 1, translatedText: "Hello" }],
     },
     metadata: {
-      fallbackEndpoints: ["POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
+      fallbackEndpoints: [
+        "POST /api/translate-segments",
+        "POST /api/subtitle-jobs",
+        "GET /api/subtitle-jobs/{jobId}",
+      ],
     },
   });
 });
@@ -538,7 +543,7 @@ test("hybrid pipeline router summarizes Python fallback stages after a demo subt
     },
     {
       stage: "transcription",
-      endpoints: ["POST /api/transcribe-audio"],
+      endpoints: ["POST /api/transcribe-audio", "POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
     },
   ]);
 });
@@ -604,7 +609,7 @@ test("hybrid pipeline router emits ordered user stage reports as each subtitle s
       runtimeLabel: "Python fallback",
       strategy: "unavailable",
       status: "completed-via-fallback",
-      fallbackEndpoints: ["POST /api/transcribe-audio"],
+      fallbackEndpoints: ["POST /api/transcribe-audio", "POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
     },
     {
       stage: "translation",
@@ -665,10 +670,11 @@ test("hybrid pipeline router returns an ordered user stage report with Python fa
       label: "VAD / segmentation",
       runtime: "server-fallback",
       runtimeLabel: "Python fallback",
-      strategy: "web-audio-vad",
+      strategy: "python-backend",
       status: "completed-via-fallback",
       fallbackEndpoints: ["POST /api/segment-audio"],
       browserFailureReason: "VAD model unavailable",
+      attemptedBrowserStrategy: "web-audio-vad",
     },
     {
       stage: "transcription",
@@ -677,7 +683,7 @@ test("hybrid pipeline router returns an ordered user stage report with Python fa
       runtimeLabel: "Python fallback",
       strategy: "unavailable",
       status: "completed-via-fallback",
-      fallbackEndpoints: ["POST /api/transcribe-audio"],
+      fallbackEndpoints: ["POST /api/transcribe-audio", "POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
     },
     {
       stage: "translation",

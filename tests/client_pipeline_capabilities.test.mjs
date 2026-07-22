@@ -47,6 +47,7 @@ test("client pipeline report includes demo-ready fallback labels and server endp
 
   assert.deepEqual(report.demoSummary, {
     headline: "Hybrid PWA: 2 browser stages, 2 Python fallback stages",
+    offlineScopeLabel: "Offline assets available; processing is partial and VAD / segmentation, Translation still need Python fallback.",
     browserStageLabels: ["Audio extraction", "Transcription"],
     serverFallbackStageLabels: ["VAD / segmentation", "Translation"],
     serverFallbackEndpoints: [
@@ -54,7 +55,7 @@ test("client pipeline report includes demo-ready fallback labels and server endp
       {
         stage: "translation",
         label: "Translation",
-        endpoints: ["POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
+        endpoints: ["POST /api/translate-segments", "POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
       },
     ],
     stageRows: [
@@ -64,6 +65,8 @@ test("client pipeline report includes demo-ready fallback labels and server endp
         runtimeLabel: "Browser",
         strategy: "webcodecs",
         fallbackEndpoints: [],
+        offlineCapable: true,
+        onlineRequired: false,
       },
       {
         stage: "vad",
@@ -71,6 +74,8 @@ test("client pipeline report includes demo-ready fallback labels and server endp
         runtimeLabel: "Python fallback",
         strategy: "unavailable",
         fallbackEndpoints: ["POST /api/segment-audio"],
+        offlineCapable: false,
+        onlineRequired: false,
       },
       {
         stage: "transcription",
@@ -78,16 +83,98 @@ test("client pipeline report includes demo-ready fallback labels and server endp
         runtimeLabel: "Browser",
         strategy: "transformers.js",
         fallbackEndpoints: [],
+        offlineCapable: true,
+        onlineRequired: false,
       },
       {
         stage: "translation",
         label: "Translation",
         runtimeLabel: "Python fallback",
         strategy: "unavailable",
-        fallbackEndpoints: ["POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
+        fallbackEndpoints: ["POST /api/translate-segments", "POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
+        offlineCapable: false,
+        onlineRequired: false,
       },
     ],
   });
+});
+
+test("client pipeline fallback endpoint metadata names direct backend fallbacks before subtitle jobs", () => {
+  const report = createClientPipelineCapabilityReport({
+    audioExtraction: { strategy: "unavailable" },
+    vad: { strategy: "unavailable" },
+    transcription: { strategy: "unavailable" },
+    translation: { strategy: "unavailable" },
+  });
+
+  assert.deepEqual(
+    report.demoSummary.serverFallbackEndpoints.map(({ stage, endpoints }) => ({ stage, endpoints })),
+    [
+      { stage: "audioExtraction", endpoints: ["POST /api/extract-audio"] },
+      { stage: "vad", endpoints: ["POST /api/segment-audio"] },
+      {
+        stage: "transcription",
+        endpoints: ["POST /api/transcribe-audio", "POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
+      },
+      {
+        stage: "translation",
+        endpoints: ["POST /api/translate-segments", "POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
+      },
+    ],
+  );
+});
+
+test("client pipeline report separates offline shell assets from backend-only processing stages", () => {
+  const report = createClientPipelineCapabilityReport({
+    audioExtraction: { strategy: "ffmpeg.wasm" },
+    vad: { strategy: "unavailable" },
+    transcription: { strategy: "unavailable" },
+    translation: { strategy: "unavailable" },
+  });
+
+  assert.deepEqual(report.offlineAvailability, {
+    assets: "available",
+    processing: "partial-browser-with-python-fallback",
+    offlineCapableStages: ["audioExtraction"],
+    backendRequiredStages: ["vad", "transcription", "translation"],
+    onlineRequiredStages: [],
+  });
+  assert.equal(
+    report.demoSummary.offlineScopeLabel,
+    "Offline assets available; processing is partial and VAD / segmentation, Transcription, Translation still need Python fallback.",
+  );
+});
+
+test("client pipeline report does not mark browser cloud translation as offline-capable", () => {
+  const report = createClientPipelineCapabilityReport({
+    audioExtraction: { strategy: "ffmpeg.wasm" },
+    vad: { strategy: "vad-web" },
+    transcription: { strategy: "transformers.js" },
+    translation: { strategy: "cloud-provider" },
+  });
+
+  assert.deepEqual(report.browserStages, ["audioExtraction", "vad", "transcription", "translation"]);
+  assert.deepEqual(report.serverFallbackStages, []);
+  assert.deepEqual(report.offlineAvailability, {
+    assets: "available",
+    processing: "browser-with-online-service",
+    offlineCapableStages: ["audioExtraction", "vad", "transcription"],
+    backendRequiredStages: [],
+    onlineRequiredStages: ["translation"],
+  });
+  assert.equal(
+    report.demoSummary.offlineScopeLabel,
+    "Offline assets available; Audio extraction, VAD / segmentation, Transcription can run offline, but Translation needs an online browser/cloud provider.",
+  );
+  assert.deepEqual(
+    report.demoSummary.stageRows.map(({ stage, offlineCapable, onlineRequired }) => ({ stage, offlineCapable, onlineRequired })),
+    [
+      { stage: "audioExtraction", offlineCapable: true, onlineRequired: false },
+      { stage: "vad", offlineCapable: true, onlineRequired: false },
+      { stage: "transcription", offlineCapable: true, onlineRequired: false },
+      { stage: "translation", offlineCapable: false, onlineRequired: true },
+    ],
+  );
 });
 
 test("collectClientPipelineCapabilities builds a report from browser feature probes", () => {
