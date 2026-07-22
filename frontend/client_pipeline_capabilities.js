@@ -2,6 +2,7 @@ import { detectClientAudioExtractionCapabilities } from "./client_audio_extracto
 import { detectVadWebRuntimeCapabilities } from "./vad_web_runtime.js";
 import { detectClientTranscriptionCapabilities } from "./client_transcriber.js";
 import { detectClientTranslationCapabilities } from "./client_translator.js";
+import { createBrowserModelAssetReport } from "./model_asset_manifest.js";
 
 const PIPELINE_STAGE_ORDER = [
   "audioExtraction",
@@ -30,6 +31,9 @@ export function collectClientPipelineCapabilities(environment = globalThis) {
     vad: detectVadWebRuntimeCapabilities(environment),
     transcription: detectClientTranscriptionCapabilities(environment),
     translation: detectClientTranslationCapabilities(environment),
+    modelAssets: createBrowserModelAssetReport({
+      cachedUrls: environment?.__xololinguaCachedModelAssetUrls || [],
+    }),
   });
 }
 
@@ -58,6 +62,7 @@ export function createClientPipelineCapabilityReport(capabilitiesByStage) {
 
   const mode = serverFallbackStages.length === 0 ? "client-side" : "hybrid-fallback";
   const offlineAvailability = createOfflineAvailability({ stages, browserStages, serverFallbackStages });
+  const modelAssets = capabilitiesByStage?.modelAssets || createBrowserModelAssetReport();
 
   return {
     mode,
@@ -65,6 +70,7 @@ export function createClientPipelineCapabilityReport(capabilitiesByStage) {
     browserStages,
     serverFallbackStages,
     offlineAvailability,
+    modelAssets,
     demoSummary: createDemoSummary({ mode, stages, browserStages, serverFallbackStages, offlineAvailability }),
   };
 }

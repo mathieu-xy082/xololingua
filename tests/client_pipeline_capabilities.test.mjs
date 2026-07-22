@@ -190,6 +190,9 @@ test("collectClientPipelineCapabilities builds a report from browser feature pro
     Worker: function Worker() {},
     navigator: { gpu: {} },
     transformers: { pipeline: function pipeline() {} },
+    __xololinguaCachedModelAssetUrls: [
+      "models/asr/whisper-tiny/manifest.json?v=browser-model-assets-v1",
+    ],
   });
 
   assert.equal(report.mode, "client-side");
@@ -203,4 +206,7 @@ test("collectClientPipelineCapabilities builds a report from browser feature pro
   assert.equal(report.stages.vad.strategy, "vad-web");
   assert.equal(report.stages.transcription.strategy, "transformers.js");
   assert.equal(report.stages.translation.strategy, "local-transformers.js");
+  assert.deepEqual(report.modelAssets.offlineReadyStages, ["transcription"]);
+  assert.deepEqual(report.modelAssets.bootstrapRequiredStages, ["translation"]);
+  assert.match(report.modelAssets.stageRows[1].fallbackReason, /Model assets are not cached/);
 });
