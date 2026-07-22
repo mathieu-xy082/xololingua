@@ -221,8 +221,10 @@ function createStageMetadata({ stageName, stage, browserFailureReason, runtimeIs
   if (runtimeIsFallback) {
     metadata.fallbackEndpoints = stage.fallbackEndpoints || PYTHON_FALLBACK_ENDPOINTS[stageName];
   }
-  if (browserFailureReason || stage.browserFailureReason) {
-    metadata.browserFailureReason = browserFailureReason || stage.browserFailureReason;
+  const failureReason = browserFailureReason || stage.browserFailureReason;
+  if (failureReason) {
+    metadata.fallbackReason = failureReason;
+    metadata.browserFailureReason = failureReason;
   }
   if (browserFailureReason && stage.strategy && stage.strategy !== "unavailable") {
     metadata.attemptedBrowserStrategy = stage.strategy;
@@ -233,10 +235,17 @@ function createStageMetadata({ stageName, stage, browserFailureReason, runtimeIs
 function summarizeServerFallbackStages(stageResults) {
   return Object.entries(stageResults)
     .filter(([, result]) => result.runtime === "server-fallback")
-    .map(([stage, result]) => ({
-      stage,
-      endpoints: result.metadata?.fallbackEndpoints || result.fallbackEndpoints || PYTHON_FALLBACK_ENDPOINTS[stage],
-    }));
+    .map(([stage, result]) => {
+      const summary = {
+        stage,
+        endpoints: result.metadata?.fallbackEndpoints || result.fallbackEndpoints || PYTHON_FALLBACK_ENDPOINTS[stage],
+      };
+      const browserFailureReason = result.metadata?.browserFailureReason || result.browserFailureReason;
+      if (browserFailureReason) {
+        summary.browserFailureReason = browserFailureReason;
+      }
+      return summary;
+    });
 }
 
 function createUserStageReport(stageResults) {

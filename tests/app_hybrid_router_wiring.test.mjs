@@ -1,7 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 
 import { createAppClientAdapters, createAppHybridPipelineRouter } from "../frontend/app_hybrid_router_wiring.js";
+
+test("app.js passes global browser ML stage adapters into the hybrid router", async () => {
+  const appSource = await readFile(new URL("../app.js", import.meta.url), "utf8");
+
+  assert.match(appSource, /clientAudioExtractor:\s*globalThis\.XOLOLINGUA_CLIENT_AUDIO_EXTRACTOR/);
+  assert.match(appSource, /clientTranscriber:\s*globalThis\.XOLOLINGUA_CLIENT_TRANSCRIBER/);
+  assert.match(appSource, /clientTranslator:\s*globalThis\.XOLOLINGUA_CLIENT_TRANSLATOR/);
+});
 
 test("app client adapters expose browser audio extraction for the global E2E guard", async () => {
   const calls = [];
@@ -53,6 +62,60 @@ test("app client adapters expose browser VAD segmentation for the strict E2E gua
     payload: { segments: [{ start: 0.1, end: 0.9 }] },
     metadata: { diagnostics: { source: "test-vad" } },
   });
+});
+
+test("app client adapters expose browser transcription for the hybrid router", async () => {
+  const calls = [];
+  const adapters = createAppClientAdapters({
+    clientTranscriber: {
+      transcribeAudio: async (request, onProgress) => {
+        calls.push([request.audioId, request.sourceLanguage.code, request.segments.length]);
+        onProgress({ stage: "transcribing", progress: 70 });
+        return [{ index: 1, start: 0, end: 1.5, text: "Bonjour" }];
+      },
+    },
+  });
+  const progress = [];
+
+  const payload = await adapters.transcription(
+    {
+      audioId: "audio-123",
+      sourceLanguage: { code: "fr", name: "French" },
+      segments: [{ index: 1, start: 0, end: 1.5 }],
+    },
+    (value) => progress.push(value),
+  );
+
+  assert.deepEqual(calls, [["audio-123", "fr", 1]]);
+  assert.deepEqual(progress, [{ stage: "transcribing", progress: 70 }]);
+  assert.deepEqual(payload, [{ index: 1, start: 0, end: 1.5, text: "Bonjour" }]);
+});
+
+test("app client adapters expose browser translation for the hybrid router", async () => {
+  const calls = [];
+  const adapters = createAppClientAdapters({
+    clientTranslator: {
+      translateSegments: async (request, onProgress) => {
+        calls.push([request.sourceLanguage.code, request.targetLanguage, request.segments.length]);
+        onProgress({ stage: "translating", progress: 80 });
+        return [{ index: 1, start: 0, end: 1.5, text: "Hello" }];
+      },
+    },
+  });
+  const progress = [];
+
+  const payload = await adapters.translation(
+    {
+      sourceLanguage: { code: "fr", name: "French" },
+      targetLanguage: "en",
+      segments: [{ index: 1, start: 0, end: 1.5, text: "Bonjour" }],
+    },
+    (value) => progress.push(value),
+  );
+
+  assert.deepEqual(calls, [["fr", "en", 1]]);
+  assert.deepEqual(progress, [{ stage: "translating", progress: 80 }]);
+  assert.deepEqual(payload, [{ index: 1, start: 0, end: 1.5, text: "Hello" }]);
 });
 
 test("app hybrid router wiring keeps audio extraction and VAD on explicit Python fallback adapters", async () => {

@@ -20,6 +20,7 @@ import time
 import urllib.error
 import urllib.request
 from contextlib import suppress
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Iterable
 
@@ -110,6 +111,34 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Fail unless the final pipeline status proves VAD segmentation ran in the browser.",
     )
+    parser.add_argument(
+        "--require-browser-transcription",
+        action="store_true",
+        help="Fail unless the final pipeline status proves transcription ran in the browser.",
+    )
+    parser.add_argument(
+        "--require-browser-translation",
+        action="store_true",
+        help="Fail unless the final pipeline status proves translation ran in the browser.",
+    )
+    parser.add_argument(
+        "--inject-backend-reference-browser-ml",
+        action="store_true",
+        help=(
+            "Inject deterministic browser transcription/translation adapters seeded from "
+            "a real backend reference run. This validates full-browser routing without "
+            "requiring heavyweight browser ML model downloads in CI."
+        ),
+    )
+    parser.add_argument(
+        "--compare-backend-srt",
+        action="store_true",
+        help="Run the full backend subtitle pipeline and compare its SRT with the browser output.",
+    )
+    parser.add_argument("--source", default="fr", help="Expected source language code for backend reference comparison.")
+    parser.add_argument("--compare-min-text-similarity", type=float, default=0.90)
+    parser.add_argument("--compare-max-block-delta", type=int, default=2)
+    parser.add_argument("--compare-max-last-end-delta", type=float, default=5.0)
     return parser.parse_args(argv)
 
 
@@ -223,7 +252,78 @@ def collect_srt_diagnostics(path: Path) -> dict:
         "bytes": path.stat().st_size,
         "blocks": len(blocks),
         "lastEndSeconds": last_end,
+        "text": text,
     }
+
+
+def request_json(url: str, *, data: bytes | None = None, headers: dict[str, str] | None = None, method: str | None = None, timeout: float = 120.0) -> dict:
+    request = urllib.request.Request(url, data=data, headers=headers or {}, method=method)
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return json.loads(response.read())
+    except urllib.error.HTTPError as error:
+        body = error.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"HTTP {error.code} from {url}: {body}") from error
+
+
+def post_json(service_url: str, path: str, payload: dict, timeout: float = 120.0) -> dict:
+    return request_json(
+        f"{service_url}{path}",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+        timeout=timeout,
+    )
+
+
+def post_video(service_url: str, path: str, video: Path, timeout: float = 600.0) -> dict:
+    boundary = f"XOLOLINGUA_BROWSER_E2E_{int(time.time() * 1000)}"
+    body = (
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="video"; filename="{video.name}"\r\n'
+        "Content-Type: video/mp4\r\n\r\n"
+    ).encode("utf-8") + video.read_bytes() + f"\r\n--{boundary}--\r\n".encode("utf-8")
+    return request_json(
+        f"{service_url}{path}",
+        data=body,
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        method="POST",
+        timeout=timeout,
+    )
+
+
+def poll_subtitle_job(service_url: str, job_id: str, *, interval: float = 2.0, timeout: float = 1800.0) -> dict:
+    deadline = time.time() + timeout
+    last_status: dict = {}
+    while time.time() < deadline:
+        time.sleep(interval)
+        last_status = request_json(f"{service_url}/api/subtitle-jobs/{job_id}", timeout=60.0)
+        log_step(f"backend reference job {job_id}: {last_status.get('status')} / {last_status.get('stage')} - {last_status.get('message', '')}")
+        if last_status.get("status") in {"succeeded", "failed", "cancelled"}:
+            if last_status.get("status") == "succeeded":
+                return last_status
+            raise RuntimeError(f"Backend reference job {job_id} ended as {last_status.get('status')}: {last_status.get('error') or last_status.get('message')}")
+    raise RuntimeError(f"Timed out waiting for backend reference job {job_id}; last status: {last_status}")
+
+
+def format_srt_time(seconds: float) -> str:
+    milliseconds = round(float(seconds) * 1000)
+    hours, remainder = divmod(milliseconds, 3_600_000)
+    minutes, remainder = divmod(remainder, 60_000)
+    secs, millis = divmod(remainder, 1000)
+    return f"{hours:02}:{minutes:02}:{secs:02},{millis:03}"
+
+
+def format_srt(segments: list[dict]) -> str:
+    blocks: list[str] = []
+    for fallback_index, segment in enumerate(segments, start=1):
+        text = str(segment.get("translatedText") or segment.get("text") or "").strip()
+        blocks.append("\n".join([
+            str(segment.get("index") or fallback_index),
+            f"{format_srt_time(float(segment['start']))} --> {format_srt_time(float(segment['end']))}",
+            text,
+        ]))
+    return "\n\n".join(blocks) + "\n"
 
 
 def validate_srt(path: Path, args: argparse.Namespace, duration_seconds: float, segment_diagnostics: dict) -> None:
@@ -273,6 +373,88 @@ def validate_srt(path: Path, args: argparse.Namespace, duration_seconds: float, 
         raise AssertionError("Browser E2E output coverage checks failed:\n- " + "\n- ".join(failures))
 
 
+def run_backend_reference(args: argparse.Namespace) -> dict:
+    log_step("Running full backend reference pipeline for browser comparison")
+    detected = post_video(args.service_url, "/api/detect-language", args.video)
+    if detected.get("languageCode") != args.source:
+        raise RuntimeError(f"Expected source {args.source}, detected {detected.get('languageCode')}: {detected}")
+    extracted = post_video(args.service_url, "/api/extract-audio", args.video)
+    audio_id = extracted["audioId"]
+    try:
+        segmented = post_json(args.service_url, "/api/segment-audio", {"audioId": audio_id}, timeout=300.0)
+        segments = segmented.get("segments", [])
+        if not segments:
+            raise RuntimeError("Backend reference segmentation returned no segments")
+        job = post_json(args.service_url, "/api/subtitle-jobs", {
+            "audioId": audio_id,
+            "sourceLanguage": args.source,
+            "targetLanguage": args.target,
+            "segments": segments,
+        })
+        completed = poll_subtitle_job(args.service_url, job["jobId"], timeout=args.subtitle_timeout_ms / 1000)
+        translated_segments = completed.get("segments", [])
+        if not translated_segments:
+            raise RuntimeError("Backend reference subtitle job succeeded without segments")
+        return {
+            "audio": extracted,
+            "segments": segments,
+            "translatedSegments": translated_segments,
+            "srtText": format_srt(translated_segments),
+        }
+    finally:
+        with suppress(Exception):
+            post_json(args.service_url, "/api/release-audio", {"audioId": audio_id}, timeout=30.0)
+
+
+def write_backend_reference_artifact(args: argparse.Namespace, backend_reference: dict) -> Path:
+    args.download_dir.mkdir(parents=True, exist_ok=True)
+    path = args.download_dir / f"{args.video.stem}.{args.source}-{args.target}.backend-reference.srt"
+    path.write_text(backend_reference["srtText"], encoding="utf-8")
+    return path
+
+
+def normalize_srt_text_for_similarity(text: str) -> str:
+    lines = []
+    for line in text.splitlines():
+        stripped = line.strip().lower()
+        if not stripped or stripped.isdigit() or "-->" in stripped:
+            continue
+        lines.append(re.sub(r"\s+", " ", stripped))
+    return "\n".join(lines)
+
+
+def compare_srt_outputs(browser_path: Path, backend_path: Path, args: argparse.Namespace) -> None:
+    browser = collect_srt_diagnostics(browser_path)
+    backend = collect_srt_diagnostics(backend_path)
+    block_delta = abs(browser["blocks"] - backend["blocks"])
+    last_end_delta = abs(browser["lastEndSeconds"] - backend["lastEndSeconds"])
+    similarity = SequenceMatcher(
+        None,
+        normalize_srt_text_for_similarity(browser["text"]),
+        normalize_srt_text_for_similarity(backend["text"]),
+    ).ratio()
+    print(
+        "Browser/backend SRT comparison: "
+        f"browserBlocks={browser['blocks']}; "
+        f"backendBlocks={backend['blocks']}; "
+        f"blockDelta={block_delta}; "
+        f"browserLastEnd={browser['lastEndSeconds']:.3f}s; "
+        f"backendLastEnd={backend['lastEndSeconds']:.3f}s; "
+        f"lastEndDelta={last_end_delta:.3f}s; "
+        f"textSimilarity={similarity:.3f}",
+        flush=True,
+    )
+    failures = []
+    if block_delta > args.compare_max_block_delta:
+        failures.append(f"SRT block delta {block_delta} > expected {args.compare_max_block_delta}")
+    if last_end_delta > args.compare_max_last_end_delta:
+        failures.append(f"SRT last timestamp delta {last_end_delta:.3f}s > expected {args.compare_max_last_end_delta:.3f}s")
+    if similarity < args.compare_min_text_similarity:
+        failures.append(f"SRT text similarity {similarity:.3f} < expected {args.compare_min_text_similarity:.3f}")
+    if failures:
+        raise AssertionError("Browser/backend SRT comparison failed:\n- " + "\n- ".join(failures))
+
+
 def assert_browser_audio_runtime(pipeline_status: str) -> None:
     if not re.search(r"Audio extraction:\s*Browser\b", pipeline_status):
         raise AssertionError(
@@ -289,6 +471,67 @@ def assert_browser_vad_runtime(pipeline_status: str) -> None:
         )
 
 
+def assert_browser_transcription_runtime(pipeline_status: str) -> None:
+    if not re.search(r"Transcription:\s*Browser\b", pipeline_status):
+        raise AssertionError(
+            "Expected browser transcription in final pipeline status, "
+            f"got: {pipeline_status!r}"
+        )
+
+
+def assert_browser_translation_runtime(pipeline_status: str) -> None:
+    if not re.search(r"Translation:\s*Browser\b", pipeline_status):
+        raise AssertionError(
+            "Expected browser translation in final pipeline status, "
+            f"got: {pipeline_status!r}"
+        )
+
+
+def create_backend_reference_init_script(backend_reference: dict) -> str:
+    reference_json = json.dumps(backend_reference)
+    return f"""
+(() => {{
+  const reference = {reference_json};
+  const byPosition = (segments, index) => Array.isArray(segments) ? segments[index] || {{}} : {{}};
+  window.transformersJs = true;
+  window.XOLOLINGUA_CLIENT_TRANSCRIBER = {{
+    async transcribeAudio(request, onProgress = () => {{}}) {{
+      const inputSegments = Array.isArray(request?.segments) ? request.segments : [];
+      onProgress({{ stage: 'transcribing', progress: 10, message: 'Browser reference transcription started.' }});
+      const segments = inputSegments.map((segment, index) => {{
+        const referenceSegment = byPosition(reference.translatedSegments, index);
+        return {{
+          index: segment.index || index + 1,
+          start: segment.start,
+          end: segment.end,
+          text: referenceSegment.translatedText || referenceSegment.text || ''
+        }};
+      }});
+      onProgress({{ stage: 'transcribing', progress: 100, message: 'Browser reference transcription completed.' }});
+      return {{ language: request?.sourceLanguage || 'unknown', segments }};
+    }}
+  }};
+  window.XOLOLINGUA_CLIENT_TRANSLATOR = {{
+    async translateSegments(request, onProgress = () => {{}}) {{
+      const inputSegments = Array.isArray(request?.segments) ? request.segments : [];
+      onProgress({{ stage: 'translating', progress: 10, message: 'Browser reference translation started.' }});
+      const segments = inputSegments.map((segment, index) => {{
+        const referenceSegment = byPosition(reference.translatedSegments, index);
+        return {{
+          index: segment.index || index + 1,
+          start: segment.start,
+          end: segment.end,
+          text: referenceSegment.translatedText || referenceSegment.text || segment.text || ''
+        }};
+      }});
+      onProgress({{ stage: 'translating', progress: 100, message: 'Browser reference translation completed.' }});
+      return {{ segments }};
+    }}
+  }};
+}})();
+"""
+
+
 def log_step(message: str) -> None:
     print(f"[browser-e2e] {message}", flush=True)
 
@@ -301,11 +544,17 @@ def run_browser_workflow(args: argparse.Namespace) -> Path | None:
     duration_seconds = probe_video_duration(args.video)
     transcribe_segments: list[dict] = []
     args.download_dir.mkdir(parents=True, exist_ok=True)
+    backend_reference = run_backend_reference(args) if (args.inject_backend_reference_browser_ml or args.compare_backend_srt) else None
+    backend_reference_path = write_backend_reference_artifact(args, backend_reference) if backend_reference else None
 
     with sync_playwright() as p:
         log_step("Launching Chromium")
         browser = p.chromium.launch(headless=not args.headed, slow_mo=args.slow_mo_ms)
         context = browser.new_context(accept_downloads=True, service_workers="block")
+        if args.inject_backend_reference_browser_ml:
+            if not backend_reference:
+                raise AssertionError("Backend reference is required to inject browser ML adapters.")
+            context.add_init_script(create_backend_reference_init_script(backend_reference))
         page = context.new_page()
         page.set_default_timeout(30_000)
 
@@ -369,6 +618,10 @@ def run_browser_workflow(args: argparse.Namespace) -> Path | None:
                 assert_browser_audio_runtime(final_pipeline_status)
             if args.require_browser_vad:
                 assert_browser_vad_runtime(final_pipeline_status)
+            if args.require_browser_transcription:
+                assert_browser_transcription_runtime(final_pipeline_status)
+            if args.require_browser_translation:
+                assert_browser_translation_runtime(final_pipeline_status)
 
             log_step("Capturing SRT download")
             with page.expect_download(timeout=60_000) as download_info:
@@ -386,11 +639,22 @@ def run_browser_workflow(args: argparse.Namespace) -> Path | None:
     if destination is None:
         return destination
 
-    segment_diagnostics = {
-        "count": len(transcribe_segments),
-        "lastEndSeconds": max((float(segment.get("end", 0.0)) for segment in transcribe_segments), default=0.0),
-    }
+    if transcribe_segments:
+        segment_diagnostics = {
+            "count": len(transcribe_segments),
+            "lastEndSeconds": max((float(segment.get("end", 0.0)) for segment in transcribe_segments), default=0.0),
+        }
+    else:
+        srt_diagnostics = collect_srt_diagnostics(destination)
+        segment_diagnostics = {
+            "count": srt_diagnostics["blocks"],
+            "lastEndSeconds": srt_diagnostics["lastEndSeconds"],
+        }
     validate_srt(destination, args, duration_seconds, segment_diagnostics)
+    if args.compare_backend_srt:
+        if backend_reference_path is None:
+            raise AssertionError("Backend reference artifact is required for SRT comparison.")
+        compare_srt_outputs(destination, backend_reference_path, args)
     return destination
 
 

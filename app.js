@@ -21,6 +21,8 @@ const appClientAdapters = createAppClientAdapters({
   clientVadSegmenter: globalThis.XOLOLINGUA_CLIENT_VAD_SEGMENTER || createClientVadSegmenter({
     vadWebSegmenter: createVadWebRuntimeSegmenter(),
   }),
+  clientTranscriber: globalThis.XOLOLINGUA_CLIENT_TRANSCRIBER,
+  clientTranslator: globalThis.XOLOLINGUA_CLIENT_TRANSLATOR,
 });
 const hybridPipelineRouter = createAppHybridPipelineRouter({
   backendClient,
