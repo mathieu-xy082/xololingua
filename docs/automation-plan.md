@@ -68,7 +68,7 @@ BRANCHE PRÊTE POUR REVIEW: <branch>
 
 | Priorité | Job ID | Nom | Branche principale | Cadence | État | Rôle |
 |---:|---|---|---|---:|---|---|
-| P0 | `à créer` | XoloLingua P0 browser real model assets | `ec/browser-model-assets` | 12h | active | Choisir, packager et valider de vrais modèles browser ASR/traduction avec assets offline/cache/warmup/timeouts/fallbacks |
+| P0 | `80d95b6dcfe9` | XoloLingua P0 browser real model assets | `ec/browser-model-assets` | 12h | active | Choisir, packager et valider de vrais modèles browser ASR/traduction avec assets offline/cache/warmup/timeouts/fallbacks |
 | coord | `443746743ea7` | XoloLingua master branch coordinator | n/a | 12h | active | Coordination read-only |
 | cleanup | `4e64fc0e1685` | XoloLingua tmp cleanup | n/a | quotidien 03:00 UTC | active | Nettoyage no-agent des fichiers temporaires hors repo |
 
