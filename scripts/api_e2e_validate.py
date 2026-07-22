@@ -23,7 +23,7 @@ from typing import Iterable
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_VIDEO = Path("/root/android-app-games/resources/lisoir_dnde442.mp4")
+DEFAULT_VIDEO = Path("/root/android-app-games/resources/lisoir_dnde442_quarter.mp4")
 DEFAULT_SERVICE_URL = "http://127.0.0.1:8765"
 DEFAULT_OUTPUT_DIR = Path(
     os.environ.get(

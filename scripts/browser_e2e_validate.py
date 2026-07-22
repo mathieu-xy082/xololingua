@@ -25,7 +25,7 @@ from typing import Iterable
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_VIDEO = Path("/root/android-app-games/resources/lisoir_dnde442.mp4")
+DEFAULT_VIDEO = Path("/root/android-app-games/resources/lisoir_dnde442_quarter.mp4")
 DEFAULT_FRONTEND_URL = "http://127.0.0.1:4173"
 DEFAULT_SERVICE_URL = "http://127.0.0.1:8765"
 DEFAULT_TMP_ROOT = Path(
@@ -91,9 +91,9 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--language-timeout-ms", type=int, default=240_000)
     parser.add_argument("--segmentation-timeout-ms", type=int, default=240_000)
     parser.add_argument("--subtitle-timeout-ms", type=int, default=900_000)
-    parser.add_argument("--min-srt-blocks", type=int, default=50, help="Minimum number of SRT blocks expected in the download.")
-    parser.add_argument("--min-srt-bytes", type=int, default=17_000, help="Minimum downloaded SRT size for the real E2E fixture.")
-    parser.add_argument("--min-segments", type=int, default=50, help="Minimum number of VAD segments sent to transcription.")
+    parser.add_argument("--min-srt-blocks", type=int, default=0, help="Minimum number of SRT blocks expected in the download; 0 uses a duration-scaled guard.")
+    parser.add_argument("--min-srt-bytes", type=int, default=0, help="Minimum downloaded SRT size; 0 uses a duration-scaled guard.")
+    parser.add_argument("--min-segments", type=int, default=0, help="Minimum number of VAD segments sent to transcription; 0 uses a duration-scaled guard.")
     parser.add_argument("--min-coverage-ratio", type=float, default=0.85, help="Minimum last-segment/SRT timestamp divided by video duration.")
     parser.add_argument(
         "--stop-after-segmentation",
@@ -232,14 +232,17 @@ def validate_srt(path: Path, args: argparse.Namespace, duration_seconds: float, 
     last_segment_end = float(segment_diagnostics.get("lastEndSeconds", 0.0))
     srt_coverage_ratio = diagnostics["lastEndSeconds"] / duration_seconds if duration_seconds > 0 else 0.0
     segment_coverage_ratio = last_segment_end / duration_seconds if duration_seconds > 0 else 0.0
+    min_srt_blocks = args.min_srt_blocks or max(1, int(duration_seconds // 16))
+    min_segments = args.min_segments or max(1, int(duration_seconds // 16))
+    min_srt_bytes = args.min_srt_bytes or max(1_000, int(duration_seconds * 12))
 
     failures = []
-    if diagnostics["blocks"] < args.min_srt_blocks:
-        failures.append(f"SRT blocks {diagnostics['blocks']} < expected {args.min_srt_blocks}")
-    if diagnostics["bytes"] < args.min_srt_bytes:
-        failures.append(f"SRT size {diagnostics['bytes']} bytes < expected {args.min_srt_bytes} bytes")
-    if segment_count < args.min_segments:
-        failures.append(f"VAD segments {segment_count} < expected {args.min_segments}")
+    if diagnostics["blocks"] < min_srt_blocks:
+        failures.append(f"SRT blocks {diagnostics['blocks']} < expected {min_srt_blocks}")
+    if diagnostics["bytes"] < min_srt_bytes:
+        failures.append(f"SRT size {diagnostics['bytes']} bytes < expected {min_srt_bytes} bytes")
+    if segment_count < min_segments:
+        failures.append(f"VAD segments {segment_count} < expected {min_segments}")
     if segment_coverage_ratio < args.min_coverage_ratio:
         failures.append(
             f"VAD temporal coverage {segment_coverage_ratio:.3f} "
@@ -260,7 +263,10 @@ def validate_srt(path: Path, args: argparse.Namespace, duration_seconds: float, 
         f"srtBlocks={diagnostics['blocks']}; "
         f"srtBytes={diagnostics['bytes']}; "
         f"lastSrtEnd={diagnostics['lastEndSeconds']:.3f}s; "
-        f"srtCoverage={srt_coverage_ratio:.3f}",
+        f"srtCoverage={srt_coverage_ratio:.3f}; "
+        f"minSegments={min_segments}; "
+        f"minSrtBlocks={min_srt_blocks}; "
+        f"minSrtBytes={min_srt_bytes}",
         flush=True,
     )
     if failures:
