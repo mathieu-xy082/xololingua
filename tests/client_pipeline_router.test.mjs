@@ -309,14 +309,15 @@ test("hybrid pipeline router exposes canonical fallback reasons when browser tra
   assert.deepEqual(result, {
     stage: "transcription",
     runtime: "server-fallback",
-    strategy: "transformers.js",
+    strategy: "python-backend",
     payload: {
       segments: [{ index: 1, start: 0, end: 1.5, text: "Bonjour" }],
     },
     metadata: {
-      fallbackEndpoints: ["POST /api/transcribe-audio"],
+      fallbackEndpoints: ["POST /api/transcribe-audio", "POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
       fallbackReason: "Transformers worker model is unavailable",
       browserFailureReason: "Transformers worker model is unavailable",
+      attemptedBrowserStrategy: "transformers.js",
     },
   });
 });
@@ -772,7 +773,7 @@ test("hybrid pipeline router includes browser failure reasons in fallback stage 
     },
     {
       stage: "transcription",
-      endpoints: ["POST /api/transcribe-audio"],
+      endpoints: ["POST /api/transcribe-audio", "POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
       browserFailureReason: "Transformers worker model is unavailable",
     },
   ]);
