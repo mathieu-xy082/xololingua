@@ -10,6 +10,7 @@ its SRT content.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import shutil
@@ -90,7 +91,10 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--language-timeout-ms", type=int, default=240_000)
     parser.add_argument("--segmentation-timeout-ms", type=int, default=240_000)
     parser.add_argument("--subtitle-timeout-ms", type=int, default=900_000)
-    parser.add_argument("--min-srt-blocks", type=int, default=1, help="Minimum number of SRT blocks expected in the download.")
+    parser.add_argument("--min-srt-blocks", type=int, default=50, help="Minimum number of SRT blocks expected in the download.")
+    parser.add_argument("--min-srt-bytes", type=int, default=17_000, help="Minimum downloaded SRT size for the real E2E fixture.")
+    parser.add_argument("--min-segments", type=int, default=50, help="Minimum number of VAD segments sent to transcription.")
+    parser.add_argument("--min-coverage-ratio", type=float, default=0.85, help="Minimum last-segment/SRT timestamp divided by video duration.")
     parser.add_argument(
         "--stop-after-segmentation",
         action="store_true",
@@ -159,29 +163,108 @@ def maybe_start_servers(args: argparse.Namespace) -> list[ManagedProcess]:
     return processes
 
 
-def validate_srt(path: Path, min_blocks: int) -> None:
+def probe_video_duration(path: Path) -> float:
+    result = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            str(path),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return float(result.stdout.strip())
+
+
+def parse_srt_timestamp(value: str) -> float:
+    match = re.fullmatch(r"(?P<h>\d{2}):(?P<m>\d{2}):(?P<s>\d{2}),(?P<ms>\d{3})", value.strip())
+    if not match:
+        raise AssertionError(f"Invalid SRT timestamp: {value!r}")
+    return (
+        int(match.group("h")) * 3600
+        + int(match.group("m")) * 60
+        + int(match.group("s"))
+        + int(match.group("ms")) / 1000
+    )
+
+
+def collect_srt_diagnostics(path: Path) -> dict:
     text = path.read_text(encoding="utf-8-sig")
     if not text.strip():
         raise AssertionError(f"Downloaded SRT is empty: {path}")
     if "-->" not in text:
         raise AssertionError(f"Downloaded file does not look like SRT: missing timestamp arrow in {path}")
     blocks = [block for block in re.split(r"\n\s*\n", text.strip()) if block.strip()]
-    if len(blocks) < min_blocks:
-        raise AssertionError(f"Expected at least {min_blocks} SRT block(s), got {len(blocks)} in {path}")
     if not re.search(r"^1\s*$", text, re.MULTILINE):
         raise AssertionError(f"Downloaded SRT does not contain a first subtitle block: {path}")
     has_subtitle_text = False
+    last_end = 0.0
     for block in blocks:
         lines = [line.strip() for line in block.splitlines() if line.strip()]
+        timestamp_lines = [line for line in lines if "-->" in line]
+        if timestamp_lines:
+            end_timestamp = timestamp_lines[-1].split("-->", 1)[1].strip()
+            last_end = max(last_end, parse_srt_timestamp(end_timestamp))
         cue_text_lines = [
             line for line in lines
             if not line.isdigit() and "-->" not in line
         ]
         if any(cue_text_lines):
             has_subtitle_text = True
-            break
     if not has_subtitle_text:
         raise AssertionError(f"Downloaded SRT has no subtitle text: {path}")
+    return {
+        "bytes": path.stat().st_size,
+        "blocks": len(blocks),
+        "lastEndSeconds": last_end,
+    }
+
+
+def validate_srt(path: Path, args: argparse.Namespace, duration_seconds: float, segment_diagnostics: dict) -> None:
+    diagnostics = collect_srt_diagnostics(path)
+    segment_count = int(segment_diagnostics.get("count", 0))
+    last_segment_end = float(segment_diagnostics.get("lastEndSeconds", 0.0))
+    srt_coverage_ratio = diagnostics["lastEndSeconds"] / duration_seconds if duration_seconds > 0 else 0.0
+    segment_coverage_ratio = last_segment_end / duration_seconds if duration_seconds > 0 else 0.0
+
+    failures = []
+    if diagnostics["blocks"] < args.min_srt_blocks:
+        failures.append(f"SRT blocks {diagnostics['blocks']} < expected {args.min_srt_blocks}")
+    if diagnostics["bytes"] < args.min_srt_bytes:
+        failures.append(f"SRT size {diagnostics['bytes']} bytes < expected {args.min_srt_bytes} bytes")
+    if segment_count < args.min_segments:
+        failures.append(f"VAD segments {segment_count} < expected {args.min_segments}")
+    if segment_coverage_ratio < args.min_coverage_ratio:
+        failures.append(
+            f"VAD temporal coverage {segment_coverage_ratio:.3f} "
+            f"({last_segment_end:.3f}s / {duration_seconds:.3f}s) < expected {args.min_coverage_ratio:.3f}"
+        )
+    if srt_coverage_ratio < args.min_coverage_ratio:
+        failures.append(
+            f"SRT temporal coverage {srt_coverage_ratio:.3f} "
+            f"({diagnostics['lastEndSeconds']:.3f}s / {duration_seconds:.3f}s) < expected {args.min_coverage_ratio:.3f}"
+        )
+
+    print(
+        "Browser E2E diagnostics: "
+        f"duration={duration_seconds:.3f}s; "
+        f"segments={segment_count}; "
+        f"lastSegmentEnd={last_segment_end:.3f}s; "
+        f"segmentCoverage={segment_coverage_ratio:.3f}; "
+        f"srtBlocks={diagnostics['blocks']}; "
+        f"srtBytes={diagnostics['bytes']}; "
+        f"lastSrtEnd={diagnostics['lastEndSeconds']:.3f}s; "
+        f"srtCoverage={srt_coverage_ratio:.3f}",
+        flush=True,
+    )
+    if failures:
+        raise AssertionError("Browser E2E output coverage checks failed:\n- " + "\n- ".join(failures))
 
 
 def assert_browser_audio_runtime(pipeline_status: str) -> None:
@@ -209,6 +292,8 @@ def run_browser_workflow(args: argparse.Namespace) -> Path | None:
     if not args.video.is_file():
         raise SystemExit(f"Video fixture not found: {args.video}")
 
+    duration_seconds = probe_video_duration(args.video)
+    transcribe_segments: list[dict] = []
     args.download_dir.mkdir(parents=True, exist_ok=True)
 
     with sync_playwright() as p:
@@ -217,6 +302,20 @@ def run_browser_workflow(args: argparse.Namespace) -> Path | None:
         context = browser.new_context(accept_downloads=True, service_workers="block")
         page = context.new_page()
         page.set_default_timeout(30_000)
+
+        def capture_transcribe_request(request) -> None:
+            if not request.url.endswith("/api/transcribe-audio"):
+                return
+            try:
+                payload = json.loads(request.post_data or "{}")
+            except json.JSONDecodeError:
+                return
+            segments = payload.get("segments", [])
+            if isinstance(segments, list):
+                transcribe_segments.clear()
+                transcribe_segments.extend(segment for segment in segments if isinstance(segment, dict))
+
+        page.on("request", capture_transcribe_request)
 
         try:
             log_step(f"Opening frontend {args.frontend_url}")
@@ -281,7 +380,11 @@ def run_browser_workflow(args: argparse.Namespace) -> Path | None:
     if destination is None:
         return destination
 
-    validate_srt(destination, args.min_srt_blocks)
+    segment_diagnostics = {
+        "count": len(transcribe_segments),
+        "lastEndSeconds": max((float(segment.get("end", 0.0)) for segment in transcribe_segments), default=0.0),
+    }
+    validate_srt(destination, args, duration_seconds, segment_diagnostics)
     return destination
 
 

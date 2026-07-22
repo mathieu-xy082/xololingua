@@ -148,14 +148,14 @@ test("client VAD segmenter adapts vad-web non-real-time segments into canonical 
         new: async () => ({
           async *run(pcm, sampleRate) {
             runCalls.push({ pcm, sampleRate });
-            yield { start: 1600, end: 3200, confidence: 0.92 };
-            yield { start: 0.5, end: 0.75, probability: 0.81 };
+            yield { start: 16000, end: 24000, confidence: 0.92 };
+            yield { start: 0.5, end: 1.0, probability: 0.81 };
           },
         }),
       },
     },
   };
-  const audio = { pcm: new Float32Array([0.1, -0.1]), sampleRate: 16000 };
+  const audio = { pcm: new Float32Array(640000), sampleRate: 16000 };
   const progress = [];
   const segmenter = createClientVadSegmenter({ environment });
 
@@ -169,8 +169,8 @@ test("client VAD segmenter adapts vad-web non-real-time segments into canonical 
     strategy: "vad-web",
     payload: {
       segments: [
-        { start: 0.1, end: 0.2 },
-        { start: 0.5, end: 0.75 },
+        { start: 16, end: 24 },
+        { start: 0.5, end: 1.0 },
       ],
     },
     metadata: {

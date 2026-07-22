@@ -1,5 +1,8 @@
 import { normalizeVadStageResult } from "./pipeline_stage_contract.js";
 
+const DEFAULT_MAX_SEGMENT_SECONDS = 12;
+const DEFAULT_MIN_SEGMENT_SECONDS = 0.4;
+
 export function detectClientVadCapabilities(environment = globalThis) {
   const vadWeb = Boolean(environment?.vad?.MicVAD)
     || Boolean(environment?.vad?.NonRealTimeVAD)
@@ -59,28 +62,75 @@ function createNonRealTimeVadSegmenter(nonRealTimeVad) {
 
     const pcm = audio?.pcm ?? audio;
     const sampleRate = audio?.sampleRate ?? audio?.sampleRateHz;
+    const audioDurationSeconds = pcm?.length && sampleRate ? pcm.length / sampleRate : undefined;
     const segments = [];
     for await (const segment of vad.run(pcm, sampleRate)) {
-      segments.push(normalizeVadWebSegmentTiming(segment, sampleRate));
+      segments.push(normalizeVadWebSegmentTiming(segment, sampleRate, audioDurationSeconds));
     }
     onProgress(100);
-    return { segments };
+    return { segments: splitLongVadSegments(segments) };
   };
 }
 
-function normalizeVadWebSegmentTiming(segment, sampleRate) {
+function splitLongVadSegments(
+  segments,
+  maxSegmentSeconds = DEFAULT_MAX_SEGMENT_SECONDS,
+  minSegmentSeconds = DEFAULT_MIN_SEGMENT_SECONDS,
+) {
+  if (!Number.isFinite(maxSegmentSeconds) || maxSegmentSeconds <= 0) {
+    return segments;
+  }
+  const bounded = [];
+  for (const segment of segments) {
+    const start = Number(segment.start);
+    const end = Number(segment.end);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+      continue;
+    }
+    let cursor = start;
+    while (end - cursor > maxSegmentSeconds) {
+      bounded.push({ ...segment, start: cursor, end: cursor + maxSegmentSeconds });
+      cursor += maxSegmentSeconds;
+    }
+    if (end - cursor >= minSegmentSeconds) {
+      bounded.push({ ...segment, start: cursor, end });
+    }
+  }
+  return bounded;
+}
+
+function normalizeVadWebSegmentTiming(segment, sampleRate, audioDurationSeconds) {
   return {
     ...segment,
-    start: normalizeVadWebTimestamp(segment.start, sampleRate),
-    end: normalizeVadWebTimestamp(segment.end, sampleRate),
+    start: normalizeVadWebTimestamp(segment.start, { audioDurationSeconds, sampleRate }),
+    end: normalizeVadWebTimestamp(segment.end, { audioDurationSeconds, sampleRate }),
   };
 }
 
-function normalizeVadWebTimestamp(value, sampleRate) {
-  if (typeof value !== "number" || typeof sampleRate !== "number" || sampleRate <= 0) {
+function normalizeVadWebTimestamp(value, { audioDurationSeconds, sampleRate } = {}) {
+  if (typeof value !== "number") {
     return value;
   }
-  return Number.isInteger(value) && value >= 1000 ? value / sampleRate : value;
+  if (!Number.isFinite(value) || value < 0) {
+    return value;
+  }
+  if (typeof audioDurationSeconds === "number" && audioDurationSeconds > 0) {
+    const tolerance = Math.max(1, audioDurationSeconds * 0.05);
+    if (value <= audioDurationSeconds + tolerance) {
+      return value;
+    }
+    const milliseconds = value / 1000;
+    if (milliseconds <= audioDurationSeconds + tolerance) {
+      return milliseconds;
+    }
+    if (typeof sampleRate === "number" && sampleRate > 0) {
+      const samples = value / sampleRate;
+      if (samples <= audioDurationSeconds + tolerance) {
+        return samples;
+      }
+    }
+  }
+  return Number.isInteger(value) && value >= 1000 ? value / 1000 : value;
 }
 
 function normalizeVadPayload(result) {

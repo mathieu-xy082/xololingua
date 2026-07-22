@@ -40,7 +40,7 @@ test("configureOrtWasmPaths pins ORT wasm assets to local node_modules paths", (
 test("createVadWebRuntimeSegmenter decodes browser WAV blobs and runs NonRealTimeVAD with explicit local assets", async () => {
   const calls = [];
   const audioBlob = new Blob([new Uint8Array([1, 2, 3])], { type: "audio/wav" });
-  const pcm = new Float32Array([0, 0.2, 0.1, -0.1]);
+  const pcm = new Float32Array(32000);
   const environment = {
     vad: {
       utils: {
@@ -60,8 +60,8 @@ test("createVadWebRuntimeSegmenter decodes browser WAV blobs and runs NonRealTim
           return {
             async *run(receivedPcm, receivedSampleRate) {
               calls.push(["run", receivedPcm, receivedSampleRate]);
-              yield { start: 0, end: 0.25, audio: receivedPcm };
-              yield { start: 0.5, end: 0.75, audio: receivedPcm };
+              yield { start: 0, end: 0.5, audio: receivedPcm };
+              yield { start: 0.75, end: 1.25, audio: receivedPcm };
             },
           };
         },
@@ -88,14 +88,15 @@ test("createVadWebRuntimeSegmenter decodes browser WAV blobs and runs NonRealTim
   ]);
   assert.deepEqual(result, {
     segments: [
-      { start: 0, end: 0.25 },
-      { start: 0.5, end: 0.75 },
+      { start: 0, end: 0.5 },
+      { start: 0.75, end: 1.25 },
     ],
     diagnostics: {
       audioFileName: "browser.wav",
       model: "silero-vad-legacy",
-      pcmSampleCount: 4,
+      pcmSampleCount: 32000,
       rawSegmentCount: 2,
+      boundedSegmentCount: 2,
       sourceSampleRate: 16000,
       strategy: "vad-web",
     },
@@ -104,7 +105,74 @@ test("createVadWebRuntimeSegmenter decodes browser WAV blobs and runs NonRealTim
   });
 });
 
-test("createVadWebRuntimeSegmenter defensively converts sample-index VAD timings to seconds", async () => {
+test("createVadWebRuntimeSegmenter converts vad-web millisecond timings to seconds", async () => {
+  const audioBlob = new Blob([new Uint8Array([1, 2, 3])], { type: "audio/wav" });
+  const pcm = new Float32Array(320000);
+  const environment = {
+    vad: {
+      utils: {
+        audioFileToArray: async () => ({ audio: pcm, sampleRate: 16000 }),
+      },
+      NonRealTimeVAD: {
+        new: async (options) => {
+          options.ortConfig(environment.ort);
+          return {
+            async *run() {
+              yield { start: 16000, end: 18000 };
+              yield { start: 18500, end: 20000 };
+            },
+          };
+        },
+      },
+    },
+    ort: { env: { wasm: {} } },
+  };
+
+  const segmenter = createVadWebRuntimeSegmenter({ environment });
+  const result = await segmenter({ audioBlob, audioFileName: "browser.wav" });
+
+  assert.deepEqual(result.segments, [
+    { start: 16, end: 18 },
+    { start: 18.5, end: 20 },
+  ]);
+});
+
+test("createVadWebRuntimeSegmenter splits long vad-web segments before transcription handoff", async () => {
+  const audioBlob = new Blob([new Uint8Array([1, 2, 3])], { type: "audio/wav" });
+  const pcm = new Float32Array(640000);
+  const environment = {
+    vad: {
+      utils: {
+        audioFileToArray: async () => ({ audio: pcm, sampleRate: 16000 }),
+      },
+      NonRealTimeVAD: {
+        new: async (options) => {
+          options.ortConfig(environment.ort);
+          return {
+            async *run() {
+              yield { start: 0, end: 39000 };
+            },
+          };
+        },
+      },
+    },
+    ort: { env: { wasm: {} } },
+  };
+
+  const segmenter = createVadWebRuntimeSegmenter({ environment });
+  const result = await segmenter({ audioBlob, audioFileName: "browser.wav" });
+
+  assert.deepEqual(result.segments, [
+    { start: 0, end: 12 },
+    { start: 12, end: 24 },
+    { start: 24, end: 36 },
+    { start: 36, end: 39 },
+  ]);
+  assert.equal(result.diagnostics.rawSegmentCount, 1);
+  assert.equal(result.diagnostics.boundedSegmentCount, 4);
+});
+
+test("createVadWebRuntimeSegmenter still handles sample-index timings when they fit the audio duration", async () => {
   const audioBlob = new Blob([new Uint8Array([1, 2, 3])], { type: "audio/wav" });
   const pcm = new Float32Array(48000);
   const environment = {

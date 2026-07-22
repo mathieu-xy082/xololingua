@@ -2,6 +2,8 @@ const DEFAULT_VAD_MODEL_URL = "/node_modules/@ricky0123/vad-web/dist/silero_vad_
 const DEFAULT_ORT_WASM_BASE_PATH = "/node_modules/onnxruntime-web/dist/";
 const DEFAULT_VAD_MODEL = "silero-vad-legacy";
 const DEFAULT_FRAME_DURATION_MS = 96;
+const DEFAULT_MAX_SEGMENT_SECONDS = 12;
+const DEFAULT_MIN_SEGMENT_SECONDS = 0.4;
 
 export function detectVadWebRuntimeCapabilities(environment = globalThis) {
   const missing = [];
@@ -43,6 +45,8 @@ export function createVadWebRuntimeSegmenter({
   ortWasmBasePath = DEFAULT_ORT_WASM_BASE_PATH,
   model = DEFAULT_VAD_MODEL,
   frameDurationMs = DEFAULT_FRAME_DURATION_MS,
+  maxSegmentSeconds = DEFAULT_MAX_SEGMENT_SECONDS,
+  minSegmentSeconds = DEFAULT_MIN_SEGMENT_SECONDS,
 } = {}) {
   return async function segmentWithVadWeb(audio, onProgress = () => {}) {
     const capabilities = detectVadWebRuntimeCapabilities(environment);
@@ -81,24 +85,34 @@ export function createVadWebRuntimeSegmenter({
     }
 
     onProgress(35);
+    const audioDurationSeconds = pcm.length / sourceSampleRate;
     const segments = [];
     let rawSegmentCount = 0;
     for await (const segment of vad.run(pcm, sourceSampleRate)) {
       rawSegmentCount += 1;
       segments.push({
-        start: normalizeVadTimestamp(segment.start, sourceSampleRate),
-        end: normalizeVadTimestamp(segment.end, sourceSampleRate),
+        start: normalizeVadTimestamp(segment.start, {
+          audioDurationSeconds,
+          sampleRate: sourceSampleRate,
+        }),
+        end: normalizeVadTimestamp(segment.end, {
+          audioDurationSeconds,
+          sampleRate: sourceSampleRate,
+        }),
       });
     }
 
+    const boundedSegments = splitLongSegments(segments, maxSegmentSeconds, minSegmentSeconds);
+
     onProgress(100);
     return {
-      segments,
+      segments: boundedSegments,
       diagnostics: {
         audioFileName: audio?.audioFileName ?? audioBlob?.name ?? null,
         model,
         pcmSampleCount: pcm.length,
         rawSegmentCount,
+        boundedSegmentCount: boundedSegments.length,
         sourceSampleRate,
         strategy: "vad-web",
       },
@@ -108,15 +122,59 @@ export function createVadWebRuntimeSegmenter({
   };
 }
 
-function normalizeVadTimestamp(value, sampleRate) {
-  if (typeof value !== "number" || typeof sampleRate !== "number" || sampleRate <= 0) {
+function normalizeVadTimestamp(value, { audioDurationSeconds, sampleRate } = {}) {
+  if (typeof value !== "number") {
     return value;
   }
-  return Number.isInteger(value) && value >= 1000 ? value / sampleRate : value;
+  if (!Number.isFinite(value) || value < 0) {
+    return value;
+  }
+  if (typeof audioDurationSeconds === "number" && audioDurationSeconds > 0) {
+    const tolerance = Math.max(1, audioDurationSeconds * 0.05);
+    if (value <= audioDurationSeconds + tolerance) {
+      return value;
+    }
+    const milliseconds = value / 1000;
+    if (milliseconds <= audioDurationSeconds + tolerance) {
+      return milliseconds;
+    }
+    if (typeof sampleRate === "number" && sampleRate > 0) {
+      const samples = value / sampleRate;
+      if (samples <= audioDurationSeconds + tolerance) {
+        return samples;
+      }
+    }
+  }
+  return Number.isInteger(value) && value >= 1000 ? value / 1000 : value;
+}
+
+function splitLongSegments(segments, maxSegmentSeconds, minSegmentSeconds) {
+  if (!Number.isFinite(maxSegmentSeconds) || maxSegmentSeconds <= 0) {
+    return segments;
+  }
+  const bounded = [];
+  for (const segment of segments) {
+    const start = Number(segment.start);
+    const end = Number(segment.end);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+      continue;
+    }
+    let cursor = start;
+    while (end - cursor > maxSegmentSeconds) {
+      bounded.push({ start: cursor, end: cursor + maxSegmentSeconds });
+      cursor += maxSegmentSeconds;
+    }
+    if (end - cursor >= minSegmentSeconds) {
+      bounded.push({ start: cursor, end });
+    }
+  }
+  return bounded;
 }
 
 export {
   DEFAULT_FRAME_DURATION_MS,
+  DEFAULT_MAX_SEGMENT_SECONDS,
+  DEFAULT_MIN_SEGMENT_SECONDS,
   DEFAULT_ORT_WASM_BASE_PATH,
   DEFAULT_VAD_MODEL,
   DEFAULT_VAD_MODEL_URL,
