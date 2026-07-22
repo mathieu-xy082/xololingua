@@ -17,7 +17,7 @@ git@gitlab.com:android-app-games/xololingua.git
 ## Règles générales
 
 - `main` reste la branche stable.
-- `ec/backend` est la baseline d'intégration/review pour le travail backend → client/PWA déjà accumulé.
+- `ec/backend` est la baseline d'intégration/review pour le travail backend → client/PWA accumulé.
 - Les nouvelles itérations ne doivent plus grossir `ec/backend` directement : elles partent de branches spécialisées.
 - Les branches secondaires ou follow-up doivent rester dédiées à un objectif clair.
 - Une branche déjà mergée/fermée ne doit pas être réutilisée pour de nouveaux travaux.
@@ -30,14 +30,17 @@ git@gitlab.com:android-app-games/xololingua.git
 
 ## État d'intégration courant
 
-`ec/backend` contient déjà :
+`ec/backend` contient maintenant :
 
-- router hybride et reporting de stages browser/server;
-- extraction audio navigateur WebCodecs/ffmpeg.wasm + fallback Python;
-- wiring audio runtime actuellement aligné avec `ec/backend`;
-- les anciennes branches de migration audio/router/review ont été absorbées dans `ec/backend` puis supprimées du remote pour éviter les faux workstreams.
+- router hybride et reporting de stages browser/server ;
+- normalisation canonique des contrats de stages `{stage,runtime,strategy,payload,metadata}` côté routeur JavaScript ;
+- extraction audio navigateur WebCodecs/ffmpeg.wasm + fallback Python ;
+- VAD navigateur et fallback Python alignés sur les contrats canonique ;
+- intégration PWA/offline shell avec métadonnées honnêtes sur les assets offline vs backend ;
+- transcription/traduction client-side via adapters browser et workers, avec fallback Python clair ;
+- gate `pdm run e2e-browser-strict` qui exige audio/VAD/transcription/traduction browser et compare le SRT browser à une référence backend déterministe.
 
-Le prochain risque architectural est l'incompatibilité subtile entre résultats navigateur et fallback Python. La priorité est donc maintenant la normalisation canonique du contrat de sortie de chaque stage.
+Le prochain risque architectural est maintenant le passage des adapters/injections browser ML à de vrais modèles navigateur packagés/offline. La priorité active devient `ec/browser-model-assets`.
 
 ## Tâche maîtresse
 
@@ -53,7 +56,7 @@ La tâche maîtresse est read-only par défaut. Elle ne doit pas :
 - force-push ;
 - créer/modifier/supprimer d'autres cron jobs.
 
-Elle reçoit comme contexte les derniers outputs des sous-tâches spécialisées via `context_from`.
+Elle reçoit comme contexte les derniers outputs des sous-tâches spécialisées via `context_from` quand des jobs spécialisés sont actifs.
 
 Elle doit alerter avec le marqueur suivant lorsqu'une branche semble prête :
 
@@ -65,10 +68,7 @@ BRANCHE PRÊTE POUR REVIEW: <branch>
 
 | Priorité | Job ID | Nom | Branche principale | Cadence | État | Rôle |
 |---:|---|---|---|---:|---|---|
-| P0 | `44a387028e9f` | XoloLingua P0 pipeline stage contract normalization | `ec/pipeline-stage-contract-normalization` | 6h | active | Normaliser le contrat canonique `{stage,runtime,strategy,payload,metadata}` entre navigateur et fallback Python |
-| P1 | `4b71c672d8b8` | XoloLingua P1 browser VAD segmentation | `ec/browser-vad-segmentation` | 8h | active | VAD navigateur, à aligner sur le contrat canonique P0 |
-| P2/P3 | `46a6795cd1ff` | XoloLingua P2/P3 client ML stages | `ec/client-ml-stages` | 8h | active | Transcription/traduction côté client, à aligner sur le contrat canonique |
-| PWA | `5263f6352045` | XoloLingua PWA service metadata truthfulness | `ec/pwa-offline-integration` | 12h | active | Cohérence des métadonnées service/PWA et vérité affichée utilisateur |
+| P0 | `à créer` | XoloLingua P0 browser real model assets | `ec/browser-model-assets` | 12h | active | Choisir, packager et valider de vrais modèles browser ASR/traduction avec assets offline/cache/warmup/timeouts/fallbacks |
 | coord | `443746743ea7` | XoloLingua master branch coordinator | n/a | 12h | active | Coordination read-only |
 | cleanup | `4e64fc0e1685` | XoloLingua tmp cleanup | n/a | quotidien 03:00 UTC | active | Nettoyage no-agent des fichiers temporaires hors repo |
 
@@ -81,8 +81,12 @@ BRANCHE PRÊTE POUR REVIEW: <branch>
 | `36180c1d35d6` | XoloLingua browser audio extraction workstream | `ec/browser-audio-extraction` | historique/intégré | Socle extraction audio dans `ec/backend`; branche remote supprimée |
 | `0feea85268be` | XoloLingua hybrid pipeline routing workstream | `ec/hybrid-pipeline-routing` | pause | Intégré dans `ec/backend`; branche remote supprimée |
 | `469e4544f5ce` | XoloLingua app hybrid router wiring workstream | `ec/app-hybrid-router-wiring` | historique/intégré | Socle app/router dans `ec/backend`; branche remote supprimée |
-| `639f23a146c0` | XoloLingua client ML stages workstream | `ec/client-ml-stages` | remplacé/ancien | Remplacé par `46a6795cd1ff` dans le pilotage actuel |
-| `63a1182beb92` | XoloLingua PWA offline integration workstream | `ec/pwa-offline-integration` | remplacé/ancien | Remplacé par `5263f6352045` dans le pilotage actuel |
+| `44a387028e9f` | XoloLingua P0 pipeline stage contract normalization | `ec/pipeline-stage-contract-normalization` | pause/intégré | Contrat canonique intégré dans `ec/backend` |
+| `4b71c672d8b8` | XoloLingua P1 browser VAD segmentation | `ec/browser-vad-segmentation` | pause/intégré | VAD navigateur intégré dans `ec/backend` |
+| `46a6795cd1ff` | XoloLingua P2/P3 client ML stages | `ec/client-ml-stages` | intégré | Intégré dans `ec/backend`; branche remote supprimée |
+| `5263f6352045` | XoloLingua PWA service metadata truthfulness | `ec/pwa-offline-integration` | intégré | Intégré dans `ec/backend`; branche remote supprimée |
+| `639f23a146c0` | XoloLingua client ML stages workstream | `ec/client-ml-stages` | remplacé/ancien | Remplacé par le pilotage P2/P3, puis intégré |
+| `63a1182beb92` | XoloLingua PWA offline integration workstream | `ec/pwa-offline-integration` | remplacé/ancien | Remplacé par le pilotage PWA, puis intégré |
 | `89e76696343f` | XoloLingua backend review stabilization workstream | `ec/backend-review-stabilization` | pause | Intégré/clos; branche remote supprimée |
 
 ## Branches surveillées
@@ -94,27 +98,19 @@ Branches principales :
 
 Branches spécialisées actives :
 
-- `ec/pipeline-stage-contract-normalization`
-- `ec/browser-vad-segmentation`
-- `ec/client-ml-stages`
-- `ec/pwa-offline-integration`
+- `ec/browser-model-assets`
 
 Branches historiques/follow-up encore présentes à surveiller sans les réutiliser automatiquement :
 
-- `ec/more-languages`
-- `follow/more-languages`
 - `ec/many-languages`
 - `ec/readme-v2`
 - `ec/speedup`
 
 ## Ordre recommandé de review
 
-1. `ec/pipeline-stage-contract-normalization` — priorité P0 : contrat canonique stage/runtime/payload pour éviter les incompatibilités navigateur/fallback Python.
-2. `ec/browser-vad-segmentation` — reprendre/valider après alignement explicite sur le contrat P0.
-3. `ec/client-ml-stages` — transcription/traduction client après le contrat P0.
-4. `ec/pwa-offline-integration` — cohérence PWA/service metadata après clarification du contrat runtime.
-5. Branches follow-up explicitement créées après fermeture/merge d'une branche existante.
-6. Nettoyage de branches historiques uniquement après confirmation de Mathieu.
+1. `ec/browser-model-assets` — packaging de vrais modèles ASR/traduction navigateur, assets offline/cache/warmup/timeouts/fallbacks, puis E2E browser réel distinct du gate déterministe rapide.
+2. Branches follow-up explicitement créées après fermeture/merge d'une branche existante.
+3. Nettoyage de branches historiques uniquement après confirmation de Mathieu.
 
 ## Commandes de validation utiles
 
@@ -130,10 +126,16 @@ Validation API E2E :
 pdm run api-e2e
 ```
 
-Validation navigateur stricte, lorsque nécessaire :
+Validation navigateur stricte déterministe rapide :
 
 ```bash
-pdm run browser-e2e
+pdm run e2e-browser-strict
+```
+
+Future validation navigateur avec vrais modèles packagés, à créer dans `ec/browser-model-assets` :
+
+```bash
+pdm run e2e-browser-real-models
 ```
 
 ## Rôle du coordinateur
@@ -144,6 +146,7 @@ pdm run browser-e2e
 2. lire les derniers outputs des tâches spécialisées ;
 3. identifier les branches prêtes pour review ;
 4. identifier les blocages et validations manquantes ;
-5. vérifier que les nouveaux travaux navigateur/fallback respectent le contrat canonique P0 ;
-6. recommander l'ordre de review/intégration ;
-7. fournir un résumé court et actionnable à Mathieu.
+5. vérifier que les travaux navigateur/fallback respectent le contrat canonique intégré dans `ec/backend` ;
+6. vérifier que `ec/browser-model-assets` garde un gate E2E réel distinct de `e2e-browser-strict` déterministe ;
+7. recommander l'ordre de review/intégration ;
+8. fournir un résumé court et actionnable à Mathieu.
