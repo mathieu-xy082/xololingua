@@ -177,7 +177,7 @@ test("client pipeline report does not mark browser cloud translation as offline-
   );
 });
 
-test("collectClientPipelineCapabilities builds a report from browser feature probes", () => {
+test("collectClientPipelineCapabilities requires cached model assets before marking ML stages browser-ready", () => {
   const report = collectClientPipelineCapabilities({
     VideoDecoder: function VideoDecoder() {},
     AudioDecoder: function AudioDecoder() {},
@@ -195,17 +195,19 @@ test("collectClientPipelineCapabilities builds a report from browser feature pro
     ],
   });
 
-  assert.equal(report.mode, "client-side");
-  assert.deepEqual(report.browserStages, [
-    "audioExtraction",
-    "vad",
-    "transcription",
-    "translation",
-  ]);
+  assert.equal(report.mode, "hybrid-fallback");
+  assert.deepEqual(report.browserStages, ["audioExtraction", "vad", "transcription"]);
+  assert.deepEqual(report.serverFallbackStages, ["translation"]);
   assert.equal(report.stages.audioExtraction.strategy, "webcodecs");
   assert.equal(report.stages.vad.strategy, "vad-web");
   assert.equal(report.stages.transcription.strategy, "transformers.js");
   assert.equal(report.stages.translation.strategy, "local-transformers.js");
+  assert.equal(report.stages.translation.runtime, "server-fallback");
+  assert.equal(
+    report.stages.translation.browserFailureReason,
+    "Model assets are not cached for translation; Python fallback remains required until bootstrap completes.",
+  );
+  assert.equal(report.stages.translation.attemptedBrowserStrategy, "nllb-transformers.js");
   assert.deepEqual(report.modelAssets.offlineReadyStages, ["transcription"]);
   assert.deepEqual(report.modelAssets.bootstrapRequiredStages, ["translation"]);
   assert.match(report.modelAssets.stageRows[1].fallbackReason, /Model assets are not cached/);

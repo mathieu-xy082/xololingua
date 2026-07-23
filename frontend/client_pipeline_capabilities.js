@@ -26,14 +26,23 @@ const PYTHON_FALLBACK_ENDPOINTS = {
 };
 
 export function collectClientPipelineCapabilities(environment = globalThis) {
+  const modelAssets = createBrowserModelAssetReport({
+    cachedUrls: environment?.__xololinguaCachedModelAssetUrls || [],
+  });
   return createClientPipelineCapabilityReport({
     audioExtraction: detectClientAudioExtractionCapabilities(environment),
     vad: detectVadWebRuntimeCapabilities(environment),
-    transcription: detectClientTranscriptionCapabilities(environment),
-    translation: detectClientTranslationCapabilities(environment),
-    modelAssets: createBrowserModelAssetReport({
-      cachedUrls: environment?.__xololinguaCachedModelAssetUrls || [],
-    }),
+    transcription: applyModelAssetReadiness(
+      detectClientTranscriptionCapabilities(environment),
+      modelAssets,
+      "transcription",
+    ),
+    translation: applyModelAssetReadiness(
+      detectClientTranslationCapabilities(environment),
+      modelAssets,
+      "translation",
+    ),
+    modelAssets,
   });
 }
 
@@ -44,7 +53,7 @@ export function createClientPipelineCapabilityReport(capabilitiesByStage) {
 
   for (const stageName of PIPELINE_STAGE_ORDER) {
     const capabilities = capabilitiesByStage?.[stageName] || { strategy: "unavailable" };
-    const runtime = capabilities.strategy === "unavailable"
+    const runtime = capabilities.runtime === "server-fallback" || capabilities.strategy === "unavailable"
       ? "server-fallback"
       : "browser";
 
@@ -72,6 +81,22 @@ export function createClientPipelineCapabilityReport(capabilitiesByStage) {
     offlineAvailability,
     modelAssets,
     demoSummary: createDemoSummary({ mode, stages, browserStages, serverFallbackStages, offlineAvailability }),
+  };
+}
+
+function applyModelAssetReadiness(capabilities, modelAssets, stageName) {
+  if (capabilities?.strategy === "unavailable") {
+    return capabilities;
+  }
+  const stageAssetRow = modelAssets.stageRows.find((row) => row.stage === stageName);
+  if (!stageAssetRow || stageAssetRow.status === "offline-ready") {
+    return capabilities;
+  }
+  return {
+    ...capabilities,
+    runtime: "server-fallback",
+    browserFailureReason: stageAssetRow.fallbackReason,
+    attemptedBrowserStrategy: stageAssetRow.attemptedBrowserStrategy,
   };
 }
 
