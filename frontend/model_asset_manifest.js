@@ -72,10 +72,18 @@ export function createBrowserModelAssetReport({
 } = {}) {
   const cached = new Set(cachedUrls);
   const stageRows = modelEntries(manifest).map(([stage, model]) => {
-    const requiredUrls = (model.assets || [])
+    const requiredAssets = (model.assets || [])
       .filter((asset) => asset.required !== false)
-      .map((asset) => versionAssetUrl(asset.url, manifest.version));
-    const missingUrls = requiredUrls.filter((url) => !cached.has(url));
+      .map((asset) => ({
+        ...asset,
+        versionedUrl: versionAssetUrl(asset.url, manifest.version),
+        bytes: Number.isFinite(asset.bytes) ? asset.bytes : 0,
+      }));
+    const requiredUrls = requiredAssets.map((asset) => asset.versionedUrl);
+    const missingAssets = requiredAssets.filter((asset) => !cached.has(asset.versionedUrl));
+    const missingUrls = missingAssets.map((asset) => asset.versionedUrl);
+    const requiredBytes = requiredAssets.reduce((total, asset) => total + asset.bytes, 0);
+    const missingBytes = missingAssets.reduce((total, asset) => total + asset.bytes, 0);
     const status = missingUrls.length === 0 ? "offline-ready" : "bootstrap-required";
     const fallbackReason = status === "offline-ready"
       ? null
@@ -89,16 +97,23 @@ export function createBrowserModelAssetReport({
       modelId: model.modelId,
       requiredUrls,
       missingUrls,
+      requiredBytes,
+      missingBytes,
       fallbackReason,
       attemptedBrowserStrategy: model.strategy,
     };
   });
+
+  const totalRequiredBytes = stageRows.reduce((total, row) => total + row.requiredBytes, 0);
+  const totalMissingBytes = stageRows.reduce((total, row) => total + row.missingBytes, 0);
 
   return {
     version: manifest.version,
     offlineReadyStages: stageRows.filter((row) => row.status === "offline-ready").map((row) => row.stage),
     bootstrapRequiredStages: stageRows.filter((row) => row.status === "bootstrap-required").map((row) => row.stage),
     fallbackRequiredStages: stageRows.filter((row) => row.status !== "offline-ready").map((row) => row.stage),
+    totalRequiredBytes,
+    totalMissingBytes,
     cacheUrls: buildModelAssetCacheUrls(manifest),
     stageRows,
   };

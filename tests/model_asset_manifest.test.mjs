@@ -37,10 +37,17 @@ test("browser model asset report separates offline-ready, bootstrap-required, an
   assert.deepEqual(report.offlineReadyStages, ["transcription"]);
   assert.deepEqual(report.bootstrapRequiredStages, ["translation"]);
   assert.deepEqual(report.fallbackRequiredStages, ["translation"]);
-  assert.deepEqual(report.stageRows.map((row) => ({ stage: row.stage, status: row.status })), [
-    { stage: "transcription", status: "offline-ready" },
-    { stage: "translation", status: "bootstrap-required" },
+  assert.deepEqual(report.stageRows.map(({ stage, status, requiredBytes, missingBytes }) => ({
+    stage,
+    status,
+    requiredBytes,
+    missingBytes,
+  })), [
+    { stage: "transcription", status: "offline-ready", requiredBytes: 1, missingBytes: 0 },
+    { stage: "translation", status: "bootstrap-required", requiredBytes: 1, missingBytes: 1 },
   ]);
+  assert.equal(report.totalRequiredBytes, 2);
+  assert.equal(report.totalMissingBytes, 1);
   assert.match(report.stageRows[1].fallbackReason, /Model assets are not cached/);
 });
 
