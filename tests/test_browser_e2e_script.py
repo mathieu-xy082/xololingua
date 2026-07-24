@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import argparse
 import importlib.util
 import os
 import re
@@ -73,8 +74,19 @@ class BrowserE2EScriptTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             bad_srt = Path(directory) / "timestamp-only.srt"
             bad_srt.write_text("1\n00:00:00,000 --> 00:00:01,000\n\n", encoding="utf-8")
+            args = argparse.Namespace(
+                min_srt_blocks=1,
+                min_segments=1,
+                min_srt_bytes=1,
+                min_coverage_ratio=0.1,
+            )
             with self.assertRaisesRegex(AssertionError, "subtitle text"):
-                module.validate_srt(bad_srt, min_blocks=1)
+                module.validate_srt(
+                    bad_srt,
+                    args,
+                    duration_seconds=10.0,
+                    segment_diagnostics={"count": 1, "lastEndSeconds": 1.0},
+                )
 
     def test_browser_e2e_exposes_require_browser_audio_guard(self):
         module = self.load_module()
@@ -115,6 +127,17 @@ class BrowserE2EScriptTests(unittest.TestCase):
                 "Subtitle file ready. Pipeline: Audio extraction: Browser (ffmpeg.wasm); "
                 "VAD / segmentation: Python fallback via POST /api/segment-audio."
             )
+
+    def test_backend_reference_injection_marks_deterministic_model_assets_cached(self):
+        module = self.load_module()
+
+        script = module.create_backend_reference_init_script({"translatedSegments": []})
+
+        self.assertIn("window.__xololinguaCachedModelAssetUrls", script)
+        self.assertIn("models/asr/whisper-tiny/manifest.json?v=browser-model-assets-v1", script)
+        self.assertIn("models/translation/nllb-fr-en/manifest.json?v=browser-model-assets-v1", script)
+        self.assertIn("XOLOLINGUA_CLIENT_TRANSCRIBER", script)
+        self.assertIn("XOLOLINGUA_CLIENT_TRANSLATOR", script)
 
 
 if __name__ == "__main__":

@@ -175,7 +175,7 @@ que lorsque le nouveau gate réel est implémenté, documenté, et vert, ou lors
 ## Découpage recommandé
 
 1. Ajouter manifest modèle + tests unitaires du resolver/cache metadata. ✅ `BROWSER_MODEL_ASSET_MANIFEST` déclare les choix ASR/traduction et refuse les URLs distantes implicites.
-2. Ajouter stratégie de chargement offline/cache et erreurs/fallbacks testées. En cours : `createBrowserModelAssetReport` sépare `offline-ready`, `bootstrap-required`, fallback Python, octets manquants; `buildModelAssetBootstrapPlan` liste les étapes cachées/à télécharger avec poids de progression et retry explicite.
+2. Ajouter stratégie de chargement offline/cache et erreurs/fallbacks testées. ✅ `frontend/model_asset_bootstrap.js` inspecte la Cache API réelle, détecte IndexedDB/Cache API, produit `offline-ready` / `bootstrap-required` / `unavailable`, liste `missingModelAssets`, et propage le fallback metadata dans les capacités client async.
 3. Brancher ASR réel browser avec warmup/timeouts.
 4. Brancher traduction réelle browser avec warmup/timeouts.
 5. Étendre service worker/cache versionné.

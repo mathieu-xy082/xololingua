@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   collectClientPipelineCapabilities,
+  collectClientPipelineCapabilitiesWithModelAssetBootstrap,
   createClientPipelineCapabilityReport,
 } from "../frontend/client_pipeline_capabilities.js";
 
@@ -211,4 +212,42 @@ test("collectClientPipelineCapabilities requires cached model assets before mark
   assert.deepEqual(report.modelAssets.offlineReadyStages, ["transcription"]);
   assert.deepEqual(report.modelAssets.bootstrapRequiredStages, ["translation"]);
   assert.match(report.modelAssets.stageRows[1].fallbackReason, /Model assets are not cached/);
+});
+
+test("collectClientPipelineCapabilitiesWithModelAssetBootstrap uses the real browser cache resolver", async () => {
+  const openedCaches = [];
+  const environment = {
+    VideoDecoder: function VideoDecoder() {},
+    AudioDecoder: function AudioDecoder() {},
+    AudioContext: function AudioContext() {},
+    vad: {
+      NonRealTimeVAD: { new: async () => ({}) },
+      utils: { audioFileToArray: async () => ({ audio: new Float32Array(), sampleRate: 16000 }) },
+    },
+    ort: { env: { wasm: {} } },
+    Worker: function Worker() {},
+    navigator: { gpu: {} },
+    transformers: { pipeline: function pipeline() {} },
+    indexedDB: {},
+    caches: {
+      async open(cacheName) {
+        openedCaches.push(cacheName);
+        return {
+          async match(url) {
+            return url.includes("whisper-tiny") ? { ok: true, url } : undefined;
+          },
+        };
+      },
+    },
+  };
+
+  const report = await collectClientPipelineCapabilitiesWithModelAssetBootstrap(environment);
+
+  assert.deepEqual(openedCaches, ["xololingua-model-assets-browser-model-assets-v1"]);
+  assert.equal(report.modelAssets.status, "bootstrap-required");
+  assert.deepEqual(report.modelAssets.offlineReadyStages, ["transcription"]);
+  assert.deepEqual(report.modelAssets.fallbackRequiredStages, ["translation"]);
+  assert.equal(report.stages.transcription.runtime, "browser");
+  assert.equal(report.stages.translation.runtime, "server-fallback");
+  assert.deepEqual(report.stages.translation.missingModelAssets.map((asset) => asset.assetName), ["translation-manifest"]);
 });

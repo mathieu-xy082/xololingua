@@ -494,6 +494,10 @@ def create_backend_reference_init_script(backend_reference: dict) -> str:
   const reference = {reference_json};
   const byPosition = (segments, index) => Array.isArray(segments) ? segments[index] || {{}} : {{}};
   window.transformersJs = true;
+  window.__xololinguaCachedModelAssetUrls = [
+    'models/asr/whisper-tiny/manifest.json?v=browser-model-assets-v1',
+    'models/translation/nllb-fr-en/manifest.json?v=browser-model-assets-v1'
+  ];
   window.XOLOLINGUA_CLIENT_TRANSCRIBER = {{
     async transcribeAudio(request, onProgress = () => {{}}) {{
       const inputSegments = Array.isArray(request?.segments) ? request.segments : [];

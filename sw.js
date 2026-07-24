@@ -8,6 +8,7 @@ const ASSETS = [
   "frontend/client_audio_extractor.js",
   "frontend/ffmpeg_wasm_runtime.js",
   "frontend/client_pipeline_capabilities.js",
+  "frontend/model_asset_bootstrap.js",
   "frontend/model_asset_manifest.js",
   "frontend/client_pipeline_router.js",
   "frontend/pipeline_stage_contract.js",

@@ -2,6 +2,7 @@ import { detectClientAudioExtractionCapabilities } from "./client_audio_extracto
 import { detectVadWebRuntimeCapabilities } from "./vad_web_runtime.js";
 import { detectClientTranscriptionCapabilities } from "./client_transcriber.js";
 import { detectClientTranslationCapabilities } from "./client_translator.js";
+import { resolveBrowserModelAssetBootstrap } from "./model_asset_bootstrap.js";
 import { createBrowserModelAssetReport } from "./model_asset_manifest.js";
 
 const PIPELINE_STAGE_ORDER = [
@@ -29,6 +30,15 @@ export function collectClientPipelineCapabilities(environment = globalThis) {
   const modelAssets = createBrowserModelAssetReport({
     cachedUrls: environment?.__xololinguaCachedModelAssetUrls || [],
   });
+  return collectClientPipelineCapabilitiesFromModelAssets(environment, modelAssets);
+}
+
+export async function collectClientPipelineCapabilitiesWithModelAssetBootstrap(environment = globalThis) {
+  const modelAssets = await resolveBrowserModelAssetBootstrap({ environment });
+  return collectClientPipelineCapabilitiesFromModelAssets(environment, modelAssets);
+}
+
+function collectClientPipelineCapabilitiesFromModelAssets(environment, modelAssets) {
   return createClientPipelineCapabilityReport({
     audioExtraction: detectClientAudioExtractionCapabilities(environment),
     vad: detectVadWebRuntimeCapabilities(environment),
@@ -97,6 +107,7 @@ function applyModelAssetReadiness(capabilities, modelAssets, stageName) {
     runtime: "server-fallback",
     browserFailureReason: stageAssetRow.fallbackReason,
     attemptedBrowserStrategy: stageAssetRow.attemptedBrowserStrategy,
+    missingModelAssets: modelAssets.missingModelAssets?.filter((asset) => asset.stage === stageName) || [],
   };
 }
 
