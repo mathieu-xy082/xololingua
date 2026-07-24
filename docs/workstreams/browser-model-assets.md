@@ -177,7 +177,7 @@ que lorsque le nouveau gate réel est implémenté, documenté, et vert, ou lors
 1. Ajouter manifest modèle + tests unitaires du resolver/cache metadata. ✅ `BROWSER_MODEL_ASSET_MANIFEST` déclare les choix ASR/traduction et refuse les URLs distantes implicites.
 2. Ajouter stratégie de chargement offline/cache et erreurs/fallbacks testées. ✅ `frontend/model_asset_bootstrap.js` inspecte la Cache API réelle, détecte IndexedDB/Cache API, produit `offline-ready` / `bootstrap-required` / `unavailable`, liste `missingModelAssets`, et propage le fallback metadata dans les capacités client async.
 3. Brancher le fallback metadata dans le pipeline/UI. ✅ L'app démarre sur le resolver async réel, conserve l'injection déterministe du gate strict, affiche `modelAssetBootstrapLabel` dans les fallbacks PWA, et les résumés de stages incluent status, taille restante et assets manquants.
-4. Brancher ASR réel browser avec warmup/timeouts.
+4. Brancher ASR réel browser avec warmup/timeouts. ✅ `frontend/transcription_worker.js` fournit un worker Transformers.js local `warmup` / `transcribe`, `createClientTranscriber` applique `asrWarmupMs` et `asrInferencePerSegmentMs`, l'app passe l'audio browser au transcriber, et le SW précache le worker/runtime ASR.
 5. Brancher traduction réelle browser avec warmup/timeouts.
 6. Étendre service worker/cache versionné avec flux de bootstrap/retry utilisateur.
 7. Ajouter `e2e-browser-real-models` et diagnostics compactes.

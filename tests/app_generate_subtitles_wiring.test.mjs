@@ -67,6 +67,14 @@ test("app configures local ffmpeg wasm audio extraction instead of relying on We
   assert.match(appSource, /globalThis\.XOLOLINGUA_CLIENT_AUDIO_EXTRACTOR \|\| createClientAudioExtractor\(\{/);
 });
 
+test("app configures a local browser ASR transcriber worker with manifest warmup timeout", () => {
+  assert.match(appSource, /import\s+\{\s*createClientTranscriber\s*\}\s+from\s+["']\.\/frontend\/client_transcriber\.js["']/);
+  assert.match(appSource, /globalThis\.XOLOLINGUA_CLIENT_TRANSCRIBER\s*\|\|\s*createClientTranscriber\(\{/);
+  assert.match(appSource, /workerUrl:\s*["']frontend\/transcription_worker\.js["']/);
+  assert.match(appSource, /warmupTimeoutMs:\s*BROWSER_MODEL_ASSET_MANIFEST\.models\.transcription\.warmup\.timeoutMs/);
+  assert.match(appSource, /maxWorkerResponseMs:\s*BROWSER_MODEL_ASSET_MANIFEST\.timeouts\.asrInferencePerSegmentMs/);
+});
+
 test("app renders browser model bootstrap details in the PWA capability summary", () => {
   assert.match(appSource, /collectClientPipelineCapabilitiesWithModelAssetBootstrap/);
   assert.match(appSource, /await collectClientPipelineCapabilitiesWithModelAssetBootstrap\(\)/);

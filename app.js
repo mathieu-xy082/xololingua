@@ -1,6 +1,8 @@
 import { createBackendClient } from "./frontend/backend_client.js";
 import { createAppClientAdapters, createAppHybridPipelineRouter } from "./frontend/app_hybrid_router_wiring.js";
 import { createClientAudioExtractor } from "./frontend/client_audio_extractor.js";
+import { createClientTranscriber } from "./frontend/client_transcriber.js";
+import { BROWSER_MODEL_ASSET_MANIFEST } from "./frontend/model_asset_manifest.js";
 import {
   collectClientPipelineCapabilities,
   collectClientPipelineCapabilitiesWithModelAssetBootstrap,
@@ -27,7 +29,16 @@ const appClientAdapters = createAppClientAdapters({
   clientVadSegmenter: globalThis.XOLOLINGUA_CLIENT_VAD_SEGMENTER || createClientVadSegmenter({
     vadWebSegmenter: createVadWebRuntimeSegmenter(),
   }),
-  clientTranscriber: globalThis.XOLOLINGUA_CLIENT_TRANSCRIBER,
+  clientTranscriber: globalThis.XOLOLINGUA_CLIENT_TRANSCRIBER || createClientTranscriber({
+    workerUrl: "frontend/transcription_worker.js",
+    modelId: BROWSER_MODEL_ASSET_MANIFEST.models.transcription.modelId,
+    warmupTimeoutMs: BROWSER_MODEL_ASSET_MANIFEST.models.transcription.warmup.timeoutMs,
+    warmupSampleSeconds: BROWSER_MODEL_ASSET_MANIFEST.models.transcription.warmup.sampleSeconds,
+    maxDurationSeconds: BROWSER_MODEL_ASSET_MANIFEST.models.transcription.limits.maxAudioSeconds,
+    maxAudioBytes: BROWSER_MODEL_ASSET_MANIFEST.models.transcription.limits.maxAudioBytes,
+    maxSegments: BROWSER_MODEL_ASSET_MANIFEST.models.translation.limits.maxSegments,
+    maxWorkerResponseMs: BROWSER_MODEL_ASSET_MANIFEST.timeouts.asrInferencePerSegmentMs,
+  }),
   clientTranslator: globalThis.XOLOLINGUA_CLIENT_TRANSLATOR,
 });
 const hybridPipelineRouter = createAppHybridPipelineRouter({
@@ -415,6 +426,7 @@ async function generateSubtitles() {
     const transcription = await hybridPipelineRouter.runTranscription(
       {
         audioId: state.extractedAudio.audioId,
+        audio: state.extractedAudio,
         sourceLanguage: state.sourceLanguage,
         segments: state.segments,
       },

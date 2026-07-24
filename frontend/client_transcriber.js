@@ -1,8 +1,7 @@
 import { mapClientMlProgress } from "./client_ml_progress.js";
 
 export function detectClientTranscriptionCapabilities(environment = globalThis) {
-  const transformersJs = typeof environment?.Worker === "function"
-    && Boolean(environment?.transformers?.pipeline || environment?.transformersJs);
+  const transformersJs = typeof environment?.Worker === "function";
   const webGpu = Boolean(environment?.navigator?.gpu);
 
   return {
@@ -16,11 +15,46 @@ export function createClientTranscriber({
   environment = globalThis,
   transformerWorker,
   workerUrl,
+  modelId,
+  warmupTimeoutMs,
+  warmupSampleSeconds = 1,
   maxDurationSeconds,
   maxAudioBytes,
   maxSegments,
   maxWorkerResponseMs,
 } = {}) {
+  let warmupPromise;
+  let warmupMetadata;
+
+  const ensureWarmup = async (request, onProgress) => {
+    if (!modelId || !workerUrl || typeof environment?.Worker !== "function") {
+      return undefined;
+    }
+    if (!warmupPromise) {
+      const warmupWorker = createWorkerRequestClient({
+        environment,
+        workerUrl,
+        requestType: "warmup",
+        resultType: "warmup-complete",
+        maxWorkerResponseMs: warmupTimeoutMs,
+        timeoutMessage: `Browser transcription warmup timed out after ${warmupTimeoutMs}ms.`,
+        failureMessage: "Browser transcription warmup failed.",
+      });
+      warmupPromise = warmupWorker({
+        modelId,
+        sampleSeconds: warmupSampleSeconds,
+        sourceLanguage: request?.sourceLanguage || "auto",
+      }, onProgress).then((metadata) => {
+        warmupMetadata = metadata || {};
+        return warmupMetadata;
+      }).catch((error) => {
+        warmupPromise = undefined;
+        throw error;
+      });
+    }
+    return warmupPromise;
+  };
+
   return {
     capabilities: detectClientTranscriptionCapabilities(environment),
 
@@ -51,6 +85,8 @@ export function createClientTranscriber({
         throw new Error(`Browser transcription limit exceeded: ${segmentCount} segments is greater than the ${maxSegments} ${segmentLabel} limit.`);
       }
 
+      await ensureWarmup(request, (event) => onProgress(mapClientMlProgress(event, "asr-warmup")));
+
       const transcribe = typeof transformerWorker === "function"
         ? transformerWorker
         : createTranscriptionWorkerClient({ environment, workerUrl, maxWorkerResponseMs });
@@ -59,12 +95,13 @@ export function createClientTranscriber({
         throw new Error("Browser transcription requires transformers.js in a Web Worker or a configured transcription fallback.");
       }
 
+      const transcribeRequest = modelId ? { ...request, modelId } : request;
       const result = await transcribe(
-        request,
+        transcribeRequest,
         (event) => onProgress(mapClientMlProgress(event, "transcribing")),
       );
-      return {
-        strategy: "transformers.js",
+      const output = {
+        strategy: result.strategy || (modelId ? "whisper-transformers.js" : "transformers.js"),
         language: result.language || request.sourceLanguage || "unknown",
         segments: (result.segments || []).map((segment, index) => ({
           index: segment.index || index + 1,
@@ -73,16 +110,44 @@ export function createClientTranscriber({
           text: segment.text || "",
         })),
       };
+      if (modelId) {
+        output.metadata = {
+          modelId,
+          warmup: warmupMetadata || {},
+          warmupTimeoutMs,
+        };
+      }
+      return output;
     },
   };
 }
 
 function createTranscriptionWorkerClient({ environment, workerUrl, maxWorkerResponseMs }) {
+  return createWorkerRequestClient({
+    environment,
+    workerUrl,
+    requestType: "transcribe",
+    resultType: "result",
+    maxWorkerResponseMs,
+    timeoutMessage: `Browser transcription worker timed out after ${maxWorkerResponseMs}ms.`,
+    failureMessage: "Browser transcription worker failed.",
+  });
+}
+
+function createWorkerRequestClient({
+  environment,
+  workerUrl,
+  requestType,
+  resultType,
+  maxWorkerResponseMs,
+  timeoutMessage,
+  failureMessage,
+}) {
   if (!workerUrl || typeof environment?.Worker !== "function") {
     return undefined;
   }
 
-  return (request, onProgress) => new Promise((resolve, reject) => {
+  return (request, onProgress = () => {}) => new Promise((resolve, reject) => {
     const worker = new environment.Worker(workerUrl, { type: "module" });
     let settled = false;
     let timeoutId;
@@ -105,12 +170,12 @@ function createTranscriptionWorkerClient({ environment, workerUrl, maxWorkerResp
 
     if (Number.isFinite(maxWorkerResponseMs) && maxWorkerResponseMs > 0) {
       timeoutId = setTimeout(() => {
-        settle(reject, new Error(`Browser transcription worker timed out after ${maxWorkerResponseMs}ms.`));
+        settle(reject, new Error(timeoutMessage));
       }, maxWorkerResponseMs);
     }
 
     worker.onerror = (event) => {
-      settle(reject, new Error(event?.message || "Browser transcription worker failed."));
+      settle(reject, new Error(event?.message || failureMessage));
     };
     worker.onmessage = (event) => {
       const message = event?.data || {};
@@ -119,14 +184,14 @@ function createTranscriptionWorkerClient({ environment, workerUrl, maxWorkerResp
         return;
       }
       if (message.type === "error") {
-        settle(reject, new Error(message.error || "Browser transcription worker failed."));
+        settle(reject, new Error(message.error || failureMessage));
         return;
       }
-      if (message.type === "result") {
-        settle(resolve, message.result || {});
+      if (message.type === resultType) {
+        settle(resolve, message.result || message.metadata || {});
       }
     };
 
-    worker.postMessage({ type: "transcribe", request });
+    worker.postMessage({ type: requestType, request });
   });
 }
