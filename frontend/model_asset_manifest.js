@@ -33,7 +33,7 @@ export const BROWSER_MODEL_ASSET_MANIFEST = Object.freeze({
         Object.freeze({
           name: "asr-manifest",
           url: "models/asr/whisper-tiny/manifest.json",
-          bytes: 1,
+          bytes: 151_000_000,
           sha256: "pending-real-asset-checksum",
           required: true,
         }),
@@ -59,7 +59,7 @@ export const BROWSER_MODEL_ASSET_MANIFEST = Object.freeze({
         Object.freeze({
           name: "translation-manifest",
           url: "models/translation/nllb-fr-en/manifest.json",
-          bytes: 1,
+          bytes: 625_000_000,
           sha256: "pending-real-asset-checksum",
           required: true,
         }),

@@ -251,3 +251,33 @@ test("collectClientPipelineCapabilitiesWithModelAssetBootstrap uses the real bro
   assert.equal(report.stages.translation.runtime, "server-fallback");
   assert.deepEqual(report.stages.translation.missingModelAssets.map((asset) => asset.assetName), ["translation-manifest"]);
 });
+
+test("client pipeline demo summary surfaces model bootstrap details for fallback stages", async () => {
+  const environment = {
+    VideoDecoder: function VideoDecoder() {},
+    AudioDecoder: function AudioDecoder() {},
+    AudioContext: function AudioContext() {},
+    vad: {
+      NonRealTimeVAD: { new: async () => ({}) },
+      utils: { audioFileToArray: async () => ({ audio: new Float32Array(), sampleRate: 16000 }) },
+    },
+    ort: { env: { wasm: {} } },
+    Worker: function Worker() {},
+    navigator: { gpu: {} },
+    transformers: { pipeline: function pipeline() {} },
+    indexedDB: {},
+    caches: {
+      async open() {
+        return { async match() { return undefined; } };
+      },
+    },
+  };
+
+  const report = await collectClientPipelineCapabilitiesWithModelAssetBootstrap(environment);
+  const translationRow = report.demoSummary.stageRows.find((row) => row.stage === "translation");
+
+  assert.equal(translationRow.modelAssetBootstrapStatus, "bootstrap-required");
+  assert.equal(translationRow.remainingModelAssetBytes, 625_000_000);
+  assert.equal(translationRow.modelAssetBootstrapLabel, "Model bootstrap required: 596.0 MB remaining; missing translation-manifest");
+  assert.deepEqual(translationRow.missingModelAssets.map((asset) => asset.assetName), ["translation-manifest"]);
+});

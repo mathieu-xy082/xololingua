@@ -107,6 +107,8 @@ function applyModelAssetReadiness(capabilities, modelAssets, stageName) {
     runtime: "server-fallback",
     browserFailureReason: stageAssetRow.fallbackReason,
     attemptedBrowserStrategy: stageAssetRow.attemptedBrowserStrategy,
+    modelAssetBootstrapStatus: stageAssetRow.status,
+    remainingModelAssetBytes: stageAssetRow.missingBytes || 0,
     missingModelAssets: modelAssets.missingModelAssets?.filter((asset) => asset.stage === stageName) || [],
   };
 }
@@ -150,16 +152,56 @@ function createDemoSummary({ mode, stages, browserStages, serverFallbackStages, 
       label: PIPELINE_STAGE_LABELS[stageName],
       endpoints: PYTHON_FALLBACK_ENDPOINTS[stageName],
     })),
-    stageRows: PIPELINE_STAGE_ORDER.map((stageName) => ({
-      stage: stageName,
-      label: PIPELINE_STAGE_LABELS[stageName],
-      runtimeLabel: stages[stageName].runtime === "browser" ? "Browser" : "Python fallback",
-      strategy: stages[stageName].strategy,
-      fallbackEndpoints: stages[stageName].runtime === "browser" ? [] : PYTHON_FALLBACK_ENDPOINTS[stageName],
-      offlineCapable: offlineAvailability.offlineCapableStages.includes(stageName),
-      onlineRequired: offlineAvailability.onlineRequiredStages.includes(stageName),
+    stageRows: PIPELINE_STAGE_ORDER.map((stageName) => createDemoStageRow({
+      stageName,
+      stageCapabilities: stages[stageName],
+      offlineAvailability,
     })),
   };
+}
+
+function createDemoStageRow({ stageName, stageCapabilities, offlineAvailability }) {
+  const row = {
+    stage: stageName,
+    label: PIPELINE_STAGE_LABELS[stageName],
+    runtimeLabel: stageCapabilities.runtime === "browser" ? "Browser" : "Python fallback",
+    strategy: stageCapabilities.strategy,
+    fallbackEndpoints: stageCapabilities.runtime === "browser" ? [] : PYTHON_FALLBACK_ENDPOINTS[stageName],
+    offlineCapable: offlineAvailability.offlineCapableStages.includes(stageName),
+    onlineRequired: offlineAvailability.onlineRequiredStages.includes(stageName),
+  };
+  const modelAssetBootstrapLabel = formatModelAssetBootstrapLabel(stageCapabilities);
+  if (modelAssetBootstrapLabel) {
+    row.modelAssetBootstrapStatus = stageCapabilities.modelAssetBootstrapStatus || "bootstrap-required";
+    row.remainingModelAssetBytes = stageCapabilities.remainingModelAssetBytes || 0;
+    row.missingModelAssets = stageCapabilities.missingModelAssets || [];
+    row.modelAssetBootstrapLabel = modelAssetBootstrapLabel;
+  }
+  return row;
+}
+
+function formatModelAssetBootstrapLabel(stageCapabilities = {}) {
+  const missingAssets = stageCapabilities.missingModelAssets || [];
+  if (!stageCapabilities.modelAssetBootstrapStatus && missingAssets.length === 0) {
+    return "";
+  }
+  const status = stageCapabilities.modelAssetBootstrapStatus || "bootstrap-required";
+  const prefix = status === "offline-ready" ? "Model assets ready" : "Model bootstrap required";
+  const remaining = formatBytes(stageCapabilities.remainingModelAssetBytes || 0);
+  const missing = missingAssets.map((asset) => asset.assetName || asset.url).filter(Boolean).join(", ");
+  const missingLabel = missing ? `; missing ${missing}` : "";
+  return `${prefix}: ${remaining} remaining${missingLabel}`;
+}
+
+function formatBytes(bytes) {
+  const value = Number(bytes) || 0;
+  if (value >= 1024 * 1024) {
+    return `${(value / 1024 / 1024).toFixed(1)} MB`;
+  }
+  if (value >= 1024) {
+    return `${(value / 1024).toFixed(1)} KB`;
+  }
+  return `${value} B`;
 }
 
 function createOfflineScopeLabel(offlineAvailability) {

@@ -59,7 +59,7 @@ test("service worker precaches the full frontend module graph used by offline as
 test("PWA shell starts from the hybrid pipeline router wiring contract", () => {
   assert.match(
     appSource,
-    /import\s+\{\s*collectClientPipelineCapabilities\s*\}\s+from\s+["']\.\/frontend\/client_pipeline_capabilities\.js["']/,
+    /import\s+\{[^}]*collectClientPipelineCapabilities[^}]*collectClientPipelineCapabilitiesWithModelAssetBootstrap[^}]*\}\s+from\s+["']\.\/frontend\/client_pipeline_capabilities\.js["']/s,
   );
   assert.match(
     appSource,

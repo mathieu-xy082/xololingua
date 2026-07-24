@@ -68,11 +68,11 @@ test("browser model asset report separates offline-ready, bootstrap-required, an
     requiredBytes,
     missingBytes,
   })), [
-    { stage: "transcription", status: "offline-ready", requiredBytes: 1, missingBytes: 0 },
-    { stage: "translation", status: "bootstrap-required", requiredBytes: 1, missingBytes: 1 },
+    { stage: "transcription", status: "offline-ready", requiredBytes: 151_000_000, missingBytes: 0 },
+    { stage: "translation", status: "bootstrap-required", requiredBytes: 625_000_000, missingBytes: 625_000_000 },
   ]);
-  assert.equal(report.totalRequiredBytes, 2);
-  assert.equal(report.totalMissingBytes, 1);
+  assert.equal(report.totalRequiredBytes, 776_000_000);
+  assert.equal(report.totalMissingBytes, 625_000_000);
   assert.match(report.stageRows[1].fallbackReason, /Model assets are not cached/);
 });
 
@@ -87,8 +87,8 @@ test("browser model asset bootstrap plan describes uncached assets with progress
   assert.equal(plan.totalAssets, 2);
   assert.equal(plan.cachedAssets, 1);
   assert.equal(plan.remainingAssets, 1);
-  assert.equal(plan.totalBytes, 2);
-  assert.equal(plan.remainingBytes, 1);
+  assert.equal(plan.totalBytes, 776_000_000);
+  assert.equal(plan.remainingBytes, 625_000_000);
   assert.deepEqual(plan.steps.map(({ stage, assetName, status, retryable, progressWeightBytes }) => ({
     stage,
     assetName,
@@ -101,14 +101,14 @@ test("browser model asset bootstrap plan describes uncached assets with progress
       assetName: "asr-manifest",
       status: "cached",
       retryable: false,
-      progressWeightBytes: 1,
+      progressWeightBytes: 151_000_000,
     },
     {
       stage: "translation",
       assetName: "translation-manifest",
       status: "pending-download",
       retryable: true,
-      progressWeightBytes: 1,
+      progressWeightBytes: 625_000_000,
     },
   ]);
   assert.deepEqual(plan.fallback, {

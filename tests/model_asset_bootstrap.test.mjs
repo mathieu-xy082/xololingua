@@ -102,7 +102,7 @@ test("resolveBrowserModelAssetBootstrap reports bootstrap-required with missing 
       assetName: "translation-manifest",
       url: "models/translation/nllb-fr-en/manifest.json",
       versionedUrl: "models/translation/nllb-fr-en/manifest.json?v=browser-model-assets-v1",
-      bytes: 1,
+      bytes: 625_000_000,
       sha256: "pending-real-asset-checksum",
       retryable: true,
     },

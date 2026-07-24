@@ -66,3 +66,10 @@ test("app configures local ffmpeg wasm audio extraction instead of relying on We
   assert.match(appSource, /ffmpegWasmExtractor:\s*createAppFfmpegWasmAudioExtractor\(\)/);
   assert.match(appSource, /globalThis\.XOLOLINGUA_CLIENT_AUDIO_EXTRACTOR \|\| createClientAudioExtractor\(\{/);
 });
+
+test("app renders browser model bootstrap details in the PWA capability summary", () => {
+  assert.match(appSource, /collectClientPipelineCapabilitiesWithModelAssetBootstrap/);
+  assert.match(appSource, /await collectClientPipelineCapabilitiesWithModelAssetBootstrap\(\)/);
+  assert.match(appSource, /summary\.stageRows\.find\(\(row\) => row\.stage === fallback\.stage\)/);
+  assert.match(appSource, /stageRow\?\.modelAssetBootstrapLabel/);
+});

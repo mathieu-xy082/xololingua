@@ -1,7 +1,10 @@
 import { createBackendClient } from "./frontend/backend_client.js";
 import { createAppClientAdapters, createAppHybridPipelineRouter } from "./frontend/app_hybrid_router_wiring.js";
 import { createClientAudioExtractor } from "./frontend/client_audio_extractor.js";
-import { collectClientPipelineCapabilities } from "./frontend/client_pipeline_capabilities.js";
+import {
+  collectClientPipelineCapabilities,
+  collectClientPipelineCapabilitiesWithModelAssetBootstrap,
+} from "./frontend/client_pipeline_capabilities.js";
 import { formatSrt, formatSrtTime } from "./frontend/client_srt_formatter.js";
 import { createClientVadSegmenter } from "./frontend/client_vad_segmenter.js";
 import { createAppFfmpegWasmAudioExtractor } from "./frontend/ffmpeg_wasm_runtime.js";
@@ -13,7 +16,10 @@ const SEGMENT_SECONDS = 12;
 const LOCAL_SERVICE_URL = "http://127.0.0.1:8765";
 const APP_ASSET_VERSION = "2026-07-15-1";
 const backendClient = createBackendClient({ baseUrl: LOCAL_SERVICE_URL });
-const clientPipelineCapabilities = collectClientPipelineCapabilities();
+const clientPipelineCapabilities = globalThis.__xololinguaCachedModelAssetUrls?.length > 0
+  ? collectClientPipelineCapabilities()
+  : await collectClientPipelineCapabilitiesWithModelAssetBootstrap()
+    .catch(() => collectClientPipelineCapabilities());
 const appClientAdapters = createAppClientAdapters({
   clientAudioExtractor: globalThis.XOLOLINGUA_CLIENT_AUDIO_EXTRACTOR || createClientAudioExtractor({
     ffmpegWasmExtractor: createAppFfmpegWasmAudioExtractor(),
@@ -162,7 +168,11 @@ function renderPipelineCapabilitySummary() {
   els.pipelineFallbackEndpoints.replaceChildren(
     ...summary.serverFallbackEndpoints.map((fallback) => {
       const item = document.createElement("li");
-      item.textContent = `${fallback.label}: ${fallback.endpoints.join(", ")}`;
+      const stageRow = summary.stageRows.find((row) => row.stage === fallback.stage);
+      const bootstrapDetail = stageRow?.modelAssetBootstrapLabel
+        ? ` — ${stageRow.modelAssetBootstrapLabel}`
+        : "";
+      item.textContent = `${fallback.label}: ${fallback.endpoints.join(", ")}${bootstrapDetail}`;
       return item;
     }),
   );
