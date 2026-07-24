@@ -19,6 +19,7 @@ const ASSETS = [
   "node_modules/@huggingface/transformers/node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm",
   "node_modules/@huggingface/transformers/node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.asyncify.wasm",
   "frontend/client_translator.js",
+  "frontend/translation_worker.js",
   "frontend/client_vad_segmenter.js",
   "frontend/vad_web_runtime.js",
   "frontend/pipeline_stage_status.js",

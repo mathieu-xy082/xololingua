@@ -75,6 +75,16 @@ test("app configures a local browser ASR transcriber worker with manifest warmup
   assert.match(appSource, /maxWorkerResponseMs:\s*BROWSER_MODEL_ASSET_MANIFEST\.timeouts\.asrInferencePerSegmentMs/);
 });
 
+test("app configures a local browser translation worker with manifest warmup timeout", () => {
+  assert.match(appSource, /import\s+\{\s*createClientTranslator\s*\}\s+from\s+["']\.\/frontend\/client_translator\.js["']/);
+  assert.match(appSource, /globalThis\.XOLOLINGUA_CLIENT_TRANSLATOR\s*\|\|\s*createClientTranslator\(\{/);
+  assert.match(appSource, /workerUrl:\s*["']frontend\/translation_worker\.js["']/);
+  assert.match(appSource, /modelId:\s*BROWSER_MODEL_ASSET_MANIFEST\.models\.translation\.modelId/);
+  assert.match(appSource, /warmupTimeoutMs:\s*BROWSER_MODEL_ASSET_MANIFEST\.models\.translation\.warmup\.timeoutMs/);
+  assert.match(appSource, /warmupSampleText:\s*BROWSER_MODEL_ASSET_MANIFEST\.models\.translation\.warmup\.sampleText/);
+  assert.match(appSource, /maxWorkerResponseMs:\s*BROWSER_MODEL_ASSET_MANIFEST\.timeouts\.translationInferencePerBatchMs/);
+});
+
 test("app renders browser model bootstrap details in the PWA capability summary", () => {
   assert.match(appSource, /collectClientPipelineCapabilitiesWithModelAssetBootstrap/);
   assert.match(appSource, /await collectClientPipelineCapabilitiesWithModelAssetBootstrap\(\)/);

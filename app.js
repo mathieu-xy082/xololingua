@@ -2,6 +2,7 @@ import { createBackendClient } from "./frontend/backend_client.js";
 import { createAppClientAdapters, createAppHybridPipelineRouter } from "./frontend/app_hybrid_router_wiring.js";
 import { createClientAudioExtractor } from "./frontend/client_audio_extractor.js";
 import { createClientTranscriber } from "./frontend/client_transcriber.js";
+import { createClientTranslator } from "./frontend/client_translator.js";
 import { BROWSER_MODEL_ASSET_MANIFEST } from "./frontend/model_asset_manifest.js";
 import {
   collectClientPipelineCapabilities,
@@ -39,7 +40,17 @@ const appClientAdapters = createAppClientAdapters({
     maxSegments: BROWSER_MODEL_ASSET_MANIFEST.models.translation.limits.maxSegments,
     maxWorkerResponseMs: BROWSER_MODEL_ASSET_MANIFEST.timeouts.asrInferencePerSegmentMs,
   }),
-  clientTranslator: globalThis.XOLOLINGUA_CLIENT_TRANSLATOR,
+  clientTranslator: globalThis.XOLOLINGUA_CLIENT_TRANSLATOR || createClientTranslator({
+    workerUrl: "frontend/translation_worker.js",
+    modelId: BROWSER_MODEL_ASSET_MANIFEST.models.translation.modelId,
+    warmupTimeoutMs: BROWSER_MODEL_ASSET_MANIFEST.models.translation.warmup.timeoutMs,
+    warmupSampleText: BROWSER_MODEL_ASSET_MANIFEST.models.translation.warmup.sampleText,
+    maxSegments: BROWSER_MODEL_ASSET_MANIFEST.models.translation.limits.maxSegments,
+    maxBatchSize: Math.max(1, Math.floor(
+      BROWSER_MODEL_ASSET_MANIFEST.models.translation.limits.maxCharactersPerBatch / 400,
+    )),
+    maxWorkerResponseMs: BROWSER_MODEL_ASSET_MANIFEST.timeouts.translationInferencePerBatchMs,
+  }),
 });
 const hybridPipelineRouter = createAppHybridPipelineRouter({
   backendClient,

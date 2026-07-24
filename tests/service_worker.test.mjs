@@ -83,6 +83,11 @@ test("PWA shell precaches the local ASR transcription worker", () => {
   assert.match(serviceWorkerSource, /frontend\/transcription_worker\.js/);
 });
 
+test("PWA shell precaches the local translation worker", () => {
+  assert.match(appSource, /frontend\/translation_worker\.js/);
+  assert.match(serviceWorkerSource, /frontend\/translation_worker\.js/);
+});
+
 test("PWA shell loads ffmpeg wasm browser assets before the module app starts", () => {
   assert.match(indexSource, /node_modules\/@ffmpeg\/ffmpeg\/dist\/ffmpeg\.min\.js/);
   assert.match(ffmpegWasmRuntimeSource, /node_modules\/@ffmpeg\/core\/dist\/ffmpeg-core\.js/);

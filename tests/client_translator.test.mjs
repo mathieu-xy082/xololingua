@@ -19,6 +19,18 @@ test("detectClientTranslationCapabilities reports local transformers.js translat
   });
 });
 
+test("detectClientTranslationCapabilities treats a module worker as the local translation runtime boundary", () => {
+  const capabilities = detectClientTranslationCapabilities({
+    Worker: function Worker() {},
+  });
+
+  assert.deepEqual(capabilities, {
+    localTransformersJs: true,
+    cloudProvider: false,
+    strategy: "local-transformers.js",
+  });
+});
+
 test("client translator delegates segment translation to an injected local transformers.js worker", async () => {
   const calls = [];
   const localTranslatorWorker = async (request, onProgress) => {
@@ -116,6 +128,113 @@ test("client translator runs local translation through a configured Web Worker b
     strategy: "local-transformers.js",
     segments: [{ index: 3, start: 0, end: 1, text: "Hello" }],
   });
+});
+
+test("client translator warms the local translation worker before translating batches and reports warmup metadata", async () => {
+  const workerInstances = [];
+  class WarmupWorker {
+    constructor(url, options) {
+      this.url = url;
+      this.options = options;
+      this.messages = [];
+      this.terminated = false;
+      workerInstances.push(this);
+    }
+
+    postMessage(message) {
+      this.messages.push(message);
+      queueMicrotask(() => {
+        if (message.type === "warmup") {
+          this.onmessage({ data: { type: "progress", event: { stage: "translation-warmup", progress: 20 } } });
+          this.onmessage({ data: { type: "warmup-complete", metadata: { modelId: message.request.modelId, warmed: true } } });
+          return;
+        }
+        this.onmessage({
+          data: {
+            type: "result",
+            result: {
+              segments: message.request.segments.map((segment) => ({ index: segment.index, text: `EN:${segment.text}` })),
+            },
+          },
+        });
+      });
+    }
+
+    terminate() {
+      this.terminated = true;
+    }
+  }
+  const progress = [];
+  const segments = [
+    { index: 1, start: 0, end: 1, text: "Bonjour" },
+    { index: 2, start: 1, end: 2, text: "monde" },
+  ];
+  const translator = createClientTranslator({
+    environment: { Worker: WarmupWorker },
+    workerUrl: "/workers/translation_worker.js",
+    modelId: "Xenova/nllb-200-distilled-600M",
+    warmupTimeoutMs: 25,
+    warmupSampleText: "Bonjour le monde.",
+    maxBatchSize: 1,
+  });
+
+  const result = await translator.translateSegments(
+    { segments, sourceLanguage: "fr", targetLanguage: "en" },
+    (event) => progress.push(event),
+  );
+
+  assert.equal(workerInstances.length, 3);
+  assert.deepEqual(workerInstances.map((worker) => worker.messages[0].type), ["warmup", "translate", "translate"]);
+  assert.deepEqual(workerInstances[0].messages[0], {
+    type: "warmup",
+    request: {
+      modelId: "Xenova/nllb-200-distilled-600M",
+      sampleText: "Bonjour le monde.",
+      sourceLanguage: "fr",
+      targetLanguage: "en",
+    },
+  });
+  assert.deepEqual(workerInstances[1].messages[0].request, {
+    modelId: "Xenova/nllb-200-distilled-600M",
+    segments: [segments[0]],
+    sourceLanguage: "fr",
+    targetLanguage: "en",
+  });
+  assert.deepEqual(result, {
+    strategy: "local-transformers.js",
+    metadata: {
+      warmup: { modelId: "Xenova/nllb-200-distilled-600M", warmed: true },
+    },
+    segments: [
+      { index: 1, start: 0, end: 1, text: "EN:Bonjour" },
+      { index: 2, start: 1, end: 2, text: "EN:monde" },
+    ],
+  });
+  assert.deepEqual(progress[0], { stage: "translation-warmup", progress: 20 });
+  assert.ok(workerInstances.every((worker) => worker.terminated));
+});
+
+test("client translator fails fast when translation warmup times out", async () => {
+  class StalledWorker {
+    postMessage() {}
+    terminate() {
+      this.terminated = true;
+    }
+  }
+  const translator = createClientTranslator({
+    environment: { Worker: StalledWorker },
+    workerUrl: "/workers/translation_worker.js",
+    warmupTimeoutMs: 5,
+  });
+
+  await assert.rejects(
+    () => translator.translateSegments({
+      segments: [{ index: 1, start: 0, end: 1, text: "Bonjour" }],
+      sourceLanguage: "fr",
+      targetLanguage: "en",
+    }),
+    /Browser translation warmup worker did not respond within 5ms\./,
+  );
 });
 
 test("client translator maps worker progress into bounded translation progress events", async () => {

@@ -1,8 +1,7 @@
 import { mapClientMlProgress } from "./client_ml_progress.js";
 
 export function detectClientTranslationCapabilities(environment = globalThis) {
-  const localTransformersJs = typeof environment?.Worker === "function"
-    && Boolean(environment?.transformers?.pipeline || environment?.transformersJs);
+  const localTransformersJs = typeof environment?.Worker === "function";
   const cloudProvider = Boolean(environment?.translationCloudProvider)
     || typeof environment?.createCloudTranslator === "function";
 
@@ -21,9 +20,13 @@ export function createClientTranslator({
   environment = globalThis,
   localTranslatorWorker,
   workerUrl,
+  modelId,
+  warmupTimeoutMs,
+  warmupSampleText,
   cloudTranslator,
   maxSegments,
   maxBatchSize,
+  maxWorkerResponseMs,
 } = {}) {
   return {
     capabilities: detectClientTranslationCapabilities(environment),
@@ -40,7 +43,7 @@ export function createClientTranslator({
 
       const localTranslate = typeof localTranslatorWorker === "function"
         ? localTranslatorWorker
-        : createTranslationWorkerClient({ environment, workerUrl });
+        : createTranslationWorkerClient({ environment, workerUrl, maxWorkerResponseMs });
       const translate = typeof localTranslate === "function"
         ? localTranslate
         : cloudTranslator;
@@ -52,11 +55,24 @@ export function createClientTranslator({
         throw new Error("Browser translation requires transformers.js or a configured cloud translation provider.");
       }
 
+      const warmupMetadata = typeof localTranslate === "function" && localTranslatorWorker !== localTranslate
+        ? await warmupLocalTranslatorWorker({
+            environment,
+            workerUrl,
+            modelId,
+            warmupTimeoutMs,
+            warmupSampleText,
+            sourceLanguage: request.sourceLanguage,
+            targetLanguage: request.targetLanguage,
+          }, (event) => onProgress(mapClientMlProgress(event, "translation-warmup")))
+        : null;
+
       const batches = createSegmentBatches(request.segments, maxBatchSize);
       const translatedSegments = [];
       for (const [batchIndex, batch] of batches.entries()) {
+        const translateRequest = modelId ? { ...request, modelId, segments: batch } : { ...request, segments: batch };
         const result = await translate(
-          { ...request, segments: batch },
+          translateRequest,
           (event) => onProgress(mapBatchProgress(
             mapClientMlProgress(event, "translating"),
             batchIndex,
@@ -71,6 +87,7 @@ export function createClientTranslator({
 
       return {
         strategy,
+        ...(warmupMetadata ? { metadata: { warmup: warmupMetadata } } : {}),
         segments: request.segments.map((segment) => {
           const translated = translatedByIndex.get(segment.index) || {};
           return {
@@ -108,22 +125,94 @@ function mapBatchProgress(event, batchIndex, batchCount) {
   };
 }
 
-function createTranslationWorkerClient({ environment, workerUrl }) {
+function createTranslationWorkerClient({ environment, workerUrl, maxWorkerResponseMs }) {
+  return createWorkerRequestClient({
+    environment,
+    workerUrl,
+    requestType: "translate",
+    resultType: "result",
+    timeoutMs: maxWorkerResponseMs,
+    timeoutMessage: `Browser translation worker did not respond within ${maxWorkerResponseMs}ms.`,
+  });
+}
+
+function warmupLocalTranslatorWorker({
+  environment,
+  workerUrl,
+  modelId,
+  warmupTimeoutMs,
+  warmupSampleText,
+  sourceLanguage,
+  targetLanguage,
+}, onProgress) {
+  if (!Number.isFinite(warmupTimeoutMs) || warmupTimeoutMs <= 0) {
+    return null;
+  }
+  const warmup = createWorkerRequestClient({
+    environment,
+    workerUrl,
+    requestType: "warmup",
+    resultType: "warmup-complete",
+    timeoutMs: warmupTimeoutMs,
+    timeoutMessage: `Browser translation warmup worker did not respond within ${warmupTimeoutMs}ms.`,
+  });
+  if (typeof warmup !== "function") {
+    return null;
+  }
+  return warmup({
+    ...(modelId ? { modelId } : {}),
+    ...(warmupSampleText ? { sampleText: warmupSampleText } : {}),
+    sourceLanguage,
+    targetLanguage,
+  }, onProgress);
+}
+
+function createWorkerRequestClient({
+  environment,
+  workerUrl,
+  requestType,
+  resultType,
+  timeoutMs,
+  timeoutMessage,
+}) {
   if (!workerUrl || typeof environment?.Worker !== "function") {
     return undefined;
   }
 
-  return (request, onProgress) => new Promise((resolve, reject) => {
+  return (request, onProgress = () => {}) => new Promise((resolve, reject) => {
     const worker = new environment.Worker(workerUrl, { type: "module" });
+    let timer = 0;
+    let settled = false;
     const cleanup = () => {
+      if (timer) {
+        clearTimeout(timer);
+        timer = 0;
+      }
       if (typeof worker.terminate === "function") {
         worker.terminate();
       }
     };
+    const fail = (error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(result || {});
+    };
+
+    if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
+      timer = setTimeout(() => {
+        fail(new Error(timeoutMessage));
+      }, timeoutMs);
+    }
 
     worker.onerror = (event) => {
-      cleanup();
-      reject(new Error(event?.message || "Browser translation worker failed."));
+      fail(new Error(event?.message || "Browser translation worker failed."));
     };
     worker.onmessage = (event) => {
       const message = event?.data || {};
@@ -132,16 +221,14 @@ function createTranslationWorkerClient({ environment, workerUrl }) {
         return;
       }
       if (message.type === "error") {
-        cleanup();
-        reject(new Error(message.error || "Browser translation worker failed."));
+        fail(new Error(message.error || "Browser translation worker failed."));
         return;
       }
-      if (message.type === "result") {
-        cleanup();
-        resolve(message.result || {});
+      if (message.type === resultType) {
+        finish(message.result || message.metadata || {});
       }
     };
 
-    worker.postMessage({ type: "translate", request });
+    worker.postMessage({ type: requestType, request });
   });
 }
