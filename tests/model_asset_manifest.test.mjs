@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   BROWSER_MODEL_ASSET_MANIFEST,
+  buildModelAssetBootstrapPlan,
   buildModelAssetCacheUrls,
   createBrowserModelAssetReport,
   validateBrowserModelAssetManifest,
@@ -73,6 +74,66 @@ test("browser model asset report separates offline-ready, bootstrap-required, an
   assert.equal(report.totalRequiredBytes, 2);
   assert.equal(report.totalMissingBytes, 1);
   assert.match(report.stageRows[1].fallbackReason, /Model assets are not cached/);
+});
+
+test("browser model asset bootstrap plan describes uncached assets with progress, retry, and fallback metadata", () => {
+  const plan = buildModelAssetBootstrapPlan({
+    manifest: BROWSER_MODEL_ASSET_MANIFEST,
+    cachedUrls: ["models/asr/whisper-tiny/manifest.json?v=browser-model-assets-v1"],
+  });
+
+  assert.equal(plan.version, "browser-model-assets-v1");
+  assert.equal(plan.status, "bootstrap-required");
+  assert.equal(plan.totalAssets, 2);
+  assert.equal(plan.cachedAssets, 1);
+  assert.equal(plan.remainingAssets, 1);
+  assert.equal(plan.totalBytes, 2);
+  assert.equal(plan.remainingBytes, 1);
+  assert.deepEqual(plan.steps.map(({ stage, assetName, status, retryable, progressWeightBytes }) => ({
+    stage,
+    assetName,
+    status,
+    retryable,
+    progressWeightBytes,
+  })), [
+    {
+      stage: "transcription",
+      assetName: "asr-manifest",
+      status: "cached",
+      retryable: false,
+      progressWeightBytes: 1,
+    },
+    {
+      stage: "translation",
+      assetName: "translation-manifest",
+      status: "pending-download",
+      retryable: true,
+      progressWeightBytes: 1,
+    },
+  ]);
+  assert.deepEqual(plan.fallback, {
+    runtime: "server-fallback",
+    fallbackRequiredStages: ["translation"],
+    fallbackReason: "Browser model bootstrap is incomplete; Python fallback remains required for translation.",
+  });
+});
+
+test("browser model asset manifest validation rejects missing asset byte sizes used for bootstrap progress", () => {
+  const invalidManifest = {
+    version: "missing-bytes",
+    timeouts: BROWSER_MODEL_ASSET_MANIFEST.timeouts,
+    models: {
+      transcription: {
+        ...BROWSER_MODEL_ASSET_MANIFEST.models.transcription,
+        assets: [{ name: "asr", url: "models/asr/manifest.json", sha256: "abc", required: true }],
+      },
+      translation: BROWSER_MODEL_ASSET_MANIFEST.models.translation,
+    },
+  };
+
+  assert.deepEqual(validateBrowserModelAssetManifest(invalidManifest), [
+    "models.transcription.assets[0].bytes must be a positive number for bootstrap progress.",
+  ]);
 });
 
 test("browser model asset manifest validation rejects remote URLs and missing checksums", () => {

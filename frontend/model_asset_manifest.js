@@ -82,13 +82,7 @@ export function createBrowserModelAssetReport({
 } = {}) {
   const cached = new Set(cachedUrls);
   const stageRows = modelEntries(manifest).map(([stage, model]) => {
-    const requiredAssets = (model.assets || [])
-      .filter((asset) => asset.required !== false)
-      .map((asset) => ({
-        ...asset,
-        versionedUrl: versionAssetUrl(asset.url, manifest.version),
-        bytes: Number.isFinite(asset.bytes) ? asset.bytes : 0,
-      }));
+    const requiredAssets = requiredModelAssets(model, manifest);
     const requiredUrls = requiredAssets.map((asset) => asset.versionedUrl);
     const missingAssets = requiredAssets.filter((asset) => !cached.has(asset.versionedUrl));
     const missingUrls = missingAssets.map((asset) => asset.versionedUrl);
@@ -126,6 +120,52 @@ export function createBrowserModelAssetReport({
     totalMissingBytes,
     cacheUrls: buildModelAssetCacheUrls(manifest),
     stageRows,
+  };
+}
+
+export function buildModelAssetBootstrapPlan({
+  manifest = BROWSER_MODEL_ASSET_MANIFEST,
+  cachedUrls = [],
+} = {}) {
+  const cached = new Set(cachedUrls);
+  const steps = modelEntries(manifest).flatMap(([stage, model]) => requiredModelAssets(model, manifest)
+    .map((asset) => {
+      const isCached = cached.has(asset.versionedUrl);
+      return {
+        stage,
+        assetName: asset.name || asset.url,
+        url: asset.url,
+        versionedUrl: asset.versionedUrl,
+        sha256: asset.sha256,
+        status: isCached ? "cached" : "pending-download",
+        retryable: !isCached,
+        progressWeightBytes: asset.bytes,
+      };
+    }));
+  const remainingStages = Array.from(new Set(
+    steps.filter((step) => step.status !== "cached").map((step) => step.stage),
+  ));
+  const totalBytes = steps.reduce((total, step) => total + step.progressWeightBytes, 0);
+  const remainingBytes = steps
+    .filter((step) => step.status !== "cached")
+    .reduce((total, step) => total + step.progressWeightBytes, 0);
+
+  return {
+    version: manifest.version,
+    status: remainingStages.length === 0 ? "offline-ready" : "bootstrap-required",
+    totalAssets: steps.length,
+    cachedAssets: steps.filter((step) => step.status === "cached").length,
+    remainingAssets: steps.filter((step) => step.status !== "cached").length,
+    totalBytes,
+    remainingBytes,
+    steps,
+    fallback: {
+      runtime: "server-fallback",
+      fallbackRequiredStages: remainingStages,
+      fallbackReason: remainingStages.length === 0
+        ? null
+        : `Browser model bootstrap is incomplete; Python fallback remains required for ${remainingStages.join(", ")}.`,
+    },
   };
 }
 
@@ -173,6 +213,9 @@ export function validateBrowserModelAssetManifest(manifest = BROWSER_MODEL_ASSET
       if (!asset?.sha256) {
         issues.push(`models.${stage}.assets[${index}].sha256 is required for cache integrity.`);
       }
+      if (!Number.isFinite(asset?.bytes) || asset.bytes <= 0) {
+        issues.push(`models.${stage}.assets[${index}].bytes must be a positive number for bootstrap progress.`);
+      }
     });
   }
 
@@ -186,6 +229,16 @@ function modelEntries(manifest) {
 
 function stageOrder(stage) {
   return stage === "transcription" ? 0 : stage === "translation" ? 1 : 99;
+}
+
+function requiredModelAssets(model, manifest) {
+  return (model.assets || [])
+    .filter((asset) => asset.required !== false)
+    .map((asset) => ({
+      ...asset,
+      versionedUrl: versionAssetUrl(asset.url, manifest.version),
+      bytes: Number.isFinite(asset.bytes) ? asset.bytes : 0,
+    }));
 }
 
 function versionAssetUrl(url, version) {
