@@ -27,6 +27,30 @@ test("browser model asset manifest declares real ASR and translation model decis
   assert.ok(urls.every((url) => !/^https?:\/\//.test(url)));
 });
 
+test("browser model asset manifest declares bounded browser-real-model timeouts", () => {
+  const { timeouts } = BROWSER_MODEL_ASSET_MANIFEST;
+
+  assert.deepEqual(Object.keys(timeouts), [
+    "manifestLoadMs",
+    "assetCacheMs",
+    "runtimeInitMs",
+    "asrWarmupMs",
+    "translationWarmupMs",
+    "asrInferencePerSegmentMs",
+    "translationInferencePerBatchMs",
+    "e2eRealModelsMs",
+  ]);
+  assert.ok(timeouts.manifestLoadMs <= 30_000);
+  assert.ok(timeouts.assetCacheMs >= 600_000);
+  assert.ok(timeouts.e2eRealModelsMs >= 1_800_000);
+
+  const issues = validateBrowserModelAssetManifest({
+    version: "missing-timeouts",
+    models: BROWSER_MODEL_ASSET_MANIFEST.models,
+  });
+  assert.deepEqual(issues, ["manifest.timeouts is required for browser real model stages."]);
+});
+
 test("browser model asset report separates offline-ready, bootstrap-required, and fallback stages", () => {
   const report = createBrowserModelAssetReport({
     manifest: BROWSER_MODEL_ASSET_MANIFEST,
@@ -54,6 +78,7 @@ test("browser model asset report separates offline-ready, bootstrap-required, an
 test("browser model asset manifest validation rejects remote URLs and missing checksums", () => {
   const invalidManifest = {
     version: "bad",
+    timeouts: BROWSER_MODEL_ASSET_MANIFEST.timeouts,
     models: {
       transcription: {
         stage: "transcription",

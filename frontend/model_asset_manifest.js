@@ -2,6 +2,16 @@ const CACHE_URL_VERSION_SEPARATOR = "?v=";
 
 export const BROWSER_MODEL_ASSET_MANIFEST = Object.freeze({
   version: "browser-model-assets-v1",
+  timeouts: Object.freeze({
+    manifestLoadMs: 15_000,
+    assetCacheMs: 900_000,
+    runtimeInitMs: 120_000,
+    asrWarmupMs: 120_000,
+    translationWarmupMs: 180_000,
+    asrInferencePerSegmentMs: 90_000,
+    translationInferencePerBatchMs: 120_000,
+    e2eRealModelsMs: 1_800_000,
+  }),
   models: Object.freeze({
     transcription: Object.freeze({
       stage: "transcription",
@@ -126,6 +136,9 @@ export function validateBrowserModelAssetManifest(manifest = BROWSER_MODEL_ASSET
   }
   if (!manifest.version || typeof manifest.version !== "string") {
     issues.push("manifest.version is required.");
+  }
+  if (!manifest.timeouts || typeof manifest.timeouts !== "object") {
+    issues.push("manifest.timeouts is required for browser real model stages.");
   }
 
   for (const requiredStage of ["transcription", "translation"]) {
