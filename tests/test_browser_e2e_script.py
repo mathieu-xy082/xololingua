@@ -173,6 +173,45 @@ class BrowserE2EScriptTests(unittest.TestCase):
         self.assertIn("models/translation/nllb-fr-en/manifest.json", report["missingLocalAssets"])
         self.assertIn("Cache or provide", report["action"])
 
+    def test_real_browser_models_preflight_rejects_remote_asset_urls_inside_local_manifests(self):
+        module = self.load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for manifest_path in module.REAL_MODEL_ASSET_BYTES:
+                local_manifest = root / manifest_path
+                local_manifest.parent.mkdir(parents=True, exist_ok=True)
+                local_manifest.write_text(
+                    '{"assets":[{"url":"https://huggingface.co/Xenova/model.onnx","sha256":"abc123","bytes":42}]}',
+                    encoding="utf-8",
+                )
+            args = argparse.Namespace(frontend_url="http://127.0.0.1:4173")
+
+            report = module.preflight_real_browser_model_assets(root, args)
+
+        self.assertEqual(report["status"], "skip")
+        self.assertEqual(report["missingCount"], 0)
+        self.assertIn("remote asset URLs", report["reason"])
+        self.assertRegex(report["action"], r"Replace remote URLs with relative packaged asset paths")
+
+    def test_real_browser_models_preflight_rejects_local_manifests_without_checksums(self):
+        module = self.load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for manifest_path in module.REAL_MODEL_ASSET_BYTES:
+                local_manifest = root / manifest_path
+                local_manifest.parent.mkdir(parents=True, exist_ok=True)
+                local_manifest.write_text(
+                    '{"assets":[{"url":"weights/model.onnx","bytes":42}]}',
+                    encoding="utf-8",
+                )
+            args = argparse.Namespace(frontend_url="http://127.0.0.1:4173")
+
+            report = module.preflight_real_browser_model_assets(root, args)
+
+        self.assertEqual(report["status"], "skip")
+        self.assertIn("sha256 is required", report["reason"])
+        self.assertRegex(report["action"], r"include sha256/bytes")
+
     def test_compact_real_model_diagnostics_are_one_line_and_include_skip_reason(self):
         module = self.load_module()
         diagnostic = module.format_real_model_diagnostics({

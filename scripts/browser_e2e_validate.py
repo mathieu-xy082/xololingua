@@ -593,6 +593,25 @@ def preflight_real_browser_model_assets(root: Path = ROOT, args: argparse.Namesp
                 + ", ".join(missing_local_assets)
             ),
         }
+
+    manifest_issues = validate_local_real_model_manifests(root)
+    if manifest_issues:
+        return {
+            "status": "skip",
+            "runtime": "chromium",
+            "bootstrapStatus": "not-run",
+            "cachedCount": len(REAL_MODEL_ASSET_BYTES),
+            "missingCount": 0,
+            "missingLocalAssets": [],
+            "totalMissingBytes": 0,
+            "warmup": {"asr": "not-run", "translation": "not-run"},
+            "inference": {"asr": "not-run", "translation": "not-run"},
+            "coverage": "not-run",
+            "comparison": "not-run",
+            "reason": "; ".join(manifest_issues[:3]),
+            "action": "Replace remote URLs with relative packaged asset paths and include sha256/bytes before rerunning.",
+        }
+
     return {
         "status": "ready",
         "runtime": "chromium",
@@ -608,6 +627,34 @@ def preflight_real_browser_model_assets(root: Path = ROOT, args: argparse.Namesp
         "reason": "local model asset manifests are present",
         "action": "run browser bootstrap and real worker inference",
     }
+
+
+def validate_local_real_model_manifests(root: Path) -> list[str]:
+    issues: list[str] = []
+    for manifest_path in REAL_MODEL_ASSET_BYTES:
+        path = root / manifest_path
+        try:
+            manifest = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            issues.append(f"{manifest_path} is not readable JSON: {exc}")
+            continue
+        assets = manifest.get("assets")
+        if not isinstance(assets, list) or not assets:
+            issues.append(f"{manifest_path} must list packaged assets")
+            continue
+        for index, asset in enumerate(assets):
+            url = asset.get("url") if isinstance(asset, dict) else None
+            if not isinstance(url, str) or not url:
+                issues.append(f"{manifest_path}.assets[{index}].url is required")
+            elif re.match(r"https?://", url) or url.startswith("//"):
+                issues.append(f"{manifest_path} contains remote asset URLs: {url}")
+            sha256 = asset.get("sha256") if isinstance(asset, dict) else None
+            size_bytes = asset.get("bytes") if isinstance(asset, dict) else None
+            if not sha256:
+                issues.append(f"{manifest_path}.assets[{index}].sha256 is required")
+            if not isinstance(size_bytes, int) or size_bytes <= 0:
+                issues.append(f"{manifest_path}.assets[{index}].bytes must be a positive integer")
+    return issues
 
 
 def format_real_model_diagnostics(report: dict) -> str:
