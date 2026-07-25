@@ -103,6 +103,21 @@ test("service worker tracks versioned browser model bootstrap URLs without shell
   assert.match(serviceWorkerSource, /url\.pathname\.includes\("\/models\/"\)/);
 });
 
+test("service worker stores browser model bootstrap responses in the resolver cache namespace", () => {
+  assert.match(
+    serviceWorkerSource,
+    /MODEL_ASSET_CACHE_NAME\s*=\s*["']xololingua-model-assets-browser-model-assets-v1["']/,
+  );
+  assert.match(
+    serviceWorkerSource,
+    /caches\.open\(MODEL_ASSET_CACHE_NAME\)\.then\(\(cache\) => cache\.put\(request, copy\)\)/,
+  );
+  assert.doesNotMatch(
+    serviceWorkerSource,
+    /caches\.open\(CACHE_NAME\)\.then\(\(cache\) => cache\.put\(request, copy\)\)/,
+  );
+});
+
 test("PWA shell loads ffmpeg wasm browser assets before the module app starts", () => {
   assert.match(indexSource, /node_modules\/@ffmpeg\/ffmpeg\/dist\/ffmpeg\.min\.js/);
   assert.match(ffmpegWasmRuntimeSource, /node_modules\/@ffmpeg\/core\/dist\/ffmpeg-core\.js/);
