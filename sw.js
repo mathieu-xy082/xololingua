@@ -56,6 +56,13 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(self.clients.claim());
 });
 
+self.addEventListener("message", (event) => {
+  if (event.data?.type !== "BOOTSTRAP_MODEL_ASSETS") return;
+  event.waitUntil(
+    bootstrapModelAssetCache(event.source)
+  );
+});
+
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   const url = new URL(event.request.url);
@@ -89,8 +96,30 @@ function isTrackedModelAssetRequest(url) {
   return MODEL_ASSET_BOOTSTRAP_URLS.includes(relativeUrl);
 }
 
+function bootstrapModelAssetCache(client) {
+  const results = [];
+  return MODEL_ASSET_BOOTSTRAP_URLS.reduce((promise, url) => promise.then(() =>
+    cacheModelAssetRequest(new Request(url)).then((response) => {
+      const ok = response.ok;
+      results.push({ url, ok, status: response.status, retryable: !ok });
+      client?.postMessage?.({ type: "MODEL_ASSET_BOOTSTRAP_PROGRESS", url, ok, status: response.status, retryable: !ok });
+    })
+  ), Promise.resolve()).then(() => {
+    const failed = results.filter((result) => !result.ok);
+    client?.postMessage?.({
+      type: "MODEL_ASSET_BOOTSTRAP_COMPLETE",
+      status: failed.length === 0 ? "offline-ready" : "bootstrap-required",
+      retryable: failed.length > 0,
+      results,
+    });
+  });
+}
+
 function cacheModelAssetRequest(request) {
   return caches.match(request).then((cached) => cached || fetch(request).then((response) => {
+    if (!response.ok) {
+      return response;
+    }
     const copy = response.clone();
     caches.open(MODEL_ASSET_CACHE_NAME).then((cache) => cache.put(request, copy));
     return response;

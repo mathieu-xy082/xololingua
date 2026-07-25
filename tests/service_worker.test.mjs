@@ -118,6 +118,29 @@ test("service worker stores browser model bootstrap responses in the resolver ca
   );
 });
 
+test("service worker only stores successful browser model asset responses", () => {
+  assert.match(serviceWorkerSource, /if \(!response\.ok\) \{\s*return response;\s*\}/s);
+  assert.match(serviceWorkerSource, /const copy = response\.clone\(\);\s*caches\.open\(MODEL_ASSET_CACHE_NAME\)\.then\(\(cache\) => cache\.put\(request, copy\)\);/s);
+});
+
+test("PWA shell exposes a user-triggered model asset bootstrap and retry panel", () => {
+  assert.match(indexSource, /id=["']modelBootstrapPanel["']/);
+  assert.match(indexSource, /id=["']modelBootstrapStatus["']/);
+  assert.match(indexSource, /id=["']modelBootstrapProgressText["']/);
+  assert.match(indexSource, /id=["']modelBootstrapProgressBar["']/);
+  assert.match(indexSource, /id=["']modelBootstrapButton["']/);
+  assert.match(appSource, /bootstrapBrowserModelAssets/);
+  assert.match(appSource, /modelBootstrapButton\.addEventListener\("click", bootstrapModelAssets\)/);
+  assert.match(appSource, /renderModelBootstrapPanel\(clientPipelineCapabilities\.modelAssetBootstrap\)/);
+});
+
+test("service worker responds to explicit model asset bootstrap messages with retryable completion status", () => {
+  assert.match(serviceWorkerSource, /self\.addEventListener\("message"/);
+  assert.match(serviceWorkerSource, /BOOTSTRAP_MODEL_ASSETS/);
+  assert.match(serviceWorkerSource, /MODEL_ASSET_BOOTSTRAP_COMPLETE/);
+  assert.match(serviceWorkerSource, /cacheModelAssetRequest\(new Request\(url\)\)/);
+});
+
 test("PWA shell loads ffmpeg wasm browser assets before the module app starts", () => {
   assert.match(indexSource, /node_modules\/@ffmpeg\/ffmpeg\/dist\/ffmpeg\.min\.js/);
   assert.match(ffmpegWasmRuntimeSource, /node_modules\/@ffmpeg\/core\/dist\/ffmpeg-core\.js/);

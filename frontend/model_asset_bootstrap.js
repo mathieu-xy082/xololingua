@@ -118,6 +118,108 @@ export async function resolveBrowserModelAssetBootstrap({
   };
 }
 
+export async function bootstrapBrowserModelAssets({
+  environment = globalThis,
+  manifest = BROWSER_MODEL_ASSET_MANIFEST,
+  cacheName = buildBrowserModelAssetCacheName(manifest),
+  onProgress = () => {},
+} = {}) {
+  const before = await resolveBrowserModelAssetBootstrap({ environment, manifest });
+  if (before.status === "unavailable") {
+    return {
+      status: "unavailable",
+      report: before,
+      downloadedUrls: [],
+      skippedCachedUrls: [],
+      failedAssets: before.missingModelAssets.map((asset) => ({
+        stage: asset.stage,
+        url: asset.versionedUrl,
+        retryable: true,
+        error: before.fallback.fallbackReason,
+      })),
+    };
+  }
+
+  const cache = await environment.caches.open(cacheName);
+  const totalBytes = before.totalRequiredBytes;
+  let completedBytes = totalBytes - before.totalMissingBytes;
+  const downloadedUrls = [];
+  const skippedCachedUrls = [...before.cache.cachedUrls];
+  const failedAssets = [];
+
+  for (const asset of before.bootstrapPlan.steps) {
+    if (asset.status === "cached") {
+      onProgress(createBootstrapProgressEvent({ asset, status: "cached", completedBytes, totalBytes }));
+      continue;
+    }
+
+    onProgress(createBootstrapProgressEvent({ asset, status: "downloading", completedBytes, totalBytes }));
+    try {
+      const response = await environment.fetch(asset.versionedUrl);
+      if (!response?.ok) {
+        failedAssets.push({
+          stage: asset.stage,
+          url: asset.versionedUrl,
+          status: response?.status || 0,
+          retryable: true,
+          error: response?.statusText || "download failed",
+        });
+        onProgress(createBootstrapProgressEvent({ asset, status: "failed", completedBytes, totalBytes, error: response?.statusText || "download failed" }));
+        continue;
+      }
+      await cache.put(asset.versionedUrl, typeof response.clone === "function" ? response.clone() : response);
+      downloadedUrls.push(asset.versionedUrl);
+      completedBytes += asset.progressWeightBytes;
+      onProgress(createBootstrapProgressEvent({ asset, status: "cached", completedBytes, totalBytes }));
+    } catch (error) {
+      failedAssets.push({
+        stage: asset.stage,
+        url: asset.versionedUrl,
+        retryable: true,
+        error: error?.message || String(error),
+      });
+      onProgress(createBootstrapProgressEvent({ asset, status: "failed", completedBytes, totalBytes, error: error?.message || String(error) }));
+    }
+  }
+
+  const report = await resolveBrowserModelAssetBootstrap({ environment, manifest });
+  onProgress({
+    type: "complete",
+    status: report.status,
+    progress: report.totalRequiredBytes > 0
+      ? Math.round(((report.totalRequiredBytes - report.totalMissingBytes) / report.totalRequiredBytes) * 100)
+      : 100,
+    completedBytes: report.totalRequiredBytes - report.totalMissingBytes,
+    remainingBytes: report.totalMissingBytes,
+    totalBytes: report.totalRequiredBytes,
+    retryable: report.status !== "offline-ready",
+  });
+
+  return {
+    status: report.status,
+    report,
+    downloadedUrls,
+    skippedCachedUrls,
+    failedAssets,
+  };
+}
+
+function createBootstrapProgressEvent({ asset, status, completedBytes, totalBytes, error }) {
+  return {
+    type: "asset",
+    stage: asset.stage,
+    assetName: asset.assetName,
+    url: asset.versionedUrl,
+    status,
+    progress: totalBytes > 0 ? Math.round((completedBytes / totalBytes) * 100) : 100,
+    completedBytes,
+    remainingBytes: Math.max(0, totalBytes - completedBytes),
+    totalBytes,
+    retryable: status === "failed" || asset.retryable,
+    ...(error ? { error } : {}),
+  };
+}
+
 function detectBrowserModelStorage(environment) {
   const cacheApi = Boolean(environment?.caches && typeof environment.caches.open === "function");
   const indexedDb = Boolean(environment?.indexedDB);

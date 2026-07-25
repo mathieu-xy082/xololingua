@@ -6,14 +6,19 @@ import {
   buildModelAssetCacheUrls,
 } from "../frontend/model_asset_manifest.js";
 import {
+  bootstrapBrowserModelAssets,
   inspectBrowserModelAssetCache,
   resolveBrowserModelAssetBootstrap,
 } from "../frontend/model_asset_bootstrap.js";
 
-function createCacheEnvironment(cachedUrls = [], { cacheOpenError } = {}) {
-  const cached = new Set(cachedUrls);
+function createBootstrapEnvironment({ cachedUrls = [], fetchFailures = new Set(), cacheOpenError } = {}) {
+  const cached = new Map(cachedUrls.map((url) => [url, { ok: true, url, cached: true }]));
+  const fetchCalls = [];
+  const putCalls = [];
   const openedCaches = [];
   return {
+    fetchCalls,
+    putCalls,
     openedCaches,
     caches: {
       async open(cacheName) {
@@ -23,18 +28,37 @@ function createCacheEnvironment(cachedUrls = [], { cacheOpenError } = {}) {
         }
         return {
           async match(url) {
-            return cached.has(url) ? { ok: true, url } : undefined;
+            return cached.get(typeof url === "string" ? url : url.url);
+          },
+          async put(url, response) {
+            const key = typeof url === "string" ? url : url.url;
+            putCalls.push(key);
+            cached.set(key, response);
           },
         };
       },
     },
     indexedDB: {},
+    async fetch(url) {
+      fetchCalls.push(url);
+      if (fetchFailures.has(url)) {
+        return { ok: false, status: 503, statusText: "Service Unavailable", url };
+      }
+      return {
+        ok: true,
+        status: 200,
+        url,
+        clone() {
+          return { ok: true, status: 200, url, cloned: true };
+        },
+      };
+    },
   };
 }
 
 test("inspectBrowserModelAssetCache reads the real Cache API and reports cached versioned URLs", async () => {
   const cachedUrl = "models/asr/whisper-tiny/manifest.json?v=browser-model-assets-v1";
-  const environment = createCacheEnvironment([cachedUrl]);
+  const environment = createBootstrapEnvironment({ cachedUrls: [cachedUrl] });
 
   const result = await inspectBrowserModelAssetCache({
     environment,
@@ -65,7 +89,7 @@ test("inspectBrowserModelAssetCache returns an unavailable fallback diagnostic w
 
 test("resolveBrowserModelAssetBootstrap reports offline-ready only when every required asset is cached", async () => {
   const allUrls = buildModelAssetCacheUrls(BROWSER_MODEL_ASSET_MANIFEST);
-  const environment = createCacheEnvironment(allUrls);
+  const environment = createBootstrapEnvironment({ cachedUrls: allUrls });
 
   const result = await resolveBrowserModelAssetBootstrap({
     environment,
@@ -83,9 +107,9 @@ test("resolveBrowserModelAssetBootstrap reports offline-ready only when every re
 });
 
 test("resolveBrowserModelAssetBootstrap reports bootstrap-required with missing model asset metadata", async () => {
-  const environment = createCacheEnvironment([
+  const environment = createBootstrapEnvironment({ cachedUrls: [
     "models/asr/whisper-tiny/manifest.json?v=browser-model-assets-v1",
-  ]);
+  ] });
 
   const result = await resolveBrowserModelAssetBootstrap({
     environment,
@@ -135,11 +159,57 @@ test("resolveBrowserModelAssetBootstrap reports unavailable when required browse
 
 test("resolveBrowserModelAssetBootstrap reports unavailable when cache inspection throws", async () => {
   const result = await resolveBrowserModelAssetBootstrap({
-    environment: createCacheEnvironment([], { cacheOpenError: new Error("quota denied") }),
+    environment: createBootstrapEnvironment({ cachedUrls: [], cacheOpenError: new Error("quota denied") }),
     manifest: BROWSER_MODEL_ASSET_MANIFEST,
   });
 
   assert.equal(result.status, "unavailable");
   assert.match(result.fallback.fallbackReason, /quota denied/);
   assert.deepEqual(result.cache.issues, ["Cache API inspection failed: quota denied"]);
+});
+
+test("bootstrapBrowserModelAssets downloads only missing versioned model assets and refreshes the resolver report", async () => {
+  const cachedUrl = "models/asr/whisper-tiny/manifest.json?v=browser-model-assets-v1";
+  const missingUrl = "models/translation/nllb-fr-en/manifest.json?v=browser-model-assets-v1";
+  const environment = createBootstrapEnvironment({ cachedUrls: [cachedUrl] });
+  const events = [];
+
+  const result = await bootstrapBrowserModelAssets({
+    environment,
+    manifest: BROWSER_MODEL_ASSET_MANIFEST,
+    onProgress: (event) => events.push(event),
+  });
+
+  assert.deepEqual(environment.fetchCalls, [missingUrl]);
+  assert.deepEqual(environment.putCalls, [missingUrl]);
+  assert.equal(result.status, "offline-ready");
+  assert.deepEqual(result.report.offlineReadyStages, ["transcription", "translation"]);
+  assert.deepEqual(result.downloadedUrls, [missingUrl]);
+  assert.deepEqual(result.skippedCachedUrls, [cachedUrl]);
+  assert.deepEqual(events.map((event) => event.status), ["cached", "downloading", "cached", "offline-ready"]);
+  assert.equal(events.at(-1).remainingBytes, 0);
+});
+
+test("bootstrapBrowserModelAssets keeps Python fallback metadata retryable when an asset download fails", async () => {
+  const failingUrl = "models/asr/whisper-tiny/manifest.json?v=browser-model-assets-v1";
+  const environment = createBootstrapEnvironment({ fetchFailures: new Set([failingUrl]) });
+  const events = [];
+
+  const result = await bootstrapBrowserModelAssets({
+    environment,
+    manifest: BROWSER_MODEL_ASSET_MANIFEST,
+    onProgress: (event) => events.push(event),
+  });
+
+  assert.equal(result.status, "bootstrap-required");
+  assert.deepEqual(result.failedAssets, [{
+    stage: "transcription",
+    url: failingUrl,
+    status: 503,
+    retryable: true,
+    error: "Service Unavailable",
+  }]);
+  assert.deepEqual(result.report.fallbackRequiredStages, ["transcription"]);
+  assert.match(result.report.fallback.fallbackReason, /Python fallback remains required for transcription/);
+  assert.equal(events.some((event) => event.status === "failed" && event.retryable), true);
 });

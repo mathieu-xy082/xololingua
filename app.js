@@ -3,6 +3,7 @@ import { createAppClientAdapters, createAppHybridPipelineRouter } from "./fronte
 import { createClientAudioExtractor } from "./frontend/client_audio_extractor.js";
 import { createClientTranscriber } from "./frontend/client_transcriber.js";
 import { createClientTranslator } from "./frontend/client_translator.js";
+import { bootstrapBrowserModelAssets } from "./frontend/model_asset_bootstrap.js";
 import { BROWSER_MODEL_ASSET_MANIFEST } from "./frontend/model_asset_manifest.js";
 import {
   collectClientPipelineCapabilities,
@@ -19,7 +20,7 @@ const SEGMENT_SECONDS = 12;
 const LOCAL_SERVICE_URL = "http://127.0.0.1:8765";
 const APP_ASSET_VERSION = "2026-07-15-1";
 const backendClient = createBackendClient({ baseUrl: LOCAL_SERVICE_URL });
-const clientPipelineCapabilities = globalThis.__xololinguaCachedModelAssetUrls?.length > 0
+let clientPipelineCapabilities = globalThis.__xololinguaCachedModelAssetUrls?.length > 0
   ? collectClientPipelineCapabilities()
   : await collectClientPipelineCapabilitiesWithModelAssetBootstrap()
     .catch(() => collectClientPipelineCapabilities());
@@ -146,11 +147,17 @@ const els = {
   pwaOfflineScope: document.querySelector("#pwaOfflineScope"),
   pipelineBrowserStages: document.querySelector("#pipelineBrowserStages"),
   pipelineFallbackStages: document.querySelector("#pipelineFallbackStages"),
-  pipelineFallbackEndpoints: document.querySelector("#pipelineFallbackEndpoints")
+  pipelineFallbackEndpoints: document.querySelector("#pipelineFallbackEndpoints"),
+  modelBootstrapPanel: document.querySelector("#modelBootstrapPanel"),
+  modelBootstrapStatus: document.querySelector("#modelBootstrapStatus"),
+  modelBootstrapProgressText: document.querySelector("#modelBootstrapProgressText"),
+  modelBootstrapProgressBar: document.querySelector("#modelBootstrapProgressBar"),
+  modelBootstrapButton: document.querySelector("#modelBootstrapButton")
 };
 
 let deferredInstallPrompt = null;
 let _pairsFetched = false;
+const modelBootstrapButton = els.modelBootstrapButton;
 
 populateLanguages();
 bindEvents();
@@ -198,6 +205,67 @@ function renderPipelineCapabilitySummary() {
       return item;
     }),
   );
+  renderModelBootstrapPanel(clientPipelineCapabilities.modelAssetBootstrap);
+}
+
+function renderModelBootstrapPanel(modelAssetBootstrap, progressEvent) {
+  if (!els.modelBootstrapPanel) return;
+  const status = modelAssetBootstrap?.status || "unavailable";
+  const totalBytes = modelAssetBootstrap?.totalRequiredBytes || progressEvent?.totalBytes || 0;
+  const missingBytes = modelAssetBootstrap?.totalMissingBytes ?? progressEvent?.remainingBytes ?? totalBytes;
+  const completedBytes = Math.max(0, totalBytes - missingBytes);
+  const progress = Number.isFinite(progressEvent?.progress)
+    ? progressEvent.progress
+    : totalBytes > 0
+      ? Math.round((completedBytes / totalBytes) * 100)
+      : status === "offline-ready" ? 100 : 0;
+  els.modelBootstrapProgressText.textContent = `${progress}%`;
+  els.modelBootstrapProgressBar.style.width = `${Math.max(0, Math.min(100, progress))}%`;
+
+  if (status === "offline-ready") {
+    els.modelBootstrapStatus.textContent = "Browser model assets are cached. ASR and translation can run offline in browser.";
+    els.modelBootstrapButton.textContent = "Model assets cached";
+    els.modelBootstrapButton.disabled = true;
+    return;
+  }
+
+  const missingAssets = modelAssetBootstrap?.missingModelAssets || [];
+  const retryLabel = progressEvent?.status === "failed" ? "Retry model asset cache" : "Cache model assets";
+  els.modelBootstrapStatus.textContent = progressEvent?.status === "downloading"
+    ? `Caching ${progressEvent.assetName || "model asset"}... ${formatBytes(progressEvent.remainingBytes)} remaining.`
+    : missingAssets.length > 0
+      ? `${missingAssets.length} browser model asset(s) missing (${formatBytes(missingBytes)}). Python fallback stays active until cached.`
+      : "Browser model assets need cache verification before ML stages run offline.";
+  els.modelBootstrapButton.textContent = retryLabel;
+  els.modelBootstrapButton.disabled = state.busyStep === "modelBootstrap";
+}
+
+async function bootstrapModelAssets() {
+  if (state.busyStep === "modelBootstrap") return;
+  state.busyStep = "modelBootstrap";
+  let finalProgressEvent;
+  renderModelBootstrapPanel(clientPipelineCapabilities.modelAssetBootstrap, { progress: 0, remainingBytes: clientPipelineCapabilities.modelAssetBootstrap?.totalMissingBytes || 0 });
+  try {
+    const result = await bootstrapBrowserModelAssets({
+      manifest: BROWSER_MODEL_ASSET_MANIFEST,
+      onProgress: (event) => renderModelBootstrapPanel(clientPipelineCapabilities.modelAssetBootstrap, event),
+    });
+    clientPipelineCapabilities = await collectClientPipelineCapabilitiesWithModelAssetBootstrap()
+      .catch(() => ({ ...clientPipelineCapabilities, modelAssetBootstrap: result.report }));
+    if (result.status !== "offline-ready") {
+      finalProgressEvent = { status: "failed", progress: 0, remainingBytes: result.report.totalMissingBytes };
+    }
+  } catch (error) {
+    finalProgressEvent = { status: "failed", progress: 0, error: error.message, remainingBytes: clientPipelineCapabilities.modelAssetBootstrap?.totalMissingBytes || 0 };
+    els.modelBootstrapStatus.textContent = `Model asset bootstrap failed: ${error.message}. Python fallback remains active; retry when assets are available.`;
+    els.modelBootstrapButton.textContent = "Retry model asset cache";
+  } finally {
+    state.busyStep = "";
+    renderPipelineCapabilitySummary();
+    if (finalProgressEvent) {
+      renderModelBootstrapPanel(clientPipelineCapabilities.modelAssetBootstrap, finalProgressEvent);
+    }
+  }
 }
 
 async function fetchTranslationPairs() {
@@ -290,6 +358,7 @@ function bindEvents() {
   els.toggleSegmentsButton.addEventListener("click", toggleSegmentDetails);
   els.generateButton.addEventListener("click", generateSubtitles);
   els.cancelGenerateButton.addEventListener("click", cancelSubtitleGeneration);
+  modelBootstrapButton.addEventListener("click", bootstrapModelAssets);
 }
 
 function loadVideoFile(file) {
