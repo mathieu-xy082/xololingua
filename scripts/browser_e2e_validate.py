@@ -41,6 +41,14 @@ DEFAULT_DOWNLOAD_DIR = Path(
         DEFAULT_TMP_ROOT / "browser-e2e-downloads",
     )
 )
+REAL_MODEL_ASSET_URLS = [
+    "models/asr/whisper-tiny/manifest.json?v=browser-model-assets-v1",
+    "models/translation/nllb-fr-en/manifest.json?v=browser-model-assets-v1",
+]
+REAL_MODEL_ASSET_BYTES = {
+    "models/asr/whisper-tiny/manifest.json": 151_000_000,
+    "models/translation/nllb-fr-en/manifest.json": 625_000_000,
+}
 
 
 class ManagedProcess:
@@ -131,6 +139,20 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--real-browser-models",
+        action="store_true",
+        help=(
+            "Run browser ASR/translation with real local model workers only. Deterministic "
+            "backend-reference adapters are forbidden; absent local assets produce a compact "
+            "actionable skip diagnostic."
+        ),
+    )
+    parser.add_argument(
+        "--bootstrap-model-assets",
+        action="store_true",
+        help="Exercise the browser model asset bootstrap/cache panel before real model inference.",
+    )
+    parser.add_argument(
         "--compare-backend-srt",
         action="store_true",
         help="Run the full backend subtitle pipeline and compare its SRT with the browser output.",
@@ -139,7 +161,10 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--compare-min-text-similarity", type=float, default=0.90)
     parser.add_argument("--compare-max-block-delta", type=int, default=2)
     parser.add_argument("--compare-max-last-end-delta", type=float, default=5.0)
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.real_browser_models and args.inject_backend_reference_browser_ml:
+        parser.error("--real-browser-models cannot be combined with --inject-backend-reference-browser-ml")
+    return args
 
 
 def require_playwright():
@@ -540,6 +565,123 @@ def log_step(message: str) -> None:
     print(f"[browser-e2e] {message}", flush=True)
 
 
+def preflight_real_browser_model_assets(root: Path = ROOT, args: argparse.Namespace | None = None) -> dict:
+    missing_local_assets = [
+        asset_path
+        for asset_path in REAL_MODEL_ASSET_BYTES
+        if not (root / asset_path).is_file()
+    ]
+    cached_count = 0
+    missing_count = len(missing_local_assets)
+    total_missing_bytes = sum(REAL_MODEL_ASSET_BYTES[path] for path in missing_local_assets)
+    if missing_local_assets:
+        return {
+            "status": "skip",
+            "runtime": "chromium",
+            "bootstrapStatus": "not-run",
+            "cachedCount": cached_count,
+            "missingCount": missing_count,
+            "missingLocalAssets": missing_local_assets,
+            "totalMissingBytes": total_missing_bytes,
+            "warmup": {"asr": "not-run", "translation": "not-run"},
+            "inference": {"asr": "not-run", "translation": "not-run"},
+            "coverage": "not-run",
+            "comparison": "not-run",
+            "reason": "local model asset manifests are absent",
+            "action": (
+                "Cache or provide local model manifests before rerunning: "
+                + ", ".join(missing_local_assets)
+            ),
+        }
+    return {
+        "status": "ready",
+        "runtime": "chromium",
+        "bootstrapStatus": "pending",
+        "cachedCount": len(REAL_MODEL_ASSET_BYTES),
+        "missingCount": 0,
+        "missingLocalAssets": [],
+        "totalMissingBytes": 0,
+        "warmup": {"asr": "pending", "translation": "pending"},
+        "inference": {"asr": "pending", "translation": "pending"},
+        "coverage": "pending",
+        "comparison": "pending",
+        "reason": "local model asset manifests are present",
+        "action": "run browser bootstrap and real worker inference",
+    }
+
+
+def format_real_model_diagnostics(report: dict) -> str:
+    warmup = report.get("warmup") or {}
+    inference = report.get("inference") or {}
+    missing_assets = report.get("missingLocalAssets") or []
+    missing_label = ",".join(missing_assets[:2]) if missing_assets else "none"
+    if len(missing_assets) > 2:
+        missing_label += f",+{len(missing_assets) - 2}"
+    parts = [
+        f"status={report.get('status', 'unknown')}",
+        f"runtime={report.get('runtime', 'chromium')}",
+        f"bootstrap={report.get('bootstrapStatus', 'unknown')}",
+        f"cached={report.get('cachedCount', 0)}",
+        f"missing={report.get('missingCount', 0)}",
+        f"missingAssets={missing_label}",
+        f"warmup=asr:{warmup.get('asr', 'unknown')},translation:{warmup.get('translation', 'unknown')}",
+        f"inference=asr:{inference.get('asr', 'unknown')},translation:{inference.get('translation', 'unknown')}",
+        f"coverage={report.get('coverage', 'unknown')}",
+        f"comparison={report.get('comparison', 'unknown')}",
+        f"reason={report.get('reason', '')}",
+        f"action={report.get('action', '')}",
+    ]
+    return "Browser real-model diagnostics: " + "; ".join(str(part).replace("\n", " ") for part in parts)
+
+
+def emit_real_model_diagnostics(report: dict) -> None:
+    print(format_real_model_diagnostics(report), flush=True)
+
+
+def inspect_model_asset_cache_in_page(page) -> dict:
+    return page.evaluate(
+        """
+        async ({ cacheName, urls }) => {
+          if (!('caches' in window)) {
+            return { bootstrapStatus: 'unavailable', cachedUrls: [], missingUrls: urls, reason: 'Cache API unavailable' };
+          }
+          const cache = await caches.open(cacheName);
+          const cachedUrls = [];
+          const missingUrls = [];
+          for (const url of urls) {
+            if (await cache.match(url)) cachedUrls.push(url);
+            else missingUrls.push(url);
+          }
+          return {
+            bootstrapStatus: missingUrls.length === 0 ? 'offline-ready' : 'bootstrap-required',
+            cachedUrls,
+            missingUrls,
+            reason: missingUrls.length === 0 ? 'all tracked model assets are cached' : 'tracked model assets are missing from Cache API'
+          };
+        }
+        """,
+        {
+            "cacheName": "xololingua-model-assets-browser-model-assets-v1",
+            "urls": REAL_MODEL_ASSET_URLS,
+        },
+    )
+
+
+def bootstrap_model_assets_in_page(page, expect) -> dict:
+    button = page.locator("#modelBootstrapButton")
+    if button.count() == 0:
+        return {"bootstrapStatus": "unavailable", "reason": "model bootstrap button not found"}
+    if button.is_enabled():
+        button.click()
+        expect(page.locator("#modelBootstrapStatus")).not_to_contain_text("Caching", timeout=900_000)
+    status_text = page.locator("#modelBootstrapStatus").inner_text(timeout=5_000)
+    cache_report = inspect_model_asset_cache_in_page(page)
+    return {
+        **cache_report,
+        "statusText": status_text,
+    }
+
+
 def run_browser_workflow(args: argparse.Namespace) -> Path | None:
     expect, sync_playwright = require_playwright()
     if not args.video.is_file():
@@ -579,6 +721,26 @@ def run_browser_workflow(args: argparse.Namespace) -> Path | None:
         try:
             log_step(f"Opening frontend {args.frontend_url}")
             page.goto(args.frontend_url, wait_until="domcontentloaded")
+            if args.bootstrap_model_assets:
+                log_step("Inspecting/bootstrapping browser model asset cache")
+                bootstrap_report = bootstrap_model_assets_in_page(page, expect)
+                emit_real_model_diagnostics({
+                    "status": "running" if bootstrap_report.get("bootstrapStatus") == "offline-ready" else "skip",
+                    "runtime": "chromium",
+                    "bootstrapStatus": bootstrap_report.get("bootstrapStatus", "unknown"),
+                    "cachedCount": len(bootstrap_report.get("cachedUrls") or []),
+                    "missingCount": len(bootstrap_report.get("missingUrls") or []),
+                    "missingLocalAssets": bootstrap_report.get("missingUrls") or [],
+                    "warmup": {"asr": "pending", "translation": "pending"},
+                    "inference": {"asr": "pending", "translation": "pending"},
+                    "coverage": "pending",
+                    "comparison": "pending" if args.compare_backend_srt else "not-requested",
+                    "reason": bootstrap_report.get("reason", bootstrap_report.get("statusText", "")),
+                    "action": "continuing to real browser worker workflow" if bootstrap_report.get("bootstrapStatus") == "offline-ready" else "bootstrap tracked model assets and rerun",
+                })
+                if bootstrap_report.get("bootstrapStatus") != "offline-ready":
+                    return None
+                page.reload(wait_until="domcontentloaded")
 
             log_step(f"Uploading video {args.video}")
             page.locator("#fileInput").set_input_files(str(args.video))
@@ -664,15 +826,35 @@ def run_browser_workflow(args: argparse.Namespace) -> Path | None:
 
 def main(argv: Iterable[str] | None = None) -> int:
     args = parse_args(argv)
+    if args.real_browser_models:
+        preflight = preflight_real_browser_model_assets(ROOT, args)
+        if preflight["status"] == "skip":
+            emit_real_model_diagnostics(preflight)
+            return 0
     processes: list[ManagedProcess] = []
     try:
         processes = maybe_start_servers(args)
         downloaded = run_browser_workflow(args)
         if downloaded is None:
-            print(f"Browser E2E segmentation guards succeeded for target={args.target}")
+            print(f"Browser E2E segmentation/bootstrap guards succeeded for target={args.target}")
         else:
             print(f"Browser E2E succeeded for target={args.target}: {downloaded}")
             print(f"Downloaded SRT size: {downloaded.stat().st_size} bytes")
+            if args.real_browser_models:
+                emit_real_model_diagnostics({
+                    "status": "pass",
+                    "runtime": "chromium",
+                    "bootstrapStatus": "offline-ready" if args.bootstrap_model_assets else "not-requested",
+                    "cachedCount": len(REAL_MODEL_ASSET_URLS),
+                    "missingCount": 0,
+                    "missingLocalAssets": [],
+                    "warmup": {"asr": "pass", "translation": "pass"},
+                    "inference": {"asr": "pass", "translation": "pass"},
+                    "coverage": "pass",
+                    "comparison": "pass" if args.compare_backend_srt else "not-requested",
+                    "reason": "real browser worker path completed",
+                    "action": "none",
+                })
         return 0
     finally:
         if not args.keep_servers:

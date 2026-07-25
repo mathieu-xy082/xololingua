@@ -139,6 +139,68 @@ class BrowserE2EScriptTests(unittest.TestCase):
         self.assertIn("XOLOLINGUA_CLIENT_TRANSCRIBER", script)
         self.assertIn("XOLOLINGUA_CLIENT_TRANSLATOR", script)
 
+    def test_pdm_script_exposes_real_browser_models_gate_without_deterministic_injection(self):
+        pyproject = PYPROJECT.read_text(encoding="utf-8")
+        match = re.search(r'^e2e-browser-real-models\s*=\s*"(?P<command>[^"]+)"$', pyproject, re.MULTILINE)
+
+        self.assertIsNotNone(match, "pyproject should expose pdm run e2e-browser-real-models")
+        command = match.group("command")
+        self.assertIn("python scripts/browser_e2e_validate.py", command)
+        self.assertIn("--real-browser-models", command)
+        self.assertIn("--bootstrap-model-assets", command)
+        self.assertIn("--require-browser-transcription", command)
+        self.assertIn("--require-browser-translation", command)
+        self.assertIn("--compare-backend-srt", command)
+        self.assertNotIn("--inject-backend-reference-browser-ml", command)
+
+    def test_real_browser_models_mode_rejects_deterministic_backend_reference_injection(self):
+        module = self.load_module()
+
+        with self.assertRaises(SystemExit):
+            module.parse_args(["--real-browser-models", "--inject-backend-reference-browser-ml"])
+
+    def test_real_browser_models_preflight_reports_missing_local_assets_as_actionable_skip(self):
+        module = self.load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            args = argparse.Namespace(frontend_url="http://127.0.0.1:4173")
+
+            report = module.preflight_real_browser_model_assets(root, args)
+
+        self.assertEqual(report["status"], "skip")
+        self.assertEqual(report["missingCount"], 2)
+        self.assertIn("models/asr/whisper-tiny/manifest.json", report["missingLocalAssets"])
+        self.assertIn("models/translation/nllb-fr-en/manifest.json", report["missingLocalAssets"])
+        self.assertIn("Cache or provide", report["action"])
+
+    def test_compact_real_model_diagnostics_are_one_line_and_include_skip_reason(self):
+        module = self.load_module()
+        diagnostic = module.format_real_model_diagnostics({
+            "status": "skip",
+            "runtime": "chromium",
+            "bootstrapStatus": "not-run",
+            "cachedCount": 0,
+            "missingCount": 2,
+            "missingLocalAssets": [
+                "models/asr/whisper-tiny/manifest.json",
+                "models/translation/nllb-fr-en/manifest.json",
+            ],
+            "warmup": {"asr": "not-run", "translation": "not-run"},
+            "inference": {"asr": "not-run", "translation": "not-run"},
+            "coverage": "not-run",
+            "comparison": "not-run",
+            "reason": "local model asset manifests are absent",
+            "action": "Cache or provide local model manifests before rerunning.",
+        })
+
+        self.assertNotIn("\n", diagnostic)
+        self.assertLess(len(diagnostic), 700)
+        self.assertIn("status=skip", diagnostic)
+        self.assertIn("bootstrap=not-run", diagnostic)
+        self.assertIn("missing=2", diagnostic)
+        self.assertIn("reason=local model asset manifests are absent", diagnostic)
+        self.assertIn("action=Cache or provide local model manifests before rerunning.", diagnostic)
+
 
 if __name__ == "__main__":
     unittest.main()
