@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
+import { buildModelAssetCacheUrls } from "../frontend/model_asset_manifest.js";
+
 const appSource = await readFile(new URL("../app.js", import.meta.url), "utf8");
 const indexSource = await readFile(new URL("../index.html", import.meta.url), "utf8");
 const serviceWorkerSource = await readFile(new URL("../sw.js", import.meta.url), "utf8");
@@ -88,6 +90,19 @@ test("PWA shell precaches the local translation worker", () => {
   assert.match(serviceWorkerSource, /frontend\/translation_worker\.js/);
 });
 
+test("service worker tracks versioned browser model bootstrap URLs without shell precaching them", () => {
+  const modelUrls = buildModelAssetCacheUrls();
+  const assetListSource = serviceWorkerSource.match(/const ASSETS = \[([\s\S]*?)\];/)?.[1] || "";
+
+  assert.ok(modelUrls.length >= 2);
+  for (const url of modelUrls) {
+    assert.match(serviceWorkerSource, new RegExp(escapeRegExp(url)));
+    assert.doesNotMatch(assetListSource, new RegExp(escapeRegExp(url)));
+  }
+  assert.match(serviceWorkerSource, /MODEL_ASSET_BOOTSTRAP_URLS/);
+  assert.match(serviceWorkerSource, /url\.pathname\.includes\("\/models\/"\)/);
+});
+
 test("PWA shell loads ffmpeg wasm browser assets before the module app starts", () => {
   assert.match(indexSource, /node_modules\/@ffmpeg\/ffmpeg\/dist\/ffmpeg\.min\.js/);
   assert.match(ffmpegWasmRuntimeSource, /node_modules\/@ffmpeg\/core\/dist\/ffmpeg-core\.js/);
@@ -128,3 +143,7 @@ test("PWA asset cache version changes with the app shell version", () => {
   assert.match(serviceWorkerSource, new RegExp(`app\\.js\\?v=${appAssetVersion}`));
   assert.match(serviceWorkerSource, new RegExp(`styles\\.css\\?v=${appAssetVersion}`));
 });
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}

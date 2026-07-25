@@ -1,4 +1,8 @@
 const CACHE_NAME = "xololingua-2026-07-15-1";
+const MODEL_ASSET_BOOTSTRAP_URLS = [
+  "models/asr/whisper-tiny/manifest.json?v=browser-model-assets-v1",
+  "models/translation/nllb-fr-en/manifest.json?v=browser-model-assets-v1"
+];
 const ASSETS = [
   ".",
   "styles.css?v=2026-07-15-1",
@@ -53,6 +57,11 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
+  const url = new URL(event.request.url);
+  if (url.pathname.includes("/models/") && isTrackedModelAssetRequest(url)) {
+    event.respondWith(cacheModelAssetRequest(event.request));
+    return;
+  }
   if (event.request.mode === "navigate" || event.request.destination === "document") {
     event.respondWith(
       fetch(event.request).then((response) => {
@@ -73,3 +82,22 @@ self.addEventListener("fetch", (event) => {
     )
   );
 });
+
+function isTrackedModelAssetRequest(url) {
+  const relativeUrl = `${url.pathname.replace(/^\//, "")}${url.search}`;
+  return MODEL_ASSET_BOOTSTRAP_URLS.includes(relativeUrl);
+}
+
+function cacheModelAssetRequest(request) {
+  return caches.match(request).then((cached) => cached || fetch(request).then((response) => {
+    const copy = response.clone();
+    caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+    return response;
+  }).catch(() => new Response(JSON.stringify({
+    error: "Browser model asset is not cached and network bootstrap failed.",
+    fallback: "server-fallback",
+  }), {
+    status: 503,
+    headers: { "Content-Type": "application/json" },
+  })));
+}
