@@ -167,7 +167,23 @@ export async function bootstrapBrowserModelAssets({
         onProgress(createBootstrapProgressEvent({ asset, status: "failed", completedBytes, totalBytes, error: response?.statusText || "download failed" }));
         continue;
       }
-      await cache.put(asset.versionedUrl, typeof response.clone === "function" ? response.clone() : response);
+      const cacheResponse = typeof response.clone === "function" ? response.clone() : response;
+      const checksumError = await validateModelAssetChecksum({
+        asset,
+        response: typeof response.clone === "function" ? response.clone() : response,
+        environment,
+      });
+      if (checksumError) {
+        failedAssets.push({
+          stage: asset.stage,
+          url: asset.versionedUrl,
+          retryable: true,
+          error: checksumError,
+        });
+        onProgress(createBootstrapProgressEvent({ asset, status: "failed", completedBytes, totalBytes, error: checksumError }));
+        continue;
+      }
+      await cache.put(asset.versionedUrl, cacheResponse);
       downloadedUrls.push(asset.versionedUrl);
       completedBytes += asset.progressWeightBytes;
       onProgress(createBootstrapProgressEvent({ asset, status: "cached", completedBytes, totalBytes }));
@@ -218,6 +234,34 @@ function createBootstrapProgressEvent({ asset, status, completedBytes, totalByte
     retryable: status === "failed" || asset.retryable,
     ...(error ? { error } : {}),
   };
+}
+
+async function validateModelAssetChecksum({ asset, response, environment }) {
+  const expected = asset?.sha256;
+  if (!expected || expected === "pending-real-asset-checksum") {
+    return null;
+  }
+  if (!/^[a-f0-9]{64}$/i.test(expected)) {
+    return `sha256 for ${asset.assetName} must be a 64-character hex digest`;
+  }
+  if (typeof response?.arrayBuffer !== "function") {
+    return `sha256 verification unavailable for ${asset.assetName}`;
+  }
+  const subtle = environment?.crypto?.subtle;
+  if (!subtle || typeof subtle.digest !== "function") {
+    return `sha256 verification unavailable for ${asset.assetName}`;
+  }
+  const actual = await digestSha256Hex(await response.arrayBuffer(), subtle);
+  return actual.toLowerCase() === expected.toLowerCase()
+    ? null
+    : `sha256 mismatch for ${asset.assetName}`;
+}
+
+async function digestSha256Hex(arrayBuffer, subtle) {
+  const digest = await subtle.digest("SHA-256", arrayBuffer);
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 function detectBrowserModelStorage(environment) {

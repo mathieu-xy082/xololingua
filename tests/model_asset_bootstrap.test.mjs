@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 
 import {
   BROWSER_MODEL_ASSET_MANIFEST,
@@ -212,4 +213,68 @@ test("bootstrapBrowserModelAssets keeps Python fallback metadata retryable when 
   assert.deepEqual(result.report.fallbackRequiredStages, ["transcription"]);
   assert.match(result.report.fallback.fallbackReason, /Python fallback remains required for transcription/);
   assert.equal(events.some((event) => event.status === "failed" && event.retryable), true);
+});
+
+test("bootstrapBrowserModelAssets rejects checksum mismatches before caching model assets", async () => {
+  const manifest = {
+    version: "checksum-test-v1",
+    models: {
+      transcription: {
+        stage: "transcription",
+        strategy: "whisper-transformers.js",
+        assets: [{
+          name: "asr-manifest",
+          url: "models/asr/whisper-tiny/manifest.json",
+          bytes: 4,
+          sha256: "0000000000000000000000000000000000000000000000000000000000000000",
+          required: true,
+        }],
+      },
+    },
+  };
+  const assetUrl = "models/asr/whisper-tiny/manifest.json?v=checksum-test-v1";
+  const environment = createBootstrapEnvironment();
+  environment.fetch = async (url) => {
+    environment.fetchCalls.push(url);
+    return {
+      ok: true,
+      status: 200,
+      url,
+      async arrayBuffer() {
+        return new TextEncoder().encode("abcd").buffer;
+      },
+      clone() {
+        return {
+          ok: true,
+          status: 200,
+          url,
+          cloned: true,
+          async arrayBuffer() {
+            return new TextEncoder().encode("abcd").buffer;
+          },
+        };
+      },
+    };
+  };
+  environment.crypto = {
+    subtle: {
+      async digest(algorithm, arrayBuffer) {
+        assert.equal(algorithm, "SHA-256");
+        return createHash("sha256").update(Buffer.from(arrayBuffer)).digest().buffer;
+      },
+    },
+  };
+
+  const result = await bootstrapBrowserModelAssets({ environment, manifest });
+
+  assert.deepEqual(environment.fetchCalls, [assetUrl]);
+  assert.deepEqual(environment.putCalls, []);
+  assert.equal(result.status, "bootstrap-required");
+  assert.deepEqual(result.failedAssets, [{
+    stage: "transcription",
+    url: assetUrl,
+    retryable: true,
+    error: "sha256 mismatch for asr-manifest",
+  }]);
+  assert.deepEqual(result.report.fallbackRequiredStages, ["transcription"]);
 });
