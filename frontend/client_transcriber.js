@@ -95,9 +95,9 @@ export function createClientTranscriber({
         throw new Error("Browser transcription requires transformers.js in a Web Worker or a configured transcription fallback.");
       }
 
-      const transcribeRequest = modelId ? { ...request, modelId } : request;
+      const workerRequest = await prepareTranscriptionWorkerRequest({ request, modelId, environment });
       const result = await transcribe(
-        transcribeRequest,
+        workerRequest,
         (event) => onProgress(mapClientMlProgress(event, "transcribing")),
       );
       const output = {
@@ -132,6 +132,38 @@ function createTranscriptionWorkerClient({ environment, workerUrl, maxWorkerResp
     timeoutMessage: `Browser transcription worker timed out after ${maxWorkerResponseMs}ms.`,
     failureMessage: "Browser transcription worker failed.",
   });
+}
+
+async function prepareTranscriptionWorkerRequest({ request = {}, modelId, environment }) {
+  const audio = await prepareTranscriptionAudio(request.audio, environment);
+  return modelId ? { ...request, audio, modelId } : { ...request, audio };
+}
+
+async function prepareTranscriptionAudio(audio, environment) {
+  if (!audio?.audioBlob || audio?.pcm instanceof Float32Array) {
+    return audio;
+  }
+  const AudioContextCtor = environment?.AudioContext || environment?.webkitAudioContext;
+  if (typeof AudioContextCtor !== "function" || typeof audio.audioBlob.arrayBuffer !== "function") {
+    return audio;
+  }
+  const audioContext = new AudioContextCtor({ sampleRate: audio.sampleRateHz || audio.sampleRate || 16000 });
+  try {
+    const decoded = await audioContext.decodeAudioData(await audio.audioBlob.arrayBuffer());
+    const pcm = new Float32Array(decoded.getChannelData(0));
+    return {
+      ...audio,
+      pcm,
+      sampleRate: decoded.sampleRate,
+      sampleRateHz: decoded.sampleRate,
+      channelCount: decoded.numberOfChannels,
+      durationSeconds: audio.durationSeconds ?? decoded.duration,
+    };
+  } finally {
+    if (typeof audioContext.close === "function") {
+      await audioContext.close();
+    }
+  }
 }
 
 function createWorkerRequestClient({

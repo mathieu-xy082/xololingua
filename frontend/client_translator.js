@@ -70,7 +70,11 @@ export function createClientTranslator({
       const batches = createSegmentBatches(request.segments, maxBatchSize);
       const translatedSegments = [];
       for (const [batchIndex, batch] of batches.entries()) {
-        const translateRequest = modelId ? { ...request, modelId, segments: batch } : { ...request, segments: batch };
+        const translateRequest = createTranslatorWorkerRequest({
+          request,
+          modelId,
+          segments: batch,
+        });
         const result = await translate(
           translateRequest,
           (event) => onProgress(mapBatchProgress(
@@ -112,6 +116,15 @@ function createSegmentBatches(segments = [], maxBatchSize) {
     batches.push(segments.slice(index, index + maxBatchSize));
   }
   return batches.length > 0 ? batches : [[]];
+}
+
+function createTranslatorWorkerRequest({ request = {}, modelId, segments = [] }) {
+  return {
+    ...(modelId ? { modelId } : {}),
+    segments,
+    sourceLanguage: request.sourceLanguage,
+    targetLanguage: request.targetLanguage,
+  };
 }
 
 function mapBatchProgress(event, batchIndex, batchCount) {

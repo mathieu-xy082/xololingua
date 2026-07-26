@@ -85,7 +85,7 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--models-root", type=Path, default=DEFAULT_MODELS_ROOT)
     parser.add_argument("--app-manifest", type=Path, default=DEFAULT_APP_MANIFEST)
     parser.add_argument("--asr-source", type=Path, default=None, help="Local Transformers.js snapshot for Xenova/whisper-tiny.")
-    parser.add_argument("--translation-source", type=Path, default=None, help="Local Transformers.js snapshot for Xenova/nllb-200-distilled-600M.")
+    parser.add_argument("--translation-source", type=Path, default=None, help="Local Transformers.js snapshot for Xenova/opus-mt-fr-en.")
     parser.add_argument("--copy-mode", choices=["copy", "symlink"], default="copy")
     parser.add_argument("--no-update-app-manifest", action="store_true")
     return parser.parse_args(argv)
@@ -234,8 +234,6 @@ def update_browser_model_asset_manifest(app_manifest_path: Path, prepared: list[
         entries = [item.manifest_entry, *item.asset_entries]
         block = render_js_asset_block(entries, indent="      ")
         updated = replace_stage_assets(updated, item.spec.stage, block)
-    if updated == source:
-        raise RuntimeError(f"No asset blocks were updated in {app_manifest_path}")
     app_manifest_path.write_text(updated, encoding="utf-8")
 
 

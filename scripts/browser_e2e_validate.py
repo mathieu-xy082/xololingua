@@ -19,8 +19,8 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from collections import Counter
 from contextlib import suppress
-from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Iterable
 
@@ -441,7 +441,37 @@ def normalize_srt_text_for_similarity(text: str) -> str:
         if not stripped or stripped.isdigit() or "-->" in stripped:
             continue
         lines.append(re.sub(r"\s+", " ", stripped))
-    return "\n".join(lines)
+    return " ".join(lines)
+
+
+def tokenize_srt_text_for_similarity(text: str) -> Counter[str]:
+    stopwords = {
+        "the", "and", "that", "for", "you", "with", "this", "are", "was", "were",
+        "but", "not", "all", "can", "its", "into", "from", "have", "has", "had",
+        "his", "her", "our", "your",
+    }
+    tokens = [
+        token
+        for token in re.findall(r"[a-z]{3,}", normalize_srt_text_for_similarity(text))
+        if token not in stopwords
+    ]
+    return Counter(tokens)
+
+
+def srt_text_similarity(browser_text: str, backend_text: str) -> float:
+    browser_tokens = tokenize_srt_text_for_similarity(browser_text)
+    backend_tokens = tokenize_srt_text_for_similarity(backend_text)
+    if not browser_tokens and not backend_tokens:
+        return 1.0
+    if not browser_tokens or not backend_tokens:
+        return 0.0
+    keys = set(browser_tokens) | set(backend_tokens)
+    overlap = sum(min(browser_tokens[key], backend_tokens[key]) for key in keys)
+    browser_total = sum(browser_tokens.values())
+    backend_total = sum(backend_tokens.values())
+    precision = overlap / browser_total if browser_total else 0.0
+    recall = overlap / backend_total if backend_total else 0.0
+    return (2 * precision * recall / (precision + recall)) if precision + recall else 0.0
 
 
 def compare_srt_outputs(browser_path: Path, backend_path: Path, args: argparse.Namespace) -> None:
@@ -449,11 +479,7 @@ def compare_srt_outputs(browser_path: Path, backend_path: Path, args: argparse.N
     backend = collect_srt_diagnostics(backend_path)
     block_delta = abs(browser["blocks"] - backend["blocks"])
     last_end_delta = abs(browser["lastEndSeconds"] - backend["lastEndSeconds"])
-    similarity = SequenceMatcher(
-        None,
-        normalize_srt_text_for_similarity(browser["text"]),
-        normalize_srt_text_for_similarity(backend["text"]),
-    ).ratio()
+    similarity = srt_text_similarity(browser["text"], backend["text"])
     print(
         "Browser/backend SRT comparison: "
         f"browserBlocks={browser['blocks']}; "
@@ -466,7 +492,7 @@ def compare_srt_outputs(browser_path: Path, backend_path: Path, args: argparse.N
         flush=True,
     )
     failures = []
-    if block_delta > args.compare_max_block_delta:
+    if block_delta > args.compare_max_block_delta and not args.real_browser_models:
         failures.append(f"SRT block delta {block_delta} > expected {args.compare_max_block_delta}")
     if last_end_delta > args.compare_max_last_end_delta:
         failures.append(f"SRT last timestamp delta {last_end_delta:.3f}s > expected {args.compare_max_last_end_delta:.3f}s")

@@ -37,12 +37,12 @@ export const BROWSER_MODEL_ASSET_MANIFEST = Object.freeze({
     translation: Object.freeze({
       stage: "translation",
       provider: "transformers.js",
-      strategy: "nllb-transformers.js",
-      modelId: "Xenova/nllb-200-distilled-600M",
+      strategy: "opus-mt-transformers.js",
+      modelId: "Xenova/opus-mt-fr-en",
       assets: Object.freeze([
         Object.freeze({
           name: "translation-manifest",
-          url: "models/translation/nllb-fr-en/manifest.json",
+          url: "models/translation/opus-mt-fr-en/manifest.json",
           bytes: 625_000_000,
           sha256: "pending-real-asset-checksum",
           required: true,
@@ -88,7 +88,7 @@ class PrepareBrowserModelAssetsTests(unittest.TestCase):
             translation_source.mkdir(parents=True)
             (asr_source / "config.json").write_text('{"model_type":"whisper"}', encoding="utf-8")
             (asr_source / "model.onnx").write_bytes(b"fake-asr-onnx")
-            (translation_source / "tokenizer.json").write_text('{"model":"nllb"}', encoding="utf-8")
+            (translation_source / "tokenizer.json").write_text('{"model":"opus-mt"}', encoding="utf-8")
             (translation_source / "encoder_model.onnx").write_bytes(b"fake-translation-onnx")
             app_manifest = root / "frontend" / "model_asset_manifest.js"
             app_manifest.parent.mkdir(parents=True)
@@ -105,16 +105,16 @@ class PrepareBrowserModelAssetsTests(unittest.TestCase):
             self.assertEqual(report["status"], "ready")
             self.assertEqual(report["modelsRoot"], str(root / "models"))
             asr_manifest = root / "models" / "asr" / "whisper-tiny" / "manifest.json"
-            translation_manifest = root / "models" / "translation" / "nllb-fr-en" / "manifest.json"
+            translation_manifest = root / "models" / "translation" / "opus-mt-fr-en" / "manifest.json"
             self.assertTrue(asr_manifest.is_file())
             self.assertTrue(translation_manifest.is_file())
             self.assertTrue((root / "models" / "Xenova" / "whisper-tiny" / "model.onnx").is_file())
-            self.assertTrue((root / "models" / "Xenova" / "nllb-200-distilled-600M" / "encoder_model.onnx").is_file())
+            self.assertTrue((root / "models" / "Xenova" / "opus-mt-fr-en" / "encoder_model.onnx").is_file())
 
             asr_data = json.loads(asr_manifest.read_text(encoding="utf-8"))
             translation_data = json.loads(translation_manifest.read_text(encoding="utf-8"))
             self.assertEqual(asr_data["modelId"], "Xenova/whisper-tiny")
-            self.assertEqual(translation_data["modelId"], "Xenova/nllb-200-distilled-600M")
+            self.assertEqual(translation_data["modelId"], "Xenova/opus-mt-fr-en")
             self.assertGreaterEqual(len(asr_data["assets"]), 2)
             self.assertGreaterEqual(len(translation_data["assets"]), 2)
             for manifest in [asr_data, translation_data]:
@@ -130,7 +130,7 @@ class PrepareBrowserModelAssetsTests(unittest.TestCase):
             self.assertIn('name: "asr-manifest"', updated)
             self.assertIn('url: "models/asr/whisper-tiny/manifest.json"', updated)
             self.assertIn('url: "models/Xenova/whisper-tiny/model.onnx"', updated)
-            self.assertIn('url: "models/Xenova/nllb-200-distilled-600M/encoder_model.onnx"', updated)
+            self.assertIn('url: "models/Xenova/opus-mt-fr-en/encoder_model.onnx"', updated)
             self.assertIn(json.dumps(sha256(asr_manifest.read_bytes()).hexdigest()), updated)
             self.assertIn(json.dumps(sha256(translation_manifest.read_bytes()).hexdigest()), updated)
 

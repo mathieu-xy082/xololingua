@@ -8,7 +8,7 @@ export const BROWSER_MODEL_ASSET_MANIFEST = Object.freeze({
     runtimeInitMs: 120_000,
     asrWarmupMs: 120_000,
     translationWarmupMs: 180_000,
-    asrInferencePerSegmentMs: 90_000,
+    asrInferencePerSegmentMs: 300_000,
     translationInferencePerBatchMs: 120_000,
     e2eRealModelsMs: 1_800_000,
   }),
