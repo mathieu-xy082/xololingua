@@ -181,7 +181,12 @@ que lorsque le nouveau gate réel est implémenté, documenté, et vert, ou lors
 5. Brancher traduction réelle browser avec warmup/timeouts. ✅ `frontend/translation_worker.js` fournit un worker Transformers.js local `warmup` / `translate`, `createClientTranslator` applique `translationWarmupMs` et `translationInferencePerBatchMs`, conserve le batching browser, propage les metadata warmup, et le SW précache le worker traduction.
 6. Étendre service worker/cache versionné avec flux de bootstrap/retry utilisateur. ✅ `bootstrapBrowserModelAssets()` télécharge uniquement les assets manquants dans le cache versionné `xololingua-model-assets-*`, expose progress/failedAssets retryables, le panneau PWA `Model assets` permet cache/retry utilisateur, et le SW répond à `BOOTSTRAP_MODEL_ASSETS` sans mettre en cache les réponses non-OK.
 7. Ajouter `e2e-browser-real-models` et diagnostics compactes. ✅ Gate ajouté via `pdm run e2e-browser-real-models`; il interdit l'injection déterministe, préflight les manifests modèles locaux, prépare le bootstrap/cache browser quand les assets existent, puis lance les vrais workers ASR/traduction avec guards runtime/couverture/comparaison backend. Dans l'environnement cron actuel, le gate sort en skip explicite et actionnable car les manifests locaux `models/asr/whisper-tiny/manifest.json` et `models/translation/nllb-fr-en/manifest.json` ne sont pas présents.
-8. Valider full ladder et pousser. ⏳ Validation locale effectuée jusqu'au gate réel en mode skip documenté; `frontend_test`, `api-e2e` et `e2e-browser-strict` restent verts. Le full real-model path devra être rejoué après mise à disposition/cache des manifests/poids modèles.
+8. Valider full ladder et pousser. ⏳ Validation locale effectuée jusqu'au gate réel en mode skip documenté; `prepare-browser-model-assets` prépare désormais les snapshots locaux Transformers.js, génère les manifests `models/asr/whisper-tiny/manifest.json` et `models/translation/nllb-fr-en/manifest.json`, calcule `bytes`/`sha256`, puis injecte les assets réels dans `frontend/model_asset_manifest.js`. Exemple :
+   ```bash
+   pdm run prepare-browser-model-assets --asr-source /path/to/Xenova/whisper-tiny --translation-source /path/to/Xenova/nllb-200-distilled-600M
+   pdm run e2e-browser-real-models
+   ```
+   Dans l'environnement cron actuel, les snapshots Xenova ne sont pas présents, donc le gate réel reste en skip actionnable jusqu'à fourniture/téléchargement des sources modèles.
 
 ## Contraintes d'hygiène
 
