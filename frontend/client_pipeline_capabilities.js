@@ -188,7 +188,10 @@ function formatModelAssetBootstrapLabel(stageCapabilities = {}) {
   const status = stageCapabilities.modelAssetBootstrapStatus || "bootstrap-required";
   const prefix = status === "offline-ready" ? "Model assets ready" : "Model bootstrap required";
   const remaining = formatBytes(stageCapabilities.remainingModelAssetBytes || 0);
-  const missing = missingAssets.map((asset) => asset.assetName || asset.url).filter(Boolean).join(", ");
+  const missingNames = missingAssets.map((asset) => asset.assetName || asset.url).filter(Boolean);
+  const firstMissingName = missingNames[0];
+  const extraMissingCount = Math.max(0, missingNames.length - 1);
+  const missing = extraMissingCount > 0 ? `${firstMissingName} + ${extraMissingCount} more` : firstMissingName;
   const missingLabel = missing ? `; missing ${missing}` : "";
   return `${prefix}: ${remaining} remaining${missingLabel}`;
 }

@@ -12,7 +12,30 @@ import {
   resolveBrowserModelAssetBootstrap,
 } from "../frontend/model_asset_bootstrap.js";
 
-function createBootstrapEnvironment({ cachedUrls = [], fetchFailures = new Set(), cacheOpenError } = {}) {
+function versionedStageUrls(stageName, manifest = BROWSER_MODEL_ASSET_MANIFEST) {
+  return manifest.models[stageName].assets.map((asset) => `${asset.url}?v=${manifest.version}`);
+}
+
+function modelAssetShaByVersionedUrl(manifest = BROWSER_MODEL_ASSET_MANIFEST) {
+  const byUrl = new Map();
+  for (const model of Object.values(manifest.models)) {
+    for (const asset of model.assets) {
+      byUrl.set(`${asset.url}?v=${manifest.version}`, asset.sha256);
+    }
+  }
+  return byUrl;
+}
+
+function hexToArrayBuffer(hex) {
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let index = 0; index < bytes.length; index += 1) {
+    bytes[index] = Number.parseInt(hex.slice(index * 2, index * 2 + 2), 16);
+  }
+  return bytes.buffer;
+}
+
+function createBootstrapEnvironment({ cachedUrls = [], fetchFailures = new Set(), cacheOpenError, manifest = BROWSER_MODEL_ASSET_MANIFEST } = {}) {
+  const shaByUrl = modelAssetShaByVersionedUrl(manifest);
   const cached = new Map(cachedUrls.map((url) => [url, { ok: true, url, cached: true }]));
   const fetchCalls = [];
   const putCalls = [];
@@ -49,10 +72,31 @@ function createBootstrapEnvironment({ cachedUrls = [], fetchFailures = new Set()
         ok: true,
         status: 200,
         url,
+        async arrayBuffer() {
+          return new TextEncoder().encode(url).buffer;
+        },
         clone() {
-          return { ok: true, status: 200, url, cloned: true };
+          return {
+            ok: true,
+            status: 200,
+            url,
+            cloned: true,
+            async arrayBuffer() {
+              return new TextEncoder().encode(url).buffer;
+            },
+          };
         },
       };
+    },
+    crypto: {
+      subtle: {
+        async digest(_algorithm, arrayBuffer) {
+          const url = new TextDecoder().decode(arrayBuffer);
+          const expected = shaByUrl.get(url);
+          if (expected) return hexToArrayBuffer(expected);
+          return createHash("sha256").update(new Uint8Array(arrayBuffer)).digest().buffer;
+        },
+      },
     },
   };
 }
@@ -67,11 +111,12 @@ test("inspectBrowserModelAssetCache reads the real Cache API and reports cached 
   });
 
   assert.deepEqual(environment.openedCaches, ["xololingua-model-assets-browser-model-assets-v1"]);
+  const allUrls = buildModelAssetCacheUrls(BROWSER_MODEL_ASSET_MANIFEST);
   assert.deepEqual(result, {
     available: true,
     cacheName: "xololingua-model-assets-browser-model-assets-v1",
     cachedUrls: [cachedUrl],
-    missingUrls: ["models/translation/nllb-fr-en/manifest.json?v=browser-model-assets-v1"],
+    missingUrls: allUrls.filter((url) => url !== cachedUrl),
     issues: [],
   });
 });
@@ -108,9 +153,7 @@ test("resolveBrowserModelAssetBootstrap reports offline-ready only when every re
 });
 
 test("resolveBrowserModelAssetBootstrap reports bootstrap-required with missing model asset metadata", async () => {
-  const environment = createBootstrapEnvironment({ cachedUrls: [
-    "models/asr/whisper-tiny/manifest.json?v=browser-model-assets-v1",
-  ] });
+  const environment = createBootstrapEnvironment({ cachedUrls: versionedStageUrls("transcription") });
 
   const result = await resolveBrowserModelAssetBootstrap({
     environment,
@@ -121,22 +164,17 @@ test("resolveBrowserModelAssetBootstrap reports bootstrap-required with missing 
   assert.deepEqual(result.offlineReadyStages, ["transcription"]);
   assert.deepEqual(result.bootstrapRequiredStages, ["translation"]);
   assert.deepEqual(result.fallbackRequiredStages, ["translation"]);
-  assert.deepEqual(result.missingModelAssets, [
-    {
-      stage: "translation",
-      assetName: "translation-manifest",
-      url: "models/translation/nllb-fr-en/manifest.json",
-      versionedUrl: "models/translation/nllb-fr-en/manifest.json?v=browser-model-assets-v1",
-      bytes: 625_000_000,
-      sha256: "pending-real-asset-checksum",
-      retryable: true,
-    },
-  ]);
+  const translationAssets = BROWSER_MODEL_ASSET_MANIFEST.models.translation.assets;
+  assert.equal(result.missingModelAssets.length, translationAssets.length);
+  assert.deepEqual(result.missingModelAssets.map((asset) => asset.stage), translationAssets.map(() => "translation"));
+  assert.deepEqual(result.missingModelAssets.map((asset) => asset.versionedUrl), versionedStageUrls("translation"));
+  assert.equal(result.missingModelAssets[0].assetName, "translation-manifest");
+  assert.match(result.missingModelAssets[0].sha256, /^[a-f0-9]{64}$/);
   assert.deepEqual(result.fallback, {
     runtime: "server-fallback",
     fallbackRequiredStages: ["translation"],
     fallbackReason: "Browser model bootstrap is incomplete; Python fallback remains required for translation.",
-    attemptedBrowserStrategy: "nllb-transformers.js",
+    attemptedBrowserStrategy: "opus-mt-transformers.js",
     missingModelAssets: result.missingModelAssets,
   });
 });
@@ -170,9 +208,9 @@ test("resolveBrowserModelAssetBootstrap reports unavailable when cache inspectio
 });
 
 test("bootstrapBrowserModelAssets downloads only missing versioned model assets and refreshes the resolver report", async () => {
-  const cachedUrl = "models/asr/whisper-tiny/manifest.json?v=browser-model-assets-v1";
-  const missingUrl = "models/translation/nllb-fr-en/manifest.json?v=browser-model-assets-v1";
-  const environment = createBootstrapEnvironment({ cachedUrls: [cachedUrl] });
+  const cachedUrls = versionedStageUrls("transcription");
+  const missingUrls = versionedStageUrls("translation");
+  const environment = createBootstrapEnvironment({ cachedUrls });
   const events = [];
 
   const result = await bootstrapBrowserModelAssets({
@@ -181,19 +219,22 @@ test("bootstrapBrowserModelAssets downloads only missing versioned model assets 
     onProgress: (event) => events.push(event),
   });
 
-  assert.deepEqual(environment.fetchCalls, [missingUrl]);
-  assert.deepEqual(environment.putCalls, [missingUrl]);
+  assert.deepEqual(environment.fetchCalls, missingUrls);
+  assert.deepEqual(environment.putCalls, missingUrls);
   assert.equal(result.status, "offline-ready");
   assert.deepEqual(result.report.offlineReadyStages, ["transcription", "translation"]);
-  assert.deepEqual(result.downloadedUrls, [missingUrl]);
-  assert.deepEqual(result.skippedCachedUrls, [cachedUrl]);
-  assert.deepEqual(events.map((event) => event.status), ["cached", "downloading", "cached", "offline-ready"]);
+  assert.deepEqual(result.downloadedUrls, missingUrls);
+  assert.deepEqual(result.skippedCachedUrls, cachedUrls);
+  assert.equal(events.filter((event) => event.status === "downloading").length, missingUrls.length);
+  assert.equal(events.filter((event) => event.status === "cached").length, cachedUrls.length + missingUrls.length);
+  assert.equal(events.at(-1).status, "offline-ready");
   assert.equal(events.at(-1).remainingBytes, 0);
 });
 
 test("bootstrapBrowserModelAssets keeps Python fallback metadata retryable when an asset download fails", async () => {
   const failingUrl = "models/asr/whisper-tiny/manifest.json?v=browser-model-assets-v1";
-  const environment = createBootstrapEnvironment({ fetchFailures: new Set([failingUrl]) });
+  const cachedUrls = buildModelAssetCacheUrls(BROWSER_MODEL_ASSET_MANIFEST).filter((url) => url !== failingUrl);
+  const environment = createBootstrapEnvironment({ cachedUrls, fetchFailures: new Set([failingUrl]) });
   const events = [];
 
   const result = await bootstrapBrowserModelAssets({
@@ -213,6 +254,60 @@ test("bootstrapBrowserModelAssets keeps Python fallback metadata retryable when 
   assert.deepEqual(result.report.fallbackRequiredStages, ["transcription"]);
   assert.match(result.report.fallback.fallbackReason, /Python fallback remains required for transcription/);
   assert.equal(events.some((event) => event.status === "failed" && event.retryable), true);
+});
+
+test("bootstrapBrowserModelAssets streams large assets without browser-side sha256 arrayBuffer materialization", async () => {
+  const manifest = {
+    version: "large-asset-v1",
+    models: {
+      translation: {
+        stage: "translation",
+        strategy: "nllb-transformers.js",
+        assets: [{
+          name: "large-decoder",
+          url: "models/Xenova/nllb/onnx/decoder_model_merged_q4.onnx",
+          bytes: 128 * 1024 * 1024,
+          sha256: "fbea01de69bf0f342d67d035bceb7baa3c25b31213c54e4a630a92554684a293",
+          required: true,
+        }],
+      },
+    },
+  };
+  const assetUrl = "models/Xenova/nllb/onnx/decoder_model_merged_q4.onnx?v=large-asset-v1";
+  const environment = createBootstrapEnvironment({ manifest });
+  let arrayBufferCalls = 0;
+  environment.fetch = async (url) => {
+    environment.fetchCalls.push(url);
+    return {
+      ok: true,
+      status: 200,
+      url,
+      async arrayBuffer() {
+        arrayBufferCalls += 1;
+        throw new Error("large asset should not be buffered for checksum");
+      },
+      clone() {
+        return {
+          ok: true,
+          status: 200,
+          url,
+          cloned: true,
+          async arrayBuffer() {
+            arrayBufferCalls += 1;
+            throw new Error("large asset should not be buffered for checksum");
+          },
+        };
+      },
+    };
+  };
+
+  const result = await bootstrapBrowserModelAssets({ environment, manifest });
+
+  assert.equal(result.status, "offline-ready");
+  assert.deepEqual(result.failedAssets, []);
+  assert.deepEqual(result.downloadedUrls, [assetUrl]);
+  assert.deepEqual(environment.putCalls, [assetUrl]);
+  assert.equal(arrayBufferCalls, 0);
 });
 
 test("bootstrapBrowserModelAssets rejects checksum mismatches before caching model assets", async () => {

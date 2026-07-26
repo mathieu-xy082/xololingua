@@ -1,4 +1,4 @@
-import { env, pipeline } from "../node_modules/@huggingface/transformers/dist/transformers.web.min.js";
+import { env, pipeline } from "../node_modules/@huggingface/transformers/dist/transformers.min.js";
 
 const DEFAULT_MODEL_ID = "Xenova/whisper-tiny";
 const DEFAULT_SAMPLE_RATE = 16_000;
@@ -7,8 +7,8 @@ const DEFAULT_SAMPLE_RATE = 16_000;
 // responsible for placing compatible Transformers.js assets under this root.
 env.allowRemoteModels = false;
 env.allowLocalModels = true;
-env.localModelPath = "models/";
-env.backends.onnx.wasm.wasmPaths = "../node_modules/@huggingface/transformers/node_modules/onnxruntime-web/dist/";
+env.localModelPath = "../models/";
+env.backends.onnx.wasm.wasmPaths = "/node_modules/@huggingface/transformers/node_modules/onnxruntime-web/dist/";
 
 let recognizerPromise;
 let recognizerModelId;
@@ -84,6 +84,7 @@ async function getRecognizer(modelId) {
   if (!recognizerPromise || recognizerModelId !== modelId) {
     recognizerModelId = modelId;
     recognizerPromise = pipeline("automatic-speech-recognition", modelId, {
+      dtype: "q4",
       progress_callback: (progress) => {
         self.postMessage({ type: "progress", event: { stage: "loading-model", ...progress } });
       },

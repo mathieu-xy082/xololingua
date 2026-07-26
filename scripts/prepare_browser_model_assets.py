@@ -61,13 +61,13 @@ SPECS = (
     ModelSpec(
         stage="translation",
         asset_prefix="translation",
-        manifest_url="models/translation/nllb-fr-en/manifest.json",
-        model_id="Xenova/nllb-200-distilled-600M",
-        target_subdir="Xenova/nllb-200-distilled-600M",
+        manifest_url="models/translation/opus-mt-fr-en/manifest.json",
+        model_id="Xenova/opus-mt-fr-en",
+        target_subdir="Xenova/opus-mt-fr-en",
         default_source_env="XOLOLINGUA_TRANSLATION_MODEL_SOURCE",
         default_source_candidates=(
-            ROOT / ".models" / "Xenova" / "nllb-200-distilled-600M",
-            Path.home() / ".cache" / "huggingface" / "hub" / "models--Xenova--nllb-200-distilled-600M",
+            ROOT / ".models" / "Xenova" / "opus-mt-fr-en",
+            Path.home() / ".cache" / "huggingface" / "hub" / "models--Xenova--opus-mt-fr-en",
         ),
     ),
 )
@@ -248,7 +248,7 @@ def replace_stage_assets(source: str, stage: str, rendered_assets: str) -> str:
         raise RuntimeError(f"Could not find assets block for stage {stage!r}")
     start = stage_match.start() + assets_match.end()
     end = find_matching_asset_array_end(source, start)
-    return source[:start] + "\n" + rendered_assets + "\n      " + source[end:]
+    return source[:start] + "\n" + rendered_assets + source[end:]
 
 
 def find_matching_asset_array_end(source: str, start: int) -> int:

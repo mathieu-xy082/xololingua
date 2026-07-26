@@ -41,14 +41,10 @@ DEFAULT_DOWNLOAD_DIR = Path(
         DEFAULT_TMP_ROOT / "browser-e2e-downloads",
     )
 )
-REAL_MODEL_ASSET_URLS = [
-    "models/asr/whisper-tiny/manifest.json?v=browser-model-assets-v1",
-    "models/translation/nllb-fr-en/manifest.json?v=browser-model-assets-v1",
-]
-REAL_MODEL_ASSET_BYTES = {
-    "models/asr/whisper-tiny/manifest.json": 151_000_000,
-    "models/translation/nllb-fr-en/manifest.json": 625_000_000,
-}
+REAL_MODEL_ASSET_MANIFEST_PATHS = (
+    "models/asr/whisper-tiny/manifest.json",
+    "models/translation/opus-mt-fr-en/manifest.json",
+)
 
 
 class ManagedProcess:
@@ -514,15 +510,13 @@ def assert_browser_translation_runtime(pipeline_status: str) -> None:
 
 def create_backend_reference_init_script(backend_reference: dict) -> str:
     reference_json = json.dumps(backend_reference)
+    cached_model_asset_urls_json = json.dumps(load_real_model_asset_urls(ROOT))
     return f"""
 (() => {{
   const reference = {reference_json};
   const byPosition = (segments, index) => Array.isArray(segments) ? segments[index] || {{}} : {{}};
   window.transformersJs = true;
-  window.__xololinguaCachedModelAssetUrls = [
-    'models/asr/whisper-tiny/manifest.json?v=browser-model-assets-v1',
-    'models/translation/nllb-fr-en/manifest.json?v=browser-model-assets-v1'
-  ];
+  window.__xololinguaCachedModelAssetUrls = {cached_model_asset_urls_json};
   window.XOLOLINGUA_CLIENT_TRANSCRIBER = {{
     async transcribeAudio(request, onProgress = () => {{}}) {{
       const inputSegments = Array.isArray(request?.segments) ? request.segments : [];
@@ -561,6 +555,53 @@ def create_backend_reference_init_script(backend_reference: dict) -> str:
 """
 
 
+def real_model_asset_version(root: Path = ROOT) -> str:
+    manifest_module = root / "frontend" / "model_asset_manifest.js"
+    try:
+        text = manifest_module.read_text(encoding="utf-8")
+    except OSError:
+        return "browser-model-assets-v1"
+    match = re.search(r'version:\s*"(?P<version>[^"]+)"', text)
+    return match.group("version") if match else "browser-model-assets-v1"
+
+
+def load_real_model_asset_records(root: Path = ROOT) -> list[dict]:
+    records: list[dict] = []
+    seen: set[str] = set()
+    for manifest_path in REAL_MODEL_ASSET_MANIFEST_PATHS:
+        path = root / manifest_path
+        if not path.is_file():
+            continue
+        records.append({
+            "url": manifest_path,
+            "bytes": path.stat().st_size,
+            "sourceManifest": manifest_path,
+        })
+        seen.add(manifest_path)
+        try:
+            manifest = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        for asset in manifest.get("assets") or []:
+            if not isinstance(asset, dict) or asset.get("required") is False:
+                continue
+            url = asset.get("url")
+            if not isinstance(url, str) or not url or url in seen:
+                continue
+            records.append({
+                "url": url,
+                "bytes": asset.get("bytes", 0),
+                "sourceManifest": manifest_path,
+            })
+            seen.add(url)
+    return records
+
+
+def load_real_model_asset_urls(root: Path = ROOT) -> list[str]:
+    version = real_model_asset_version(root)
+    return [f"{record['url']}?v={version}" for record in load_real_model_asset_records(root)]
+
+
 def log_step(message: str) -> None:
     print(f"[browser-e2e] {message}", flush=True)
 
@@ -568,12 +609,13 @@ def log_step(message: str) -> None:
 def preflight_real_browser_model_assets(root: Path = ROOT, args: argparse.Namespace | None = None) -> dict:
     missing_local_assets = [
         asset_path
-        for asset_path in REAL_MODEL_ASSET_BYTES
+        for asset_path in REAL_MODEL_ASSET_MANIFEST_PATHS
         if not (root / asset_path).is_file()
     ]
-    cached_count = 0
+    asset_records = load_real_model_asset_records(root)
+    cached_count = len(asset_records)
     missing_count = len(missing_local_assets)
-    total_missing_bytes = sum(REAL_MODEL_ASSET_BYTES[path] for path in missing_local_assets)
+    total_missing_bytes = 0
     if missing_local_assets:
         return {
             "status": "skip",
@@ -600,7 +642,7 @@ def preflight_real_browser_model_assets(root: Path = ROOT, args: argparse.Namesp
             "status": "skip",
             "runtime": "chromium",
             "bootstrapStatus": "not-run",
-            "cachedCount": len(REAL_MODEL_ASSET_BYTES),
+            "cachedCount": cached_count,
             "missingCount": 0,
             "missingLocalAssets": [],
             "totalMissingBytes": 0,
@@ -616,7 +658,7 @@ def preflight_real_browser_model_assets(root: Path = ROOT, args: argparse.Namesp
         "status": "ready",
         "runtime": "chromium",
         "bootstrapStatus": "pending",
-        "cachedCount": len(REAL_MODEL_ASSET_BYTES),
+        "cachedCount": cached_count,
         "missingCount": 0,
         "missingLocalAssets": [],
         "totalMissingBytes": 0,
@@ -631,7 +673,7 @@ def preflight_real_browser_model_assets(root: Path = ROOT, args: argparse.Namesp
 
 def validate_local_real_model_manifests(root: Path) -> list[str]:
     issues: list[str] = []
-    for manifest_path in REAL_MODEL_ASSET_BYTES:
+    for manifest_path in REAL_MODEL_ASSET_MANIFEST_PATHS:
         path = root / manifest_path
         try:
             manifest = json.loads(path.read_text(encoding="utf-8"))
@@ -648,6 +690,8 @@ def validate_local_real_model_manifests(root: Path) -> list[str]:
                 issues.append(f"{manifest_path}.assets[{index}].url is required")
             elif re.match(r"https?://", url) or url.startswith("//"):
                 issues.append(f"{manifest_path} contains remote asset URLs: {url}")
+            elif not (root / url).is_file():
+                issues.append(f"{manifest_path}.assets[{index}] packaged file is missing: {url}")
             sha256 = asset.get("sha256") if isinstance(asset, dict) else None
             size_bytes = asset.get("bytes") if isinstance(asset, dict) else None
             if not sha256:
@@ -685,7 +729,8 @@ def emit_real_model_diagnostics(report: dict) -> None:
     print(format_real_model_diagnostics(report), flush=True)
 
 
-def inspect_model_asset_cache_in_page(page) -> dict:
+def inspect_model_asset_cache_in_page(page, urls: list[str] | None = None) -> dict:
+    cache_urls = urls if urls is not None else load_real_model_asset_urls(ROOT)
     return page.evaluate(
         """
         async ({ cacheName, urls }) => {
@@ -709,20 +754,32 @@ def inspect_model_asset_cache_in_page(page) -> dict:
         """,
         {
             "cacheName": "xololingua-model-assets-browser-model-assets-v1",
-            "urls": REAL_MODEL_ASSET_URLS,
+            "urls": cache_urls,
         },
     )
 
 
-def bootstrap_model_assets_in_page(page, expect) -> dict:
+def bootstrap_model_assets_in_page(page, expect, urls: list[str] | None = None) -> dict:
+    cache_urls = urls if urls is not None else load_real_model_asset_urls(ROOT)
     button = page.locator("#modelBootstrapButton")
     if button.count() == 0:
         return {"bootstrapStatus": "unavailable", "reason": "model bootstrap button not found"}
-    if button.is_enabled():
-        button.click()
-        expect(page.locator("#modelBootstrapStatus")).not_to_contain_text("Caching", timeout=900_000)
+    expect(button).to_be_enabled(timeout=30_000)
+    expect(page.locator("#modelBootstrapStatus")).to_contain_text("model", timeout=30_000)
+    page.wait_for_timeout(1_000)
+    page.evaluate("document.querySelector('#modelBootstrapButton')?.click()")
+    deadline = time.time() + 900
+    cache_report = inspect_model_asset_cache_in_page(page, cache_urls)
+    while cache_report.get("missingUrls") and time.time() < deadline:
+        page.wait_for_timeout(1_000)
+        cache_report = inspect_model_asset_cache_in_page(page, cache_urls)
+    if cache_report.get("missingUrls"):
+        raise AssertionError(
+            "Timed out waiting for browser model Cache API bootstrap: "
+            f"cached={len(cache_report.get('cachedUrls') or [])}; "
+            f"missing={len(cache_report.get('missingUrls') or [])}"
+        )
     status_text = page.locator("#modelBootstrapStatus").inner_text(timeout=5_000)
-    cache_report = inspect_model_asset_cache_in_page(page)
     return {
         **cache_report,
         "statusText": status_text,
@@ -742,8 +799,22 @@ def run_browser_workflow(args: argparse.Namespace) -> Path | None:
 
     with sync_playwright() as p:
         log_step("Launching Chromium")
-        browser = p.chromium.launch(headless=not args.headed, slow_mo=args.slow_mo_ms)
-        context = browser.new_context(accept_downloads=True, service_workers="block")
+        browser = None
+        if args.real_browser_models:
+            user_data_dir = args.download_dir / "chromium-real-model-profile"
+            if user_data_dir.exists():
+                shutil.rmtree(user_data_dir)
+            user_data_dir.mkdir(parents=True, exist_ok=True)
+            context = p.chromium.launch_persistent_context(
+                user_data_dir=str(user_data_dir),
+                headless=not args.headed,
+                slow_mo=args.slow_mo_ms,
+                accept_downloads=True,
+                service_workers="block",
+            )
+        else:
+            browser = p.chromium.launch(headless=not args.headed, slow_mo=args.slow_mo_ms)
+            context = browser.new_context(accept_downloads=True, service_workers="block")
         if args.inject_backend_reference_browser_ml:
             if not backend_reference:
                 raise AssertionError("Backend reference is required to inject browser ML adapters.")
@@ -770,7 +841,8 @@ def run_browser_workflow(args: argparse.Namespace) -> Path | None:
             page.goto(args.frontend_url, wait_until="domcontentloaded")
             if args.bootstrap_model_assets:
                 log_step("Inspecting/bootstrapping browser model asset cache")
-                bootstrap_report = bootstrap_model_assets_in_page(page, expect)
+                cache_urls = load_real_model_asset_urls(ROOT)
+                bootstrap_report = bootstrap_model_assets_in_page(page, expect, cache_urls)
                 emit_real_model_diagnostics({
                     "status": "running" if bootstrap_report.get("bootstrapStatus") == "offline-ready" else "skip",
                     "runtime": "chromium",
@@ -847,7 +919,8 @@ def run_browser_workflow(args: argparse.Namespace) -> Path | None:
             download.save_as(destination)
         finally:
             context.close()
-            browser.close()
+            if browser is not None:
+                browser.close()
 
     if destination is None:
         return destination
@@ -892,7 +965,7 @@ def main(argv: Iterable[str] | None = None) -> int:
                     "status": "pass",
                     "runtime": "chromium",
                     "bootstrapStatus": "offline-ready" if args.bootstrap_model_assets else "not-requested",
-                    "cachedCount": len(REAL_MODEL_ASSET_URLS),
+                    "cachedCount": len(load_real_model_asset_urls(ROOT)),
                     "missingCount": 0,
                     "missingLocalAssets": [],
                     "warmup": {"asr": "pass", "translation": "pass"},

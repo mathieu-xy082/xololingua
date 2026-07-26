@@ -135,7 +135,10 @@ class BrowserE2EScriptTests(unittest.TestCase):
 
         self.assertIn("window.__xololinguaCachedModelAssetUrls", script)
         self.assertIn("models/asr/whisper-tiny/manifest.json?v=browser-model-assets-v1", script)
-        self.assertIn("models/translation/nllb-fr-en/manifest.json?v=browser-model-assets-v1", script)
+        self.assertIn("models/Xenova/whisper-tiny/added_tokens.json?v=browser-model-assets-v1", script)
+        self.assertIn("models/translation/opus-mt-fr-en/manifest.json?v=browser-model-assets-v1", script)
+        self.assertIn("models/Xenova/opus-mt-fr-en/config.json?v=browser-model-assets-v1", script)
+        self.assertNotIn("models/translation/nllb-fr-en/manifest.json", script)
         self.assertIn("XOLOLINGUA_CLIENT_TRANSCRIBER", script)
         self.assertIn("XOLOLINGUA_CLIENT_TRANSLATOR", script)
 
@@ -170,14 +173,14 @@ class BrowserE2EScriptTests(unittest.TestCase):
         self.assertEqual(report["status"], "skip")
         self.assertEqual(report["missingCount"], 2)
         self.assertIn("models/asr/whisper-tiny/manifest.json", report["missingLocalAssets"])
-        self.assertIn("models/translation/nllb-fr-en/manifest.json", report["missingLocalAssets"])
+        self.assertIn("models/translation/opus-mt-fr-en/manifest.json", report["missingLocalAssets"])
         self.assertIn("Cache or provide", report["action"])
 
     def test_real_browser_models_preflight_rejects_remote_asset_urls_inside_local_manifests(self):
         module = self.load_module()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            for manifest_path in module.REAL_MODEL_ASSET_BYTES:
+            for manifest_path in module.REAL_MODEL_ASSET_MANIFEST_PATHS:
                 local_manifest = root / manifest_path
                 local_manifest.parent.mkdir(parents=True, exist_ok=True)
                 local_manifest.write_text(
@@ -197,7 +200,7 @@ class BrowserE2EScriptTests(unittest.TestCase):
         module = self.load_module()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            for manifest_path in module.REAL_MODEL_ASSET_BYTES:
+            for manifest_path in module.REAL_MODEL_ASSET_MANIFEST_PATHS:
                 local_manifest = root / manifest_path
                 local_manifest.parent.mkdir(parents=True, exist_ok=True)
                 local_manifest.write_text(
@@ -211,6 +214,34 @@ class BrowserE2EScriptTests(unittest.TestCase):
         self.assertEqual(report["status"], "skip")
         self.assertIn("sha256 is required", report["reason"])
         self.assertRegex(report["action"], r"include sha256/bytes")
+
+    def test_real_browser_models_preflight_loads_all_packaged_asset_urls_from_local_manifests(self):
+        module = self.load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            app_manifest = root / "frontend" / "model_asset_manifest.js"
+            app_manifest.parent.mkdir(parents=True, exist_ok=True)
+            app_manifest.write_text('export const BROWSER_MODEL_ASSET_MANIFEST = Object.freeze({ version: "test-assets-v2" });', encoding="utf-8")
+            for manifest_path in module.REAL_MODEL_ASSET_MANIFEST_PATHS:
+                local_manifest = root / manifest_path
+                local_manifest.parent.mkdir(parents=True, exist_ok=True)
+                asset_url = "models/Xenova/example/weights.onnx" if "asr" in manifest_path else "models/Xenova/example/tokenizer.json"
+                asset_file = root / asset_url
+                asset_file.parent.mkdir(parents=True, exist_ok=True)
+                asset_file.write_text("asset", encoding="utf-8")
+                local_manifest.write_text(
+                    '{"assets":[{"url":"' + asset_url + '","sha256":"abc123","bytes":5}]}',
+                    encoding="utf-8",
+                )
+
+            urls = module.load_real_model_asset_urls(root)
+            report = module.preflight_real_browser_model_assets(root, argparse.Namespace(frontend_url="http://127.0.0.1:4173"))
+
+        self.assertEqual(report["status"], "ready")
+        self.assertEqual(report["cachedCount"], 4)
+        self.assertTrue(all(url.endswith("?v=test-assets-v2") for url in urls))
+        self.assertIn("models/Xenova/example/weights.onnx?v=test-assets-v2", urls)
+        self.assertIn("models/Xenova/example/tokenizer.json?v=test-assets-v2", urls)
 
     def test_compact_real_model_diagnostics_are_one_line_and_include_skip_reason(self):
         module = self.load_module()

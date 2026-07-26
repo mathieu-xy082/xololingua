@@ -9,6 +9,14 @@ import {
   validateBrowserModelAssetManifest,
 } from "../frontend/model_asset_manifest.js";
 
+function versionedStageUrls(stageName, manifest = BROWSER_MODEL_ASSET_MANIFEST) {
+  return manifest.models[stageName].assets.map((asset) => `${asset.url}?v=${manifest.version}`);
+}
+
+function sumAssetBytes(stageName, manifest = BROWSER_MODEL_ASSET_MANIFEST) {
+  return manifest.models[stageName].assets.reduce((total, asset) => total + asset.bytes, 0);
+}
+
 test("browser model asset manifest declares real ASR and translation model decisions without remote asset URLs", () => {
   const issues = validateBrowserModelAssetManifest(BROWSER_MODEL_ASSET_MANIFEST);
 
@@ -53,9 +61,12 @@ test("browser model asset manifest declares bounded browser-real-model timeouts"
 });
 
 test("browser model asset report separates offline-ready, bootstrap-required, and fallback stages", () => {
+  const cachedTranscriptionUrls = versionedStageUrls("transcription");
+  const transcriptionBytes = sumAssetBytes("transcription");
+  const translationBytes = sumAssetBytes("translation");
   const report = createBrowserModelAssetReport({
     manifest: BROWSER_MODEL_ASSET_MANIFEST,
-    cachedUrls: ["models/asr/whisper-tiny/manifest.json?v=browser-model-assets-v1"],
+    cachedUrls: cachedTranscriptionUrls,
   });
 
   assert.equal(report.version, "browser-model-assets-v1");
@@ -68,49 +79,40 @@ test("browser model asset report separates offline-ready, bootstrap-required, an
     requiredBytes,
     missingBytes,
   })), [
-    { stage: "transcription", status: "offline-ready", requiredBytes: 151_000_000, missingBytes: 0 },
-    { stage: "translation", status: "bootstrap-required", requiredBytes: 625_000_000, missingBytes: 625_000_000 },
+    { stage: "transcription", status: "offline-ready", requiredBytes: transcriptionBytes, missingBytes: 0 },
+    { stage: "translation", status: "bootstrap-required", requiredBytes: translationBytes, missingBytes: translationBytes },
   ]);
-  assert.equal(report.totalRequiredBytes, 776_000_000);
-  assert.equal(report.totalMissingBytes, 625_000_000);
+  assert.equal(report.totalRequiredBytes, transcriptionBytes + translationBytes);
+  assert.equal(report.totalMissingBytes, translationBytes);
   assert.match(report.stageRows[1].fallbackReason, /Model assets are not cached/);
 });
 
 test("browser model asset bootstrap plan describes uncached assets with progress, retry, and fallback metadata", () => {
+  const cachedTranscriptionUrls = versionedStageUrls("transcription");
+  const transcriptionBytes = sumAssetBytes("transcription");
+  const translationBytes = sumAssetBytes("translation");
   const plan = buildModelAssetBootstrapPlan({
     manifest: BROWSER_MODEL_ASSET_MANIFEST,
-    cachedUrls: ["models/asr/whisper-tiny/manifest.json?v=browser-model-assets-v1"],
+    cachedUrls: cachedTranscriptionUrls,
   });
 
   assert.equal(plan.version, "browser-model-assets-v1");
   assert.equal(plan.status, "bootstrap-required");
-  assert.equal(plan.totalAssets, 2);
-  assert.equal(plan.cachedAssets, 1);
-  assert.equal(plan.remainingAssets, 1);
-  assert.equal(plan.totalBytes, 776_000_000);
-  assert.equal(plan.remainingBytes, 625_000_000);
-  assert.deepEqual(plan.steps.map(({ stage, assetName, status, retryable, progressWeightBytes }) => ({
-    stage,
-    assetName,
-    status,
-    retryable,
-    progressWeightBytes,
-  })), [
-    {
-      stage: "transcription",
-      assetName: "asr-manifest",
-      status: "cached",
-      retryable: false,
-      progressWeightBytes: 151_000_000,
-    },
-    {
-      stage: "translation",
-      assetName: "translation-manifest",
-      status: "pending-download",
-      retryable: true,
-      progressWeightBytes: 625_000_000,
-    },
-  ]);
+  assert.equal(plan.totalAssets, BROWSER_MODEL_ASSET_MANIFEST.models.transcription.assets.length + BROWSER_MODEL_ASSET_MANIFEST.models.translation.assets.length);
+  assert.equal(plan.cachedAssets, BROWSER_MODEL_ASSET_MANIFEST.models.transcription.assets.length);
+  assert.equal(plan.remainingAssets, BROWSER_MODEL_ASSET_MANIFEST.models.translation.assets.length);
+  assert.equal(plan.totalBytes, transcriptionBytes + translationBytes);
+  assert.equal(plan.remainingBytes, translationBytes);
+  assert.deepEqual(plan.steps.filter((step) => step.stage === "transcription").map((step) => step.status),
+    BROWSER_MODEL_ASSET_MANIFEST.models.transcription.assets.map(() => "cached"));
+  assert.deepEqual(plan.steps.filter((step) => step.stage === "translation").map((step) => step.status),
+    BROWSER_MODEL_ASSET_MANIFEST.models.translation.assets.map(() => "pending-download"));
+  assert.equal(plan.steps[0].assetName, "asr-manifest");
+  assert.equal(plan.steps[0].retryable, false);
+  assert.equal(plan.steps[0].progressWeightBytes, BROWSER_MODEL_ASSET_MANIFEST.models.transcription.assets[0].bytes);
+  const firstTranslationStep = plan.steps.find((step) => step.stage === "translation");
+  assert.equal(firstTranslationStep.assetName, "translation-manifest");
+  assert.equal(firstTranslationStep.retryable, true);
   assert.deepEqual(plan.fallback, {
     runtime: "server-fallback",
     fallbackRequiredStages: ["translation"],

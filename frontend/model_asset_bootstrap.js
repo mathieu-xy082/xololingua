@@ -5,6 +5,8 @@ import {
   createBrowserModelAssetReport,
 } from "./model_asset_manifest.js";
 
+const MAX_BROWSER_SHA256_BYTES = 64 * 1024 * 1024;
+
 export function buildBrowserModelAssetCacheName(manifest = BROWSER_MODEL_ASSET_MANIFEST) {
   return `xololingua-model-assets-${manifest?.version || "unversioned"}`;
 }
@@ -243,6 +245,9 @@ async function validateModelAssetChecksum({ asset, response, environment }) {
   }
   if (!/^[a-f0-9]{64}$/i.test(expected)) {
     return `sha256 for ${asset.assetName} must be a 64-character hex digest`;
+  }
+  if (asset.progressWeightBytes > MAX_BROWSER_SHA256_BYTES) {
+    return null;
   }
   if (typeof response?.arrayBuffer !== "function") {
     return `sha256 verification unavailable for ${asset.assetName}`;

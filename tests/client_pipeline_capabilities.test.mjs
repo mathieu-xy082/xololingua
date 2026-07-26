@@ -6,6 +6,15 @@ import {
   collectClientPipelineCapabilitiesWithModelAssetBootstrap,
   createClientPipelineCapabilityReport,
 } from "../frontend/client_pipeline_capabilities.js";
+import { BROWSER_MODEL_ASSET_MANIFEST } from "../frontend/model_asset_manifest.js";
+
+function versionedStageUrls(stageName, manifest = BROWSER_MODEL_ASSET_MANIFEST) {
+  return manifest.models[stageName].assets.map((asset) => `${asset.url}?v=${manifest.version}`);
+}
+
+function sumAssetBytes(stageName, manifest = BROWSER_MODEL_ASSET_MANIFEST) {
+  return manifest.models[stageName].assets.reduce((total, asset) => total + asset.bytes, 0);
+}
 
 test("client pipeline report identifies browser-ready stages and server fallback stages", () => {
   const report = createClientPipelineCapabilityReport({
@@ -191,9 +200,7 @@ test("collectClientPipelineCapabilities requires cached model assets before mark
     Worker: function Worker() {},
     navigator: { gpu: {} },
     transformers: { pipeline: function pipeline() {} },
-    __xololinguaCachedModelAssetUrls: [
-      "models/asr/whisper-tiny/manifest.json?v=browser-model-assets-v1",
-    ],
+    __xololinguaCachedModelAssetUrls: versionedStageUrls("transcription"),
   });
 
   assert.equal(report.mode, "hybrid-fallback");
@@ -208,7 +215,7 @@ test("collectClientPipelineCapabilities requires cached model assets before mark
     report.stages.translation.browserFailureReason,
     "Model assets are not cached for translation; Python fallback remains required until bootstrap completes.",
   );
-  assert.equal(report.stages.translation.attemptedBrowserStrategy, "nllb-transformers.js");
+  assert.equal(report.stages.translation.attemptedBrowserStrategy, "opus-mt-transformers.js");
   assert.deepEqual(report.modelAssets.offlineReadyStages, ["transcription"]);
   assert.deepEqual(report.modelAssets.bootstrapRequiredStages, ["translation"]);
   assert.match(report.modelAssets.stageRows[1].fallbackReason, /Model assets are not cached/);
@@ -249,7 +256,10 @@ test("collectClientPipelineCapabilitiesWithModelAssetBootstrap uses the real bro
   assert.deepEqual(report.modelAssets.fallbackRequiredStages, ["translation"]);
   assert.equal(report.stages.transcription.runtime, "browser");
   assert.equal(report.stages.translation.runtime, "server-fallback");
-  assert.deepEqual(report.stages.translation.missingModelAssets.map((asset) => asset.assetName), ["translation-manifest"]);
+  assert.deepEqual(
+    report.stages.translation.missingModelAssets.map((asset) => asset.assetName),
+    BROWSER_MODEL_ASSET_MANIFEST.models.translation.assets.map((asset) => asset.name),
+  );
 });
 
 test("client pipeline demo summary surfaces model bootstrap details for fallback stages", async () => {
@@ -277,7 +287,10 @@ test("client pipeline demo summary surfaces model bootstrap details for fallback
   const translationRow = report.demoSummary.stageRows.find((row) => row.stage === "translation");
 
   assert.equal(translationRow.modelAssetBootstrapStatus, "bootstrap-required");
-  assert.equal(translationRow.remainingModelAssetBytes, 625_000_000);
-  assert.equal(translationRow.modelAssetBootstrapLabel, "Model bootstrap required: 596.0 MB remaining; missing translation-manifest");
-  assert.deepEqual(translationRow.missingModelAssets.map((asset) => asset.assetName), ["translation-manifest"]);
+  assert.equal(translationRow.remainingModelAssetBytes, sumAssetBytes("translation"));
+  assert.equal(translationRow.modelAssetBootstrapLabel, "Model bootstrap required: 270.2 MB remaining; missing translation-manifest + 11 more");
+  assert.deepEqual(
+    translationRow.missingModelAssets.map((asset) => asset.assetName),
+    BROWSER_MODEL_ASSET_MANIFEST.models.translation.assets.map((asset) => asset.name),
+  );
 });

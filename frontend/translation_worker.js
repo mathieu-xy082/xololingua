@@ -1,14 +1,14 @@
-import { env, pipeline } from "../node_modules/@huggingface/transformers/dist/transformers.web.min.js";
+import { env, pipeline } from "../node_modules/@huggingface/transformers/dist/transformers.min.js";
 
-const DEFAULT_MODEL_ID = "Xenova/nllb-200-distilled-600M";
+const DEFAULT_MODEL_ID = "Xenova/opus-mt-fr-en";
 const DEFAULT_SAMPLE_TEXT = "Bonjour le monde.";
 
 // Browser real-model mode must be explicit/local. The bootstrap workflow is
 // responsible for placing compatible Transformers.js assets under this root.
 env.allowRemoteModels = false;
 env.allowLocalModels = true;
-env.localModelPath = "models/";
-env.backends.onnx.wasm.wasmPaths = "../node_modules/@huggingface/transformers/node_modules/onnxruntime-web/dist/";
+env.localModelPath = "../models/";
+env.backends.onnx.wasm.wasmPaths = "/node_modules/@huggingface/transformers/node_modules/onnxruntime-web/dist/";
 
 let translatorPromise;
 let translatorModelId;
@@ -88,7 +88,7 @@ async function translateSegments(request = {}) {
 
   self.postMessage({ type: "progress", event: { stage: "translating", progress: 100, message: "Translation batch complete." } });
   return {
-    strategy: "nllb-transformers.js",
+    strategy: "opus-mt-transformers.js",
     languagePair: { source: sourceLanguage, target: targetLanguage },
     segments: translatedSegments,
   };
@@ -98,6 +98,7 @@ async function getTranslator(modelId) {
   if (!translatorPromise || translatorModelId !== modelId) {
     translatorModelId = modelId;
     translatorPromise = pipeline("translation", modelId, {
+      dtype: "q4",
       progress_callback: (progress) => {
         self.postMessage({ type: "progress", event: { stage: "loading-model", ...progress } });
       },
