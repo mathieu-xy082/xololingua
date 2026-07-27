@@ -215,6 +215,30 @@ class BrowserE2EScriptTests(unittest.TestCase):
         self.assertIn("sha256 is required", report["reason"])
         self.assertRegex(report["action"], r"include sha256/bytes")
 
+    def test_real_browser_models_preflight_rejects_assets_with_mismatched_bytes_or_sha256(self):
+        module = self.load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for index, manifest_path in enumerate(module.REAL_MODEL_ASSET_MANIFEST_PATHS):
+                local_manifest = root / manifest_path
+                local_manifest.parent.mkdir(parents=True, exist_ok=True)
+                asset_url = f"models/Xenova/example-{index}/weights.onnx"
+                asset_file = root / asset_url
+                asset_file.parent.mkdir(parents=True, exist_ok=True)
+                asset_file.write_text("actual asset bytes", encoding="utf-8")
+                local_manifest.write_text(
+                    '{"assets":[{"url":"' + asset_url + '","sha256":"not-the-digest","bytes":1}]}',
+                    encoding="utf-8",
+                )
+            args = argparse.Namespace(frontend_url="http://127.0.0.1:4173")
+
+            report = module.preflight_real_browser_model_assets(root, args)
+
+        self.assertEqual(report["status"], "skip")
+        self.assertIn("bytes mismatch", report["reason"])
+        self.assertIn("sha256 mismatch", report["reason"])
+        self.assertRegex(report["action"], r"Regenerate local model manifests")
+
     def test_real_browser_models_preflight_loads_all_packaged_asset_urls_from_local_manifests(self):
         module = self.load_module()
         with tempfile.TemporaryDirectory() as directory:
@@ -230,7 +254,7 @@ class BrowserE2EScriptTests(unittest.TestCase):
                 asset_file.parent.mkdir(parents=True, exist_ok=True)
                 asset_file.write_text("asset", encoding="utf-8")
                 local_manifest.write_text(
-                    '{"assets":[{"url":"' + asset_url + '","sha256":"abc123","bytes":5}]}',
+                    '{"assets":[{"url":"' + asset_url + '","sha256":"d59386e0ae435e292fbe0ebcdb954b75ed5fb3922091277cb19f798fc5d50718","bytes":5}]}',
                     encoding="utf-8",
                 )
 

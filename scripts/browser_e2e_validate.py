@@ -10,6 +10,7 @@ its SRT content.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -664,6 +665,9 @@ def preflight_real_browser_model_assets(root: Path = ROOT, args: argparse.Namesp
 
     manifest_issues = validate_local_real_model_manifests(root)
     if manifest_issues:
+        action = "Replace remote URLs with relative packaged asset paths and include sha256/bytes before rerunning."
+        if any("mismatch" in issue for issue in manifest_issues):
+            action = "Regenerate local model manifests from the packaged assets so bytes and sha256 match before rerunning."
         return {
             "status": "skip",
             "runtime": "chromium",
@@ -677,7 +681,7 @@ def preflight_real_browser_model_assets(root: Path = ROOT, args: argparse.Namesp
             "coverage": "not-run",
             "comparison": "not-run",
             "reason": "; ".join(manifest_issues[:3]),
-            "action": "Replace remote URLs with relative packaged asset paths and include sha256/bytes before rerunning.",
+            "action": action,
         }
 
     return {
@@ -697,6 +701,14 @@ def preflight_real_browser_model_assets(root: Path = ROOT, args: argparse.Namesp
     }
 
 
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def validate_local_real_model_manifests(root: Path) -> list[str]:
     issues: list[str] = []
     for manifest_path in REAL_MODEL_ASSET_MANIFEST_PATHS:
@@ -712,18 +724,35 @@ def validate_local_real_model_manifests(root: Path) -> list[str]:
             continue
         for index, asset in enumerate(assets):
             url = asset.get("url") if isinstance(asset, dict) else None
+            sha256 = asset.get("sha256") if isinstance(asset, dict) else None
+            size_bytes = asset.get("bytes") if isinstance(asset, dict) else None
+            asset_path: Path | None = None
             if not isinstance(url, str) or not url:
                 issues.append(f"{manifest_path}.assets[{index}].url is required")
             elif re.match(r"https?://", url) or url.startswith("//"):
                 issues.append(f"{manifest_path} contains remote asset URLs: {url}")
             elif not (root / url).is_file():
                 issues.append(f"{manifest_path}.assets[{index}] packaged file is missing: {url}")
-            sha256 = asset.get("sha256") if isinstance(asset, dict) else None
-            size_bytes = asset.get("bytes") if isinstance(asset, dict) else None
+            else:
+                asset_path = root / url
             if not sha256:
                 issues.append(f"{manifest_path}.assets[{index}].sha256 is required")
             if not isinstance(size_bytes, int) or size_bytes <= 0:
                 issues.append(f"{manifest_path}.assets[{index}].bytes must be a positive integer")
+            if asset_path is not None:
+                actual_size = asset_path.stat().st_size
+                if isinstance(size_bytes, int) and size_bytes > 0 and actual_size != size_bytes:
+                    issues.append(
+                        f"{manifest_path}.assets[{index}] bytes mismatch for {url}: "
+                        f"manifest={size_bytes}, actual={actual_size}"
+                    )
+                if sha256:
+                    actual_sha256 = sha256_file(asset_path)
+                    if actual_sha256 != sha256:
+                        issues.append(
+                            f"{manifest_path}.assets[{index}] sha256 mismatch for {url}: "
+                            f"manifest={sha256}, actual={actual_sha256}"
+                        )
     return issues
 
 
