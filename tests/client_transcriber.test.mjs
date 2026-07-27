@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   createClientTranscriber,
@@ -31,6 +32,17 @@ test("detectClientTranscriptionCapabilities treats a module worker as the local 
     webGpu: false,
     strategy: "transformers.js",
   });
+});
+
+test("transcription worker preserves VAD windows instead of replacing them with Whisper chunks", () => {
+  const workerSource = readFileSync(new URL("../frontend/transcription_worker.js", import.meta.url), "utf-8");
+
+  assert.match(workerSource, /transcribeVadSegments/);
+  assert.match(workerSource, /slicePcmForSegment/);
+  assert.match(workerSource, /segments\.map\(async|for \(const .*segments/);
+  assert.match(workerSource, /start:\s*Number\(segment\.start/);
+  assert.match(workerSource, /end:\s*Number\(segment\.end/);
+  assert.doesNotMatch(workerSource, /chunks\.length > 0\s*\?\s*chunks\.map/);
 });
 
 test("client transcriber delegates PCM audio to an injected transformers.js worker", async () => {

@@ -57,27 +57,65 @@ async function transcribeAudio(request = {}) {
   const recognizer = await getRecognizer(modelId);
   const audioInput = await resolveAudioInput(request);
   const sourceLanguage = normalizeLanguageCode(request.sourceLanguage);
-  const output = await recognizer(audioInput, createWhisperOptions({ sourceLanguage }));
-  const chunks = Array.isArray(output?.chunks) ? output.chunks : [];
-  const segments = chunks.length > 0
-    ? chunks.map((chunk, index) => ({
-        index: index + 1,
-        start: Array.isArray(chunk.timestamp) ? Number(chunk.timestamp[0] || 0) : 0,
-        end: Array.isArray(chunk.timestamp) ? Number(chunk.timestamp[1] || chunk.timestamp[0] || 0) : 0,
-        text: String(chunk.text || "").trim(),
-      }))
-    : [{
-        index: 1,
-        start: 0,
-        end: Number(request.audio?.durationSeconds || 0),
-        text: String(output?.text || "").trim(),
-      }];
+  const vadSegments = Array.isArray(request.segments) ? request.segments : [];
+  const sampleRate = Number(request.audio?.sampleRate || request.audio?.sampleRateHz || DEFAULT_SAMPLE_RATE);
+  const segments = audioInput instanceof Float32Array && vadSegments.length > 0
+    ? await transcribeVadSegments({ recognizer, audioInput, sampleRate, segments: vadSegments, sourceLanguage })
+    : await transcribeWholeAudio({ recognizer, audioInput, request, sourceLanguage });
 
   return {
     strategy: "whisper-transformers.js",
-    language: sourceLanguage || output?.language || "unknown",
+    language: sourceLanguage || "unknown",
     segments: segments.filter((segment) => segment.text || segment.end > segment.start),
   };
+}
+
+async function transcribeVadSegments({ recognizer, audioInput, sampleRate, segments, sourceLanguage }) {
+  const transcribed = [];
+  for (const [offset, segment] of segments.entries()) {
+    const pcmSlice = slicePcmForSegment(audioInput, sampleRate, segment);
+    const output = await recognizer(pcmSlice, createWhisperOptions({ sourceLanguage, returnTimestamps: false }));
+    transcribed.push({
+      index: segment.index ?? offset + 1,
+      start: Number(segment.start || 0),
+      end: Number(segment.end || segment.start || 0),
+      text: extractWhisperText(output),
+    });
+  }
+  return transcribed;
+}
+
+async function transcribeWholeAudio({ recognizer, audioInput, request, sourceLanguage }) {
+  const output = await recognizer(audioInput, createWhisperOptions({ sourceLanguage, returnTimestamps: true }));
+  const chunks = Array.isArray(output?.chunks) ? output.chunks : [];
+  if (chunks.length > 0) {
+    return chunks.map((chunk, index) => ({
+      index: index + 1,
+      start: Array.isArray(chunk.timestamp) ? Number(chunk.timestamp[0] || 0) : 0,
+      end: Array.isArray(chunk.timestamp) ? Number(chunk.timestamp[1] || chunk.timestamp[0] || 0) : 0,
+      text: String(chunk.text || "").trim(),
+    }));
+  }
+  return [{
+    index: 1,
+    start: 0,
+    end: Number(request.audio?.durationSeconds || 0),
+    text: extractWhisperText(output),
+  }];
+}
+
+function slicePcmForSegment(audioInput, sampleRate, segment) {
+  const startSample = Math.max(0, Math.floor(Number(segment.start || 0) * sampleRate));
+  const endSample = Math.max(startSample, Math.ceil(Number(segment.end || segment.start || 0) * sampleRate));
+  return audioInput.slice(startSample, Math.min(audioInput.length, endSample));
+}
+
+function extractWhisperText(output) {
+  if (typeof output === "string") return output.trim();
+  if (Array.isArray(output?.chunks) && output.chunks.length > 0) {
+    return output.chunks.map((chunk) => String(chunk.text || "").trim()).filter(Boolean).join(" ").trim();
+  }
+  return String(output?.text || "").trim();
 }
 
 async function getRecognizer(modelId) {
@@ -112,12 +150,12 @@ async function resolveAudioInput(request) {
   throw new Error("Browser ASR requires browser audio PCM, Blob, or URL; server audioId alone cannot be transcribed in the browser.");
 }
 
-function createWhisperOptions({ sourceLanguage } = {}) {
+function createWhisperOptions({ sourceLanguage, returnTimestamps = true } = {}) {
   const language = normalizeLanguageCode(sourceLanguage);
   return {
     chunk_length_s: 30,
     stride_length_s: 5,
-    return_timestamps: true,
+    return_timestamps: returnTimestamps,
     ...(language && language !== "auto" ? { language } : {}),
     task: "transcribe",
   };
