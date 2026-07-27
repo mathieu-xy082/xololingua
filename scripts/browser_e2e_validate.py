@@ -245,6 +245,28 @@ def parse_srt_timestamp(value: str) -> float:
     )
 
 
+def cue_duration_summary(durations: list[float]) -> dict:
+    if not durations:
+        return {
+            "cueDurationsSeconds": [],
+            "medianCueDurationSeconds": 0.0,
+            "p90CueDurationSeconds": 0.0,
+        }
+    ordered = sorted(durations)
+    count = len(ordered)
+    midpoint = count // 2
+    if count % 2:
+        median = ordered[midpoint]
+    else:
+        median = (ordered[midpoint - 1] + ordered[midpoint]) / 2
+    p90_index = max(0, min(count - 1, ((9 * count + 9) // 10) - 1))
+    return {
+        "cueDurationsSeconds": durations,
+        "medianCueDurationSeconds": median,
+        "p90CueDurationSeconds": ordered[p90_index],
+    }
+
+
 def collect_srt_diagnostics(path: Path) -> dict:
     text = path.read_text(encoding="utf-8-sig")
     if not text.strip():
@@ -256,12 +278,20 @@ def collect_srt_diagnostics(path: Path) -> dict:
         raise AssertionError(f"Downloaded SRT does not contain a first subtitle block: {path}")
     has_subtitle_text = False
     last_end = 0.0
+    cue_durations = []
     for block in blocks:
         lines = [line.strip() for line in block.splitlines() if line.strip()]
         timestamp_lines = [line for line in lines if "-->" in line]
         if timestamp_lines:
-            end_timestamp = timestamp_lines[-1].split("-->", 1)[1].strip()
-            last_end = max(last_end, parse_srt_timestamp(end_timestamp))
+            start_timestamp, end_timestamp = [
+                value.strip()
+                for value in timestamp_lines[-1].split("-->", 1)
+            ]
+            start_seconds = parse_srt_timestamp(start_timestamp)
+            end_seconds = parse_srt_timestamp(end_timestamp)
+            last_end = max(last_end, end_seconds)
+            if end_seconds > start_seconds:
+                cue_durations.append(round(end_seconds - start_seconds, 3))
         cue_text_lines = [
             line for line in lines
             if not line.isdigit() and "-->" not in line
@@ -275,6 +305,7 @@ def collect_srt_diagnostics(path: Path) -> dict:
         "blocks": len(blocks),
         "lastEndSeconds": last_end,
         "text": text,
+        **cue_duration_summary(cue_durations),
     }
 
 
@@ -475,21 +506,49 @@ def srt_text_similarity(browser_text: str, backend_text: str) -> float:
     return (2 * precision * recall / (precision + recall)) if precision + recall else 0.0
 
 
+def describe_segmentation_quality(browser: dict, backend: dict) -> dict:
+    browser_blocks = int(browser.get("blocks", 0))
+    backend_blocks = int(backend.get("blocks", 0))
+    browser_median = float(browser.get("medianCueDurationSeconds", 0.0))
+    backend_median = float(backend.get("medianCueDurationSeconds", 0.0))
+    block_ratio = browser_blocks / backend_blocks if backend_blocks else 0.0
+    median_cue_ratio = browser_median / backend_median if backend_median else 0.0
+    warnings = []
+    if block_ratio >= 2.5:
+        warnings.append(f"browser block count is {block_ratio:.2f}x backend")
+    if 0 < median_cue_ratio <= 0.5:
+        warnings.append(f"browser median cue duration is {median_cue_ratio:.2f}x backend")
+    return {
+        "blockRatio": block_ratio,
+        "medianCueRatio": median_cue_ratio,
+        "warnings": warnings,
+    }
+
+
 def compare_srt_outputs(browser_path: Path, backend_path: Path, args: argparse.Namespace) -> None:
     browser = collect_srt_diagnostics(browser_path)
     backend = collect_srt_diagnostics(backend_path)
     block_delta = abs(browser["blocks"] - backend["blocks"])
     last_end_delta = abs(browser["lastEndSeconds"] - backend["lastEndSeconds"])
     similarity = srt_text_similarity(browser["text"], backend["text"])
+    segmentation_quality = describe_segmentation_quality(browser, backend)
+    segmentation_warning = "; ".join(segmentation_quality["warnings"]) or "none"
     print(
         "Browser/backend SRT comparison: "
         f"browserBlocks={browser['blocks']}; "
         f"backendBlocks={backend['blocks']}; "
         f"blockDelta={block_delta}; "
+        f"blockRatio={segmentation_quality['blockRatio']:.3f}; "
+        f"browserMedianCue={browser['medianCueDurationSeconds']:.3f}s; "
+        f"backendMedianCue={backend['medianCueDurationSeconds']:.3f}s; "
+        f"medianCueRatio={segmentation_quality['medianCueRatio']:.3f}; "
+        f"browserP90Cue={browser['p90CueDurationSeconds']:.3f}s; "
+        f"backendP90Cue={backend['p90CueDurationSeconds']:.3f}s; "
         f"browserLastEnd={browser['lastEndSeconds']:.3f}s; "
         f"backendLastEnd={backend['lastEndSeconds']:.3f}s; "
         f"lastEndDelta={last_end_delta:.3f}s; "
-        f"textSimilarity={similarity:.3f}",
+        f"textSimilarity={similarity:.3f}; "
+        f"segmentationWarning={segmentation_warning}",
         flush=True,
     )
     failures = []
@@ -939,6 +998,17 @@ def run_browser_workflow(args: argparse.Namespace) -> Path | None:
             expect(page.locator("#generateButton")).to_be_enabled(timeout=args.segmentation_timeout_ms)
             expect(page.locator("#segmentationStatus")).to_contain_text("speech segments prepared")
             segmentation_pipeline_status = page.locator("#segmentationStatus").inner_text()
+            segment_count_text = page.locator("#segmentCountSummary").inner_text()
+            segment_speech_text = page.locator("#segmentSpeechSummary").inner_text()
+            segment_average_text = page.locator("#segmentAverageSummary").inner_text()
+            print(
+                "Browser segmentation diagnostics: "
+                f"segments={segment_count_text}; "
+                f"speechTime={segment_speech_text}; "
+                f"averageDuration={segment_average_text}; "
+                f"status={segmentation_pipeline_status}",
+                flush=True,
+            )
             if args.require_browser_audio:
                 assert_browser_audio_runtime(segmentation_pipeline_status)
             if args.require_browser_vad:

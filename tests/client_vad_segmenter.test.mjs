@@ -5,6 +5,7 @@ import {
   createClientVadSegmenter,
   detectClientVadCapabilities,
 } from "../frontend/client_vad_segmenter.js";
+import { BACKEND_COMPATIBLE_VAD_PROFILE } from "../frontend/vad_web_runtime.js";
 
 test("detectClientVadCapabilities reports vad-web readiness", () => {
   const capabilities = detectClientVadCapabilities({
@@ -140,18 +141,22 @@ test("client VAD segmenter uses the environment segmenter when no explicit injec
   });
 });
 
-test("client VAD segmenter adapts vad-web non-real-time segments into canonical VAD envelopes", async () => {
+test("client VAD segmenter adapts vad-web non-real-time segments into canonical VAD envelopes with backend-compatible options", async () => {
   const runCalls = [];
+  let receivedOptions;
   const environment = {
     vad: {
       NonRealTimeVAD: {
-        new: async () => ({
-          async *run(pcm, sampleRate) {
-            runCalls.push({ pcm, sampleRate });
-            yield { start: 16000, end: 24000, confidence: 0.92 };
-            yield { start: 0.5, end: 1.0, probability: 0.81 };
-          },
-        }),
+        new: async (options) => {
+          receivedOptions = options;
+          return {
+            async *run(pcm, sampleRate) {
+              runCalls.push({ pcm, sampleRate });
+              yield { start: 16000, end: 24000, confidence: 0.92 };
+              yield { start: 0.5, end: 1.0, probability: 0.81 };
+            },
+          };
+        },
       },
     },
   };
@@ -161,6 +166,7 @@ test("client VAD segmenter adapts vad-web non-real-time segments into canonical 
 
   const result = await segmenter.segmentAudio(audio, (value) => progress.push(value));
 
+  assert.deepEqual(receivedOptions, BACKEND_COMPATIBLE_VAD_PROFILE.options);
   assert.deepEqual(runCalls, [{ pcm: audio.pcm, sampleRate: 16000 }]);
   assert.deepEqual(progress, [0, 100]);
   assert.deepEqual(result, {
@@ -174,6 +180,11 @@ test("client VAD segmenter adapts vad-web non-real-time segments into canonical 
       ],
     },
     metadata: {
+      diagnostics: {
+        vadOptions: BACKEND_COMPATIBLE_VAD_PROFILE.options,
+        vadProfile: "backend-compatible",
+        vadProfileDescription: BACKEND_COMPATIBLE_VAD_PROFILE.description,
+      },
       segmentDiagnostics: [
         { index: 0, confidence: 0.92 },
         { index: 1, probability: 0.81 },

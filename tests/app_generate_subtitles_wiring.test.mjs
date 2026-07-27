@@ -53,12 +53,13 @@ test("app uses the canonical SRT formatting stage output for downloads and repor
   assert.doesNotMatch(appSource, /const srt = await generateSrtAdapter\(/);
 });
 
-test("app configures browser VAD segmentation adapter when browser VAD is available", () => {
+test("app configures browser VAD segmentation adapter with the backend-compatible profile", () => {
   assert.match(appSource, /createClientAudioExtractor/);
   assert.match(appSource, /createClientVadSegmenter/);
   assert.match(appSource, /clientAudioExtractor:/);
   assert.match(appSource, /clientVadSegmenter:/);
   assert.match(appSource, /XOLOLINGUA_CLIENT_VAD_SEGMENTER/);
+  assert.match(appSource, /createVadWebRuntimeSegmenter\(\{\s*vadProfile:\s*["']backend-compatible["'],?\s*\}\)/);
 });
 
 test("app configures local ffmpeg wasm audio extraction instead of relying on WebCodecs-only detection", () => {

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import ast
 import argparse
+import contextlib
 import importlib.util
+import io
 import os
 import re
 import tempfile
@@ -87,6 +89,60 @@ class BrowserE2EScriptTests(unittest.TestCase):
                     duration_seconds=10.0,
                     segment_diagnostics={"count": 1, "lastEndSeconds": 1.0},
                 )
+
+    def test_collect_srt_diagnostics_reports_cue_duration_distribution(self):
+        module = self.load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            srt = Path(directory) / "sample.srt"
+            srt.write_text(
+                "1\n00:00:00,000 --> 00:00:01,000\nHello\n\n"
+                "2\n00:00:02,000 --> 00:00:05,000\nWorld\n\n"
+                "3\n00:00:06,000 --> 00:00:16,000\nAgain\n",
+                encoding="utf-8",
+            )
+
+            diagnostics = module.collect_srt_diagnostics(srt)
+
+        self.assertEqual(diagnostics["cueDurationsSeconds"], [1.0, 3.0, 10.0])
+        self.assertEqual(diagnostics["medianCueDurationSeconds"], 3.0)
+        self.assertEqual(diagnostics["p90CueDurationSeconds"], 10.0)
+        self.assertEqual(diagnostics["lastEndSeconds"], 16.0)
+
+    def test_compare_srt_outputs_prints_segmentation_quality_diagnostics_for_real_models(self):
+        module = self.load_module()
+        args = argparse.Namespace(
+            compare_max_block_delta=2,
+            compare_max_last_end_delta=5.0,
+            compare_min_text_similarity=0.1,
+            real_browser_models=True,
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            browser = root / "browser.srt"
+            backend = root / "backend.srt"
+            browser.write_text(
+                "1\n00:00:00,000 --> 00:00:01,000\nalpha beta gamma\n\n"
+                "2\n00:00:01,200 --> 00:00:02,200\nalpha beta gamma\n\n"
+                "3\n00:00:02,400 --> 00:00:03,400\nalpha beta gamma\n\n"
+                "4\n00:00:03,600 --> 00:00:04,600\nalpha beta gamma\n\n"
+                "5\n00:00:04,800 --> 00:00:05,800\nalpha beta gamma\n",
+                encoding="utf-8",
+            )
+            backend.write_text(
+                "1\n00:00:00,000 --> 00:00:02,900\nalpha beta gamma\n\n"
+                "2\n00:00:02,900 --> 00:00:05,800\nalpha beta gamma\n",
+                encoding="utf-8",
+            )
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                module.compare_srt_outputs(browser, backend, args)
+
+        printed = output.getvalue()
+        self.assertIn("browserMedianCue=1.000s", printed)
+        self.assertIn("backendMedianCue=2.900s", printed)
+        self.assertIn("blockRatio=2.500", printed)
+        self.assertIn("medianCueRatio=0.345", printed)
+        self.assertIn("segmentationWarning=browser block count is 2.50x backend", printed)
 
     def test_browser_e2e_exposes_require_browser_audio_guard(self):
         module = self.load_module()

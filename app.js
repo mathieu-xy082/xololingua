@@ -29,7 +29,7 @@ const appClientAdapters = createAppClientAdapters({
     ffmpegWasmExtractor: createAppFfmpegWasmAudioExtractor(),
   }),
   clientVadSegmenter: globalThis.XOLOLINGUA_CLIENT_VAD_SEGMENTER || createClientVadSegmenter({
-    vadWebSegmenter: createVadWebRuntimeSegmenter(),
+    vadWebSegmenter: createVadWebRuntimeSegmenter({ vadProfile: "backend-compatible" }),
   }),
   clientTranscriber: globalThis.XOLOLINGUA_CLIENT_TRANSCRIBER || createClientTranscriber({
     workerUrl: "frontend/transcription_worker.js",

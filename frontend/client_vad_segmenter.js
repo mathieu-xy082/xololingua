@@ -1,4 +1,5 @@
 import { normalizeVadStageResult } from "./pipeline_stage_contract.js";
+import { BACKEND_COMPATIBLE_VAD_PROFILE, resolveVadWebProfile } from "./vad_web_runtime.js";
 
 const DEFAULT_MAX_SEGMENT_SECONDS = 12;
 const DEFAULT_MIN_SEGMENT_SECONDS = 0.4;
@@ -18,12 +19,13 @@ export function detectClientVadCapabilities(environment = globalThis) {
 export function createClientVadSegmenter({
   environment = globalThis,
   vadWebSegmenter,
+  vadProfile = BACKEND_COMPATIBLE_VAD_PROFILE.name,
 } = {}) {
   return {
     capabilities: detectClientVadCapabilities(environment),
 
     async segmentAudio(audio, onProgress = () => {}) {
-      const segmenter = resolveVadSegmenter({ environment, vadWebSegmenter });
+      const segmenter = resolveVadSegmenter({ environment, vadWebSegmenter, vadProfile });
       if (typeof segmenter === "function") {
         onProgress(0);
         const result = await segmenter(audio, onProgress);
@@ -40,7 +42,7 @@ export function createClientVadSegmenter({
   };
 }
 
-function resolveVadSegmenter({ environment, vadWebSegmenter }) {
+function resolveVadSegmenter({ environment, vadWebSegmenter, vadProfile }) {
   if (typeof vadWebSegmenter === "function") {
     return vadWebSegmenter;
   }
@@ -48,14 +50,15 @@ function resolveVadSegmenter({ environment, vadWebSegmenter }) {
     return environment.createVadSegmenter;
   }
   if (environment?.vad?.NonRealTimeVAD) {
-    return createNonRealTimeVadSegmenter(environment.vad.NonRealTimeVAD);
+    return createNonRealTimeVadSegmenter(environment.vad.NonRealTimeVAD, vadProfile);
   }
   return undefined;
 }
 
-function createNonRealTimeVadSegmenter(nonRealTimeVad) {
+function createNonRealTimeVadSegmenter(nonRealTimeVad, vadProfile) {
+  const resolvedVadProfile = resolveVadWebProfile(vadProfile || BACKEND_COMPATIBLE_VAD_PROFILE.name);
   return async (audio, onProgress) => {
-    const vad = await nonRealTimeVad.new?.();
+    const vad = await nonRealTimeVad.new?.(resolvedVadProfile.options);
     if (typeof vad?.run !== "function") {
       throw new Error("vad-web NonRealTimeVAD adapter must expose a run(pcm, sampleRate) method.");
     }
@@ -68,7 +71,14 @@ function createNonRealTimeVadSegmenter(nonRealTimeVad) {
       segments.push(normalizeVadWebSegmentTiming(segment, sampleRate, audioDurationSeconds));
     }
     onProgress(100);
-    return { segments: splitLongVadSegments(segments) };
+    return {
+      segments: splitLongVadSegments(segments),
+      diagnostics: {
+        vadOptions: resolvedVadProfile.options,
+        vadProfile: resolvedVadProfile.name,
+        vadProfileDescription: resolvedVadProfile.description,
+      },
+    };
   };
 }
 
