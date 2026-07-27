@@ -190,8 +190,8 @@ class BrowserE2EScriptTests(unittest.TestCase):
         script = module.create_backend_reference_init_script({"translatedSegments": []})
 
         self.assertIn("window.__xololinguaCachedModelAssetUrls", script)
-        self.assertIn("models/asr/whisper-tiny/manifest.json?v=browser-model-assets-v1", script)
-        self.assertIn("models/Xenova/whisper-tiny/added_tokens.json?v=browser-model-assets-v1", script)
+        self.assertIn(f"{module.REAL_MODEL_ASSET_MANIFEST_PATHS[0]}?v=browser-model-assets-v1", script)
+        self.assertIn("models/Xenova/whisper-small/added_tokens.json?v=browser-model-assets-v1", script)
         self.assertIn("models/translation/opus-mt-fr-en/manifest.json?v=browser-model-assets-v1", script)
         self.assertIn("models/Xenova/opus-mt-fr-en/config.json?v=browser-model-assets-v1", script)
         self.assertNotIn("models/translation/nllb-fr-en/manifest.json", script)
@@ -228,7 +228,7 @@ class BrowserE2EScriptTests(unittest.TestCase):
 
         self.assertEqual(report["status"], "skip")
         self.assertEqual(report["missingCount"], 2)
-        self.assertIn("models/asr/whisper-tiny/manifest.json", report["missingLocalAssets"])
+        self.assertIn(module.REAL_MODEL_ASSET_MANIFEST_PATHS[0], report["missingLocalAssets"])
         self.assertIn("models/translation/opus-mt-fr-en/manifest.json", report["missingLocalAssets"])
         self.assertIn("Cache or provide", report["action"])
 

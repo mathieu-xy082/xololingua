@@ -102,7 +102,9 @@ function createBootstrapEnvironment({ cachedUrls = [], fetchFailures = new Set()
 }
 
 test("inspectBrowserModelAssetCache reads the real Cache API and reports cached versioned URLs", async () => {
-  const cachedUrl = "models/asr/whisper-tiny/manifest.json?v=browser-model-assets-v1";
+  const cachedUrl = buildModelAssetCacheUrls(BROWSER_MODEL_ASSET_MANIFEST)
+    .find((url) => url.includes("/asr/"));
+  assert.ok(cachedUrl);
   const environment = createBootstrapEnvironment({ cachedUrls: [cachedUrl] });
 
   const result = await inspectBrowserModelAssetCache({
@@ -232,7 +234,9 @@ test("bootstrapBrowserModelAssets downloads only missing versioned model assets 
 });
 
 test("bootstrapBrowserModelAssets keeps Python fallback metadata retryable when an asset download fails", async () => {
-  const failingUrl = "models/asr/whisper-tiny/manifest.json?v=browser-model-assets-v1";
+  const failingUrl = buildModelAssetCacheUrls(BROWSER_MODEL_ASSET_MANIFEST)
+    .find((url) => url.includes("/asr/"));
+  assert.ok(failingUrl);
   const cachedUrls = buildModelAssetCacheUrls(BROWSER_MODEL_ASSET_MANIFEST).filter((url) => url !== failingUrl);
   const environment = createBootstrapEnvironment({ cachedUrls, fetchFailures: new Set([failingUrl]) });
   const events = [];

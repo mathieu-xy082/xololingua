@@ -1,6 +1,6 @@
 import { env, pipeline } from "../node_modules/@huggingface/transformers/dist/transformers.min.js";
 
-const DEFAULT_MODEL_ID = "Xenova/whisper-tiny";
+const DEFAULT_MODEL_ID = "Xenova/whisper-small";
 const DEFAULT_SAMPLE_RATE = 16_000;
 
 // Browser real-model mode must be explicit/local. The bootstrap workflow is

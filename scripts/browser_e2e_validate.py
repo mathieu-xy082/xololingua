@@ -43,7 +43,7 @@ DEFAULT_DOWNLOAD_DIR = Path(
     )
 )
 REAL_MODEL_ASSET_MANIFEST_PATHS = (
-    "models/asr/whisper-tiny/manifest.json",
+    "models/asr/whisper-small/manifest.json",
     "models/translation/opus-mt-fr-en/manifest.json",
 )
 
@@ -456,7 +456,9 @@ def run_backend_reference(args: argparse.Namespace) -> dict:
         }
     finally:
         with suppress(Exception):
-            post_json(args.service_url, "/api/release-audio", {"audioId": audio_id}, timeout=30.0)
+            # Keep backend-reference cleanup bounded so a slow release endpoint cannot
+            # consume the browser real-model subtitle timeout window.
+            post_json(args.service_url, "/api/release-audio", {"audioId": audio_id}, timeout=3.0)
 
 
 def write_backend_reference_artifact(args: argparse.Namespace, backend_reference: dict) -> Path:

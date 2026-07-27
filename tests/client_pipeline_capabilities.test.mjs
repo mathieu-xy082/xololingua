@@ -241,7 +241,7 @@ test("collectClientPipelineCapabilitiesWithModelAssetBootstrap uses the real bro
         openedCaches.push(cacheName);
         return {
           async match(url) {
-            return url.includes("whisper-tiny") ? { ok: true, url } : undefined;
+            return versionedStageUrls("transcription").includes(url) ? { ok: true, url } : undefined;
           },
         };
       },
