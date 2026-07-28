@@ -2,10 +2,99 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  BACKEND_COMPATIBLE_VAD_PROFILE,
+  DEFAULT_VAD_FRAME_PROCESSOR_OPTIONS,
   configureOrtWasmPaths,
   createVadWebRuntimeSegmenter,
   detectVadWebRuntimeCapabilities,
+  resolveVadWebProfile,
 } from "../frontend/vad_web_runtime.js";
+
+test("createVadWebRuntimeSegmenter passes explicit default VAD frame processor options and reports profile diagnostics", async () => {
+  let receivedOptions;
+  const audioBlob = new Blob([new Uint8Array([1, 2, 3])], { type: "audio/wav" });
+  const pcm = new Float32Array(32000);
+  const environment = {
+    vad: {
+      utils: {
+        audioFileToArray: async () => ({ audio: pcm, sampleRate: 16000 }),
+      },
+      NonRealTimeVAD: {
+        new: async (options) => {
+          receivedOptions = options;
+          options.ortConfig(environment.ort);
+          return {
+            async *run() {
+              yield { start: 0, end: 1 };
+            },
+          };
+        },
+      },
+    },
+    ort: { env: { wasm: {} } },
+  };
+
+  const segmenter = createVadWebRuntimeSegmenter({ environment });
+  const result = await segmenter({ audioBlob, audioFileName: "browser.wav" });
+
+  assert.deepEqual(pickVadFrameProcessorOptions(receivedOptions), DEFAULT_VAD_FRAME_PROCESSOR_OPTIONS);
+  assert.equal(result.diagnostics.vadProfile, "vad-web-default");
+  assert.deepEqual(result.diagnostics.vadOptions, DEFAULT_VAD_FRAME_PROCESSOR_OPTIONS);
+});
+
+test("createVadWebRuntimeSegmenter supports a backend-compatible VAD profile", async () => {
+  let receivedOptions;
+  const audioBlob = new Blob([new Uint8Array([1, 2, 3])], { type: "audio/wav" });
+  const pcm = new Float32Array(32000);
+  const environment = {
+    vad: {
+      utils: {
+        audioFileToArray: async () => ({ audio: pcm, sampleRate: 16000 }),
+      },
+      NonRealTimeVAD: {
+        new: async (options) => {
+          receivedOptions = options;
+          options.ortConfig(environment.ort);
+          return {
+            async *run() {
+              yield { start: 0, end: 1 };
+            },
+          };
+        },
+      },
+    },
+    ort: { env: { wasm: {} } },
+  };
+
+  const segmenter = createVadWebRuntimeSegmenter({
+    environment,
+    vadProfile: "backend-compatible",
+  });
+  const result = await segmenter({ audioBlob, audioFileName: "browser.wav" });
+
+  assert.deepEqual(pickVadFrameProcessorOptions(receivedOptions), BACKEND_COMPATIBLE_VAD_PROFILE.options);
+  assert.equal(result.diagnostics.vadProfile, "backend-compatible");
+  assert.equal(result.diagnostics.vadProfileDescription, BACKEND_COMPATIBLE_VAD_PROFILE.description);
+  assert.deepEqual(result.diagnostics.vadOptions, BACKEND_COMPATIBLE_VAD_PROFILE.options);
+});
+
+test("resolveVadWebProfile rejects unknown profile names", () => {
+  assert.throws(
+    () => resolveVadWebProfile("does-not-exist"),
+    /Unknown browser VAD profile/,
+  );
+});
+
+function pickVadFrameProcessorOptions(options) {
+  return {
+    positiveSpeechThreshold: options.positiveSpeechThreshold,
+    negativeSpeechThreshold: options.negativeSpeechThreshold,
+    preSpeechPadMs: options.preSpeechPadMs,
+    redemptionMs: options.redemptionMs,
+    minSpeechMs: options.minSpeechMs,
+    submitUserSpeechOnPause: options.submitUserSpeechOnPause,
+  };
+}
 
 test("detectVadWebRuntimeCapabilities requires vad-web NonRealTimeVAD, audio decoding utils, and ORT wasm env", () => {
   assert.deepEqual(detectVadWebRuntimeCapabilities({}), {
@@ -99,6 +188,9 @@ test("createVadWebRuntimeSegmenter decodes browser WAV blobs and runs NonRealTim
       boundedSegmentCount: 2,
       sourceSampleRate: 16000,
       strategy: "vad-web",
+      vadOptions: DEFAULT_VAD_FRAME_PROCESSOR_OPTIONS,
+      vadProfile: "vad-web-default",
+      vadProfileDescription: "vad-web Silero defaults from @ricky0123/vad-web.",
     },
     model: "silero-vad-legacy",
     frameDurationMs: 96,

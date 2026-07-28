@@ -53,16 +53,42 @@ test("app uses the canonical SRT formatting stage output for downloads and repor
   assert.doesNotMatch(appSource, /const srt = await generateSrtAdapter\(/);
 });
 
-test("app configures browser VAD segmentation adapter when browser VAD is available", () => {
+test("app configures browser VAD segmentation adapter with the backend-compatible profile", () => {
   assert.match(appSource, /createClientAudioExtractor/);
   assert.match(appSource, /createClientVadSegmenter/);
   assert.match(appSource, /clientAudioExtractor:/);
   assert.match(appSource, /clientVadSegmenter:/);
   assert.match(appSource, /XOLOLINGUA_CLIENT_VAD_SEGMENTER/);
+  assert.match(appSource, /createVadWebRuntimeSegmenter\(\{\s*vadProfile:\s*["']backend-compatible["'],?\s*\}\)/);
 });
 
 test("app configures local ffmpeg wasm audio extraction instead of relying on WebCodecs-only detection", () => {
   assert.match(appSource, /createAppFfmpegWasmAudioExtractor/);
   assert.match(appSource, /ffmpegWasmExtractor:\s*createAppFfmpegWasmAudioExtractor\(\)/);
   assert.match(appSource, /globalThis\.XOLOLINGUA_CLIENT_AUDIO_EXTRACTOR \|\| createClientAudioExtractor\(\{/);
+});
+
+test("app configures a local browser ASR transcriber worker with manifest warmup timeout", () => {
+  assert.match(appSource, /import\s+\{\s*createClientTranscriber\s*\}\s+from\s+["']\.\/frontend\/client_transcriber\.js["']/);
+  assert.match(appSource, /globalThis\.XOLOLINGUA_CLIENT_TRANSCRIBER\s*\|\|\s*createClientTranscriber\(\{/);
+  assert.match(appSource, /workerUrl:\s*["']frontend\/transcription_worker\.js["']/);
+  assert.match(appSource, /warmupTimeoutMs:\s*BROWSER_MODEL_ASSET_MANIFEST\.models\.transcription\.warmup\.timeoutMs/);
+  assert.match(appSource, /maxWorkerResponseMs:\s*BROWSER_MODEL_ASSET_MANIFEST\.timeouts\.asrInferencePerSegmentMs/);
+});
+
+test("app configures a local browser translation worker with manifest warmup timeout", () => {
+  assert.match(appSource, /import\s+\{\s*createClientTranslator\s*\}\s+from\s+["']\.\/frontend\/client_translator\.js["']/);
+  assert.match(appSource, /globalThis\.XOLOLINGUA_CLIENT_TRANSLATOR\s*\|\|\s*createClientTranslator\(\{/);
+  assert.match(appSource, /workerUrl:\s*["']frontend\/translation_worker\.js["']/);
+  assert.match(appSource, /modelId:\s*BROWSER_MODEL_ASSET_MANIFEST\.models\.translation\.modelId/);
+  assert.match(appSource, /warmupTimeoutMs:\s*BROWSER_MODEL_ASSET_MANIFEST\.models\.translation\.warmup\.timeoutMs/);
+  assert.match(appSource, /warmupSampleText:\s*BROWSER_MODEL_ASSET_MANIFEST\.models\.translation\.warmup\.sampleText/);
+  assert.match(appSource, /maxWorkerResponseMs:\s*BROWSER_MODEL_ASSET_MANIFEST\.timeouts\.translationInferencePerBatchMs/);
+});
+
+test("app renders browser model bootstrap details in the PWA capability summary", () => {
+  assert.match(appSource, /collectClientPipelineCapabilitiesWithModelAssetBootstrap/);
+  assert.match(appSource, /await collectClientPipelineCapabilitiesWithModelAssetBootstrap\(\)/);
+  assert.match(appSource, /summary\.stageRows\.find\(\(row\) => row\.stage === fallback\.stage\)/);
+  assert.match(appSource, /stageRow\?\.modelAssetBootstrapLabel/);
 });

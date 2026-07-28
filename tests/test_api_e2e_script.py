@@ -29,7 +29,7 @@ class ApiE2EScriptTests(unittest.TestCase):
 
     def test_pdm_script_runs_api_e2e_validator(self):
         pyproject = PYPROJECT.read_text(encoding="utf-8")
-        self.assertIn('api-e2e = "python scripts/api_e2e_validate.py"', pyproject)
+        self.assertIn('api-e2e = "python scripts/api_e2e_validate.py --target en"', pyproject)
 
     def test_api_e2e_default_artifact_dir_is_outside_repository(self):
         import importlib.util

@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
+import { buildModelAssetCacheUrls } from "../frontend/model_asset_manifest.js";
+
 const appSource = await readFile(new URL("../app.js", import.meta.url), "utf8");
 const indexSource = await readFile(new URL("../index.html", import.meta.url), "utf8");
 const serviceWorkerSource = await readFile(new URL("../sw.js", import.meta.url), "utf8");
@@ -45,7 +47,8 @@ test("service worker precaches the full frontend module graph used by offline as
     ...appSource.matchAll(/import\s+[^;]+from\s+["']\.\/(frontend\/[^"']+)["']/g),
     ...appHybridRouterWiringSource.matchAll(/import\s+[^;]+from\s+["']\.\/(client_pipeline_router\.js)["']/g),
     ...clientPipelineRouterSource.matchAll(/import\s+[^;]+from\s+["']\.\/(pipeline_stage_contract\.js)["']/g),
-    ...clientPipelineCapabilitiesSource.matchAll(/import\s+[^;]+from\s+["']\.\/(client_[^"']+\.js)["']/g),
+    ...clientPipelineCapabilitiesSource.matchAll(/import\s+[^;]+from\s+["']\.\/((?:client_|model_asset_)[^"']+\.js)["']/g),
+    ...appSource.matchAll(/workerUrl:\s*["'](frontend\/[^"']+\.js)["']/g),
   ]
     .map((match) => match[1].startsWith("frontend/") ? match[1] : `frontend/${match[1]}`));
   const cachedAssets = new Set(
@@ -59,7 +62,7 @@ test("service worker precaches the full frontend module graph used by offline as
 test("PWA shell starts from the hybrid pipeline router wiring contract", () => {
   assert.match(
     appSource,
-    /import\s+\{\s*collectClientPipelineCapabilities\s*\}\s+from\s+["']\.\/frontend\/client_pipeline_capabilities\.js["']/,
+    /import\s+\{[^}]*collectClientPipelineCapabilities[^}]*collectClientPipelineCapabilitiesWithModelAssetBootstrap[^}]*\}\s+from\s+["']\.\/frontend\/client_pipeline_capabilities\.js["']/s,
   );
   assert.match(
     appSource,
@@ -70,6 +73,72 @@ test("PWA shell starts from the hybrid pipeline router wiring contract", () => {
     appHybridRouterWiringSource,
     /import\s+\{\s*createHybridPipelineRouter\s*\}\s+from\s+["']\.\/client_pipeline_router\.js["']/,
   );
+});
+
+test("PWA shell precaches the browser model asset manifest resolver", () => {
+  assert.match(clientPipelineCapabilitiesSource, /\.\/model_asset_manifest\.js/);
+  assert.match(serviceWorkerSource, /frontend\/model_asset_manifest\.js/);
+});
+
+test("PWA shell precaches the local ASR transcription worker", () => {
+  assert.match(appSource, /frontend\/transcription_worker\.js/);
+  assert.match(serviceWorkerSource, /frontend\/transcription_worker\.js/);
+});
+
+test("PWA shell precaches the local translation worker", () => {
+  assert.match(appSource, /frontend\/translation_worker\.js/);
+  assert.match(serviceWorkerSource, /frontend\/translation_worker\.js/);
+});
+
+test("service worker tracks versioned browser model bootstrap URLs without shell precaching them", () => {
+  const modelUrls = buildModelAssetCacheUrls();
+  const assetListSource = serviceWorkerSource.match(/const ASSETS = \[([\s\S]*?)\];/)?.[1] || "";
+
+  assert.ok(modelUrls.length >= 2);
+  for (const url of modelUrls) {
+    assert.match(serviceWorkerSource, new RegExp(escapeRegExp(url)));
+    assert.doesNotMatch(assetListSource, new RegExp(escapeRegExp(url)));
+  }
+  assert.match(serviceWorkerSource, /MODEL_ASSET_BOOTSTRAP_URLS/);
+  assert.match(serviceWorkerSource, /url\.pathname\.includes\("\/models\/"\)/);
+});
+
+test("service worker stores browser model bootstrap responses in the resolver cache namespace", () => {
+  assert.match(
+    serviceWorkerSource,
+    /MODEL_ASSET_CACHE_NAME\s*=\s*["']xololingua-model-assets-browser-model-assets-v1["']/,
+  );
+  assert.match(
+    serviceWorkerSource,
+    /caches\.open\(MODEL_ASSET_CACHE_NAME\)\.then\(\(cache\) => cache\.put\(request, copy\)\)/,
+  );
+  assert.doesNotMatch(
+    serviceWorkerSource,
+    /caches\.open\(CACHE_NAME\)\.then\(\(cache\) => cache\.put\(request, copy\)\)/,
+  );
+});
+
+test("service worker only stores successful browser model asset responses", () => {
+  assert.match(serviceWorkerSource, /if \(!response\.ok\) \{\s*return response;\s*\}/s);
+  assert.match(serviceWorkerSource, /const copy = response\.clone\(\);\s*caches\.open\(MODEL_ASSET_CACHE_NAME\)\.then\(\(cache\) => cache\.put\(request, copy\)\);/s);
+});
+
+test("PWA shell exposes a user-triggered model asset bootstrap and retry panel", () => {
+  assert.match(indexSource, /id=["']modelBootstrapPanel["']/);
+  assert.match(indexSource, /id=["']modelBootstrapStatus["']/);
+  assert.match(indexSource, /id=["']modelBootstrapProgressText["']/);
+  assert.match(indexSource, /id=["']modelBootstrapProgressBar["']/);
+  assert.match(indexSource, /id=["']modelBootstrapButton["']/);
+  assert.match(appSource, /bootstrapBrowserModelAssets/);
+  assert.match(appSource, /modelBootstrapButton\.addEventListener\("click", bootstrapModelAssets\)/);
+  assert.match(appSource, /renderModelBootstrapPanel\(clientPipelineCapabilities\.modelAssetBootstrap\)/);
+});
+
+test("service worker responds to explicit model asset bootstrap messages with retryable completion status", () => {
+  assert.match(serviceWorkerSource, /self\.addEventListener\("message"/);
+  assert.match(serviceWorkerSource, /BOOTSTRAP_MODEL_ASSETS/);
+  assert.match(serviceWorkerSource, /MODEL_ASSET_BOOTSTRAP_COMPLETE/);
+  assert.match(serviceWorkerSource, /cacheModelAssetRequest\(new Request\(url\)\)/);
 });
 
 test("PWA shell loads ffmpeg wasm browser assets before the module app starts", () => {
@@ -112,3 +181,7 @@ test("PWA asset cache version changes with the app shell version", () => {
   assert.match(serviceWorkerSource, new RegExp(`app\\.js\\?v=${appAssetVersion}`));
   assert.match(serviceWorkerSource, new RegExp(`styles\\.css\\?v=${appAssetVersion}`));
 });
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}

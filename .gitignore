@@ -9,3 +9,5 @@ tmp/
 .DS_Store
 node_modules/
 .hermes/
+.models/
+models/Xenova/

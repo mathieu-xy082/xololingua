@@ -1,0 +1,98 @@
+{
+  "assets": [
+    {
+      "bytes": 2082,
+      "name": "added_tokens",
+      "required": true,
+      "sha256": "ce949fe720c14311cb6c446e69cfe340dc669d7b006077a6feed6ae571dd7e88",
+      "url": "models/Xenova/whisper-tiny/added_tokens.json"
+    },
+    {
+      "bytes": 2248,
+      "name": "config",
+      "required": true,
+      "sha256": "2b2e4e519084e0ea028b19b153f95202735a971870d6844aa26e559edd292e94",
+      "url": "models/Xenova/whisper-tiny/config.json"
+    },
+    {
+      "bytes": 3716,
+      "name": "generation_config",
+      "required": true,
+      "sha256": "68ac791fcb4999461a313472125042934656240ba1cba7d1c2627fcbb19ac24c",
+      "url": "models/Xenova/whisper-tiny/generation_config.json"
+    },
+    {
+      "bytes": 493869,
+      "name": "merges",
+      "required": true,
+      "sha256": "2df2990a395e35e8dfbc7511e08c12d56018d8d04691e0133e5d63b21e154dc6",
+      "url": "models/Xenova/whisper-tiny/merges.txt"
+    },
+    {
+      "bytes": 52666,
+      "name": "normalizer",
+      "required": true,
+      "sha256": "bf1c507dc8724ca9cf9903640dacfb69dae2f00edee4f21ceba106a7392f26dd",
+      "url": "models/Xenova/whisper-tiny/normalizer.json"
+    },
+    {
+      "bytes": 86739474,
+      "name": "decoder_model_merged_q4",
+      "required": true,
+      "sha256": "462a65ea8459402cded5e6f22a378ac410ec7e0aad9367ebb08431906c237660",
+      "url": "models/Xenova/whisper-tiny/onnx/decoder_model_merged_q4.onnx"
+    },
+    {
+      "bytes": 9006044,
+      "name": "encoder_model_q4",
+      "required": true,
+      "sha256": "f895af36f57fec9cbeac8d29a982ae47b2e81e461d98320fbd30c47d01a6a13f",
+      "url": "models/Xenova/whisper-tiny/onnx/encoder_model_q4.onnx"
+    },
+    {
+      "bytes": 339,
+      "name": "preprocessor_config",
+      "required": true,
+      "sha256": "a6a76d28c93edb273669eb9e0b0636a2bddbb1272c3261e47b7ca6dfdbac1b8d",
+      "url": "models/Xenova/whisper-tiny/preprocessor_config.json"
+    },
+    {
+      "bytes": 2840,
+      "name": "quantize_config",
+      "required": true,
+      "sha256": "5be0072d627cc8094c2051c38629aed10a509844f562de6d17277756ff0a602c",
+      "url": "models/Xenova/whisper-tiny/quantize_config.json"
+    },
+    {
+      "bytes": 2194,
+      "name": "special_tokens_map",
+      "required": true,
+      "sha256": "e67ae3a0aaa99abcd9f187138e12db1f65c16a14761c50ef10eef2c174a7a691",
+      "url": "models/Xenova/whisper-tiny/special_tokens_map.json"
+    },
+    {
+      "bytes": 2480466,
+      "name": "tokenizer",
+      "required": true,
+      "sha256": "27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566",
+      "url": "models/Xenova/whisper-tiny/tokenizer.json"
+    },
+    {
+      "bytes": 282683,
+      "name": "tokenizer_config",
+      "required": true,
+      "sha256": "2a4c4281cf9f51ac6ccc406fdc711a087afe6530f671fa7b80953edc498275ce",
+      "url": "models/Xenova/whisper-tiny/tokenizer_config.json"
+    },
+    {
+      "bytes": 1036584,
+      "name": "vocab",
+      "required": true,
+      "sha256": "50d6a919f0a0601d56a04eb583c780d18553aa388254ba3158eb6a00f13e2c1a",
+      "url": "models/Xenova/whisper-tiny/vocab.json"
+    }
+  ],
+  "localModelPath": "models/",
+  "modelId": "Xenova/whisper-tiny",
+  "stage": "transcription"
+}

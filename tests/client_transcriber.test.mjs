@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   createClientTranscriber,
@@ -18,6 +19,30 @@ test("detectClientTranscriptionCapabilities reports transformers.js worker readi
     webGpu: true,
     strategy: "transformers.js",
   });
+});
+
+test("detectClientTranscriptionCapabilities treats a module worker as the local ASR runtime boundary", () => {
+  const capabilities = detectClientTranscriptionCapabilities({
+    Worker: function Worker() {},
+    navigator: {},
+  });
+
+  assert.deepEqual(capabilities, {
+    transformersJs: true,
+    webGpu: false,
+    strategy: "transformers.js",
+  });
+});
+
+test("transcription worker preserves VAD windows instead of replacing them with Whisper chunks", () => {
+  const workerSource = readFileSync(new URL("../frontend/transcription_worker.js", import.meta.url), "utf-8");
+
+  assert.match(workerSource, /transcribeVadSegments/);
+  assert.match(workerSource, /slicePcmForSegment/);
+  assert.match(workerSource, /segments\.map\(async|for \(const .*segments/);
+  assert.match(workerSource, /start:\s*Number\(segment\.start/);
+  assert.match(workerSource, /end:\s*Number\(segment\.end/);
+  assert.doesNotMatch(workerSource, /chunks\.length > 0\s*\?\s*chunks\.map/);
 });
 
 test("client transcriber delegates PCM audio to an injected transformers.js worker", async () => {
@@ -133,6 +158,121 @@ test("client transcriber runs transcription through a configured Web Worker boun
     language: "fr",
     segments: [{ index: 7, start: 0, end: 1, text: "Salut" }],
   });
+});
+
+test("client transcriber warms the ASR worker before transcription and reports warmup metadata", async () => {
+  const workerInstances = [];
+  class WarmupWorker {
+    constructor(url, options) {
+      this.url = url;
+      this.options = options;
+      this.messages = [];
+      this.terminated = false;
+      workerInstances.push(this);
+    }
+
+    postMessage(message) {
+      this.messages.push(message);
+      if (message.type === "warmup") {
+        queueMicrotask(() => {
+          this.onmessage({ data: { type: "progress", event: { stage: "asr-warmup", progress: 50 } } });
+          this.onmessage({ data: { type: "warmup-complete", metadata: { modelId: "Xenova/whisper-tiny", warmed: true } } });
+        });
+        return;
+      }
+      queueMicrotask(() => {
+        this.onmessage({
+          data: {
+            type: "result",
+            result: {
+              language: "fr",
+              segments: [{ index: 1, start: 0, end: 1, text: "Bonjour" }],
+            },
+          },
+        });
+      });
+    }
+
+    terminate() {
+      this.terminated = true;
+    }
+  }
+  const progress = [];
+  const transcriber = createClientTranscriber({
+    environment: { Worker: WarmupWorker },
+    workerUrl: "/frontend/transcription_worker.js",
+    modelId: "Xenova/whisper-tiny",
+    warmupTimeoutMs: 100,
+  });
+
+  const result = await transcriber.transcribeAudio(
+    {
+      audio: { audioId: "audio-123", durationSeconds: 3 },
+      segments: [{ index: 1, start: 0, end: 1 }],
+      sourceLanguage: "fr",
+    },
+    (event) => progress.push(event),
+  );
+
+  assert.equal(workerInstances.length, 2);
+  assert.deepEqual(workerInstances.map((worker) => worker.messages[0]), [
+    { type: "warmup", request: { modelId: "Xenova/whisper-tiny", sampleSeconds: 1, sourceLanguage: "fr" } },
+    {
+      type: "transcribe",
+      request: {
+        audio: { audioId: "audio-123", durationSeconds: 3 },
+        segments: [{ index: 1, start: 0, end: 1 }],
+        sourceLanguage: "fr",
+        modelId: "Xenova/whisper-tiny",
+      },
+    },
+  ]);
+  assert.equal(workerInstances[0].terminated, true);
+  assert.equal(workerInstances[1].terminated, true);
+  assert.deepEqual(progress, [{ stage: "asr-warmup", progress: 50 }]);
+  assert.deepEqual(result, {
+    strategy: "whisper-transformers.js",
+    language: "fr",
+    segments: [{ index: 1, start: 0, end: 1, text: "Bonjour" }],
+    metadata: {
+      modelId: "Xenova/whisper-tiny",
+      warmup: { modelId: "Xenova/whisper-tiny", warmed: true },
+      warmupTimeoutMs: 100,
+    },
+  });
+});
+
+test("client transcriber fails fast when ASR warmup times out", async () => {
+  const workerInstances = [];
+  class StalledWarmupWorker {
+    constructor() {
+      this.terminated = false;
+      workerInstances.push(this);
+    }
+
+    postMessage() {}
+
+    terminate() {
+      this.terminated = true;
+    }
+  }
+  const transcriber = createClientTranscriber({
+    environment: { Worker: StalledWarmupWorker },
+    workerUrl: "/frontend/transcription_worker.js",
+    modelId: "Xenova/whisper-tiny",
+    warmupTimeoutMs: 1,
+  });
+
+  await assert.rejects(
+    () => transcriber.transcribeAudio({
+      audio: { audioId: "audio-123", durationSeconds: 3 },
+      segments: [],
+      sourceLanguage: "fr",
+    }),
+    /Browser transcription warmup timed out after 1ms\./,
+  );
+  assert.equal(workerInstances.length, 1);
+  assert.equal(workerInstances[0].terminated, true);
 });
 
 test("client transcriber rejects a stalled configured Web Worker with an explicit timeout", async () => {

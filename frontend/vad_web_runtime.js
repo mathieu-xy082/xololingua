@@ -5,6 +5,39 @@ const DEFAULT_FRAME_DURATION_MS = 96;
 const DEFAULT_MAX_SEGMENT_SECONDS = 12;
 const DEFAULT_MIN_SEGMENT_SECONDS = 0.4;
 
+const DEFAULT_VAD_FRAME_PROCESSOR_OPTIONS = Object.freeze({
+  positiveSpeechThreshold: 0.3,
+  negativeSpeechThreshold: 0.25,
+  preSpeechPadMs: 800,
+  redemptionMs: 1400,
+  minSpeechMs: 400,
+  submitUserSpeechOnPause: false,
+});
+
+const DEFAULT_VAD_PROFILE = Object.freeze({
+  name: "vad-web-default",
+  description: "vad-web Silero defaults from @ricky0123/vad-web.",
+  options: DEFAULT_VAD_FRAME_PROCESSOR_OPTIONS,
+});
+
+const BACKEND_COMPATIBLE_VAD_PROFILE = Object.freeze({
+  name: "backend-compatible",
+  description: "Conservative Silero VAD profile intended to avoid fragmenting short pauses before the 12s backend-style max segment split.",
+  options: Object.freeze({
+    ...DEFAULT_VAD_FRAME_PROCESSOR_OPTIONS,
+    positiveSpeechThreshold: 0.35,
+    negativeSpeechThreshold: 0.2,
+    preSpeechPadMs: 450,
+    redemptionMs: 1800,
+    minSpeechMs: 400,
+  }),
+});
+
+const VAD_WEB_PROFILES = Object.freeze({
+  [DEFAULT_VAD_PROFILE.name]: DEFAULT_VAD_PROFILE,
+  [BACKEND_COMPATIBLE_VAD_PROFILE.name]: BACKEND_COMPATIBLE_VAD_PROFILE,
+});
+
 export function detectVadWebRuntimeCapabilities(environment = globalThis) {
   const missing = [];
   if (typeof environment?.vad?.NonRealTimeVAD?.new !== "function") {
@@ -22,6 +55,22 @@ export function detectVadWebRuntimeCapabilities(environment = globalThis) {
     strategy: missing.length === 0 ? "vad-web" : "unavailable",
     missing,
   };
+}
+
+export function resolveVadWebProfile(profile = DEFAULT_VAD_PROFILE.name) {
+  if (profile && typeof profile === "object") {
+    const options = profile.options && typeof profile.options === "object" ? profile.options : profile;
+    return Object.freeze({
+      name: profile.name || "custom",
+      description: profile.description || "Custom browser VAD frame processor options.",
+      options: Object.freeze({ ...DEFAULT_VAD_FRAME_PROCESSOR_OPTIONS, ...options }),
+    });
+  }
+  const resolved = VAD_WEB_PROFILES[profile || DEFAULT_VAD_PROFILE.name];
+  if (!resolved) {
+    throw new Error(`Unknown browser VAD profile: ${profile}`);
+  }
+  return resolved;
 }
 
 export function configureOrtWasmPaths(
@@ -47,7 +96,9 @@ export function createVadWebRuntimeSegmenter({
   frameDurationMs = DEFAULT_FRAME_DURATION_MS,
   maxSegmentSeconds = DEFAULT_MAX_SEGMENT_SECONDS,
   minSegmentSeconds = DEFAULT_MIN_SEGMENT_SECONDS,
+  vadProfile = DEFAULT_VAD_PROFILE.name,
 } = {}) {
+  const resolvedVadProfile = resolveVadWebProfile(vadProfile);
   return async function segmentWithVadWeb(audio, onProgress = () => {}) {
     const capabilities = detectVadWebRuntimeCapabilities(environment);
     if (!capabilities.vadWeb) {
@@ -76,6 +127,7 @@ export function createVadWebRuntimeSegmenter({
     onProgress(15);
     const vad = await environment.vad.NonRealTimeVAD.new({
       modelURL,
+      ...resolvedVadProfile.options,
       ortConfig: (ort) => {
         configureOrtWasmPaths({ ort }, ortWasmBasePath);
       },
@@ -115,6 +167,9 @@ export function createVadWebRuntimeSegmenter({
         boundedSegmentCount: boundedSegments.length,
         sourceSampleRate,
         strategy: "vad-web",
+        vadOptions: resolvedVadProfile.options,
+        vadProfile: resolvedVadProfile.name,
+        vadProfileDescription: resolvedVadProfile.description,
       },
       model,
       frameDurationMs,
@@ -172,10 +227,14 @@ function splitLongSegments(segments, maxSegmentSeconds, minSegmentSeconds) {
 }
 
 export {
+  BACKEND_COMPATIBLE_VAD_PROFILE,
   DEFAULT_FRAME_DURATION_MS,
   DEFAULT_MAX_SEGMENT_SECONDS,
   DEFAULT_MIN_SEGMENT_SECONDS,
   DEFAULT_ORT_WASM_BASE_PATH,
+  DEFAULT_VAD_FRAME_PROCESSOR_OPTIONS,
   DEFAULT_VAD_MODEL,
   DEFAULT_VAD_MODEL_URL,
+  DEFAULT_VAD_PROFILE,
+  VAD_WEB_PROFILES,
 };

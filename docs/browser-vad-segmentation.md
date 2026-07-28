@@ -49,6 +49,28 @@ Runtime examples:
 - `browser` for a successful browser VAD implementation.
 - `python-fallback` or `server-fallback` for Python service segmentation.
 
+## Current browser VAD configuration
+
+The browser runtime uses `@ricky0123/vad-web` / Silero ONNX through `vad.NonRealTimeVAD`.
+
+Two named profiles are defined in `frontend/vad_web_runtime.js`:
+
+| Profile | Purpose | Key values |
+|---|---|---|
+| `vad-web-default` | Explicit copy of upstream vad-web defaults for comparison/debugging. | `positiveSpeechThreshold=0.3`, `negativeSpeechThreshold=0.25`, `preSpeechPadMs=800`, `redemptionMs=1400`, `minSpeechMs=400` |
+| `backend-compatible` | Conservative profile used by the app-level client VAD fallback to reduce short-pause fragmentation before the shared 12s max split. | `positiveSpeechThreshold=0.35`, `negativeSpeechThreshold=0.2`, `preSpeechPadMs=450`, `redemptionMs=1800`, `minSpeechMs=400` |
+
+The Python backend still uses FFmpeg silence detection rather than Silero VAD:
+
+```python
+SILENCE_NOISE = "-35dB"
+SILENCE_DURATION_SECONDS = 0.45
+MAX_SEGMENT_SECONDS = 12.0
+MIN_SEGMENT_SECONDS = 0.4
+```
+
+Exact browser/backend block equality is not expected. The browser E2E comparison should keep hard gates on runtime and temporal coverage, while reporting segmentation-quality diagnostics such as block ratio, median cue duration, and p90 cue duration.
+
 ## Acceptance criteria
 
 - Use strict TDD for any production behavior change.

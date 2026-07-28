@@ -128,13 +128,15 @@ export function createHybridPipelineRouter({
         serverAdapters,
       });
       onStageComplete(createUserStageReportRow("audioExtraction", audioExtraction));
-      const audioId = audioExtraction.payload?.audioId || audioExtraction.payload;
+      const extractedAudio = audioExtraction.payload;
+      const audioId = typeof extractedAudio === "string" ? extractedAudio : extractedAudio?.audioId || null;
+      const audioForPipeline = audioId || extractedAudio;
 
       const vad = await runStage({
         stageName: "vad",
         browserAdapterLabel: "Browser VAD segmentation",
         serverAdapterLabel: "Python fallback VAD segmentation",
-        input: audioId,
+        input: audioForPipeline,
         onProgress: onVadProgress,
         capabilityReport,
         clientAdapters,
@@ -146,7 +148,7 @@ export function createHybridPipelineRouter({
         stageName: "transcription",
         browserAdapterLabel: "Browser transcription",
         serverAdapterLabel: "Python fallback transcription",
-        input: { audioId, sourceLanguage, segments: extractVadSegments(vad) },
+        input: { audioId, audio: extractedAudio, sourceLanguage, segments: extractVadSegments(vad) },
         onProgress: onTranscriptionProgress,
         capabilityReport,
         clientAdapters,
