@@ -8,7 +8,7 @@ export const BROWSER_MODEL_ASSET_MANIFEST = Object.freeze({
     runtimeInitMs: 120_000,
     asrWarmupMs: 120_000,
     translationWarmupMs: 180_000,
-    asrInferencePerSegmentMs: 900_000,
+    asrInferencePerSegmentMs: 300_000,
     translationInferencePerBatchMs: 120_000,
     e2eRealModelsMs: 1_800_000,
   }),
@@ -17,7 +17,7 @@ export const BROWSER_MODEL_ASSET_MANIFEST = Object.freeze({
       stage: "transcription",
       provider: "transformers.js",
       strategy: "whisper-transformers.js",
-      modelId: "Xenova/whisper-small",
+      modelId: "Xenova/whisper-base",
       license: "MIT model card / OpenAI Whisper lineage; verify before shipping weights",
       sourceLanguages: Object.freeze(["auto", "fr"]),
       runtimeRequirements: Object.freeze({
@@ -32,123 +32,123 @@ export const BROWSER_MODEL_ASSET_MANIFEST = Object.freeze({
       assets: Object.freeze([
       Object.freeze({
         name: "asr-manifest",
-        url: "models/asr/whisper-small/manifest.json",
-        bytes: 3961,
-        sha256: "f89a7501b6a2724bd8555de8b1e9fc33982c0337ad4c64fc5a96cfc31605e168",
+        url: "models/asr/whisper-base/manifest.json",
+        bytes: 3944,
+        sha256: "9e368a9fa912bd8b252b5f9b9fe960473cc48131d87c35eda31edfe964fe4927",
         required: true
       }),
       Object.freeze({
         name: "added_tokens",
-        url: "models/Xenova/whisper-small/added_tokens.json",
+        url: "models/Xenova/whisper-base/added_tokens.json",
         bytes: 2082,
         sha256: "ce949fe720c14311cb6c446e69cfe340dc669d7b006077a6feed6ae571dd7e88",
         required: true
       }),
       Object.freeze({
         name: "config",
-        url: "models/Xenova/whisper-small/config.json",
-        bytes: 2232,
-        sha256: "5a6429d21d7a3379dd0861b74510f9f7076f32b563bffc9fcb072482d55ab3be",
+        url: "models/Xenova/whisper-base/config.json",
+        bytes: 2248,
+        sha256: "d1d347fdb422e6347c2f843a90d375aa67ea3f4b3e20d2c3075f9a9f6243685b",
         required: true
       }),
       Object.freeze({
         name: "generation_config",
-        url: "models/Xenova/whisper-small/generation_config.json",
-        bytes: 3837,
-        sha256: "0b7407a4e53a677f826e03c75d409e6f830663932bf43dda3b08c5efa2223279",
+        url: "models/Xenova/whisper-base/generation_config.json",
+        bytes: 3776,
+        sha256: "3bba359e33fdd6dc1c10f71846a477d339b0242f462f70ea1dd73274caa38d05",
         required: true
       }),
       Object.freeze({
         name: "merges",
-        url: "models/Xenova/whisper-small/merges.txt",
+        url: "models/Xenova/whisper-base/merges.txt",
         bytes: 493869,
         sha256: "2df2990a395e35e8dfbc7511e08c12d56018d8d04691e0133e5d63b21e154dc6",
         required: true
       }),
       Object.freeze({
         name: "normalizer",
-        url: "models/Xenova/whisper-small/normalizer.json",
+        url: "models/Xenova/whisper-base/normalizer.json",
         bytes: 52666,
         sha256: "bf1c507dc8724ca9cf9903640dacfb69dae2f00edee4f21ceba106a7392f26dd",
         required: true
       }),
       Object.freeze({
         name: "decoder_model_merged_q4",
-        url: "models/Xenova/whisper-small/onnx/decoder_model_merged_q4.onnx",
-        bytes: 233230238,
-        sha256: "7de7841243c9f128780dbd18949bca0c7291866f1435b8dafb577bbf445e973b",
+        url: "models/Xenova/whisper-base/onnx/decoder_model_merged_q4.onnx",
+        bytes: 123641874,
+        sha256: "a68dcdbb6551967030dcbdcef400d6e62b1624234c2e606f75d1d2878aef5def",
         required: true
       }),
       Object.freeze({
         name: "decoder_model_q4",
-        url: "models/Xenova/whisper-small/onnx/decoder_model_q4.onnx",
-        bytes: 232654735,
-        sha256: "3c830ed38b68a7dfd5e403daccd3cc9e2f874766e3822f94ca92b444c7f1d0cf",
+        url: "models/Xenova/whisper-base/onnx/decoder_model_q4.onnx",
+        bytes: 123351490,
+        sha256: "8595a4b52a8996ea8126169c13cde87e0f51d1156884bb467ec56ce26f3c1c55",
         required: true
       }),
       Object.freeze({
         name: "decoder_with_past_model_q4",
-        url: "models/Xenova/whisper-small/onnx/decoder_with_past_model_q4.onnx",
-        bytes: 223784281,
-        sha256: "50a4ad7e1f1ebe3e2b6cbdbd2925b550ac96efc2acc231351fff1e0dda5f308b",
+        url: "models/Xenova/whisper-base/onnx/decoder_with_past_model_q4.onnx",
+        bytes: 121378606,
+        sha256: "c51fa5423a9f0867ecd114f5f6e1878484f7496ad98b98557e4087c485c8b490",
         required: true
       }),
       Object.freeze({
         name: "encoder_model_q4",
-        url: "models/Xenova/whisper-small/onnx/encoder_model_q4.onnx",
-        bytes: 66134815,
-        sha256: "7deb48a1db0bc4fb737fdde0d893c9064c678f4c608f2c5d6ca1af8048d610a1",
+        url: "models/Xenova/whisper-base/onnx/encoder_model_q4.onnx",
+        bytes: 18749674,
+        sha256: "dc0cb2885dc2bc570dc8de8d00987cd20314e5773f3baf968b3219810142d886",
         required: true
       }),
       Object.freeze({
         name: "preprocessor_config",
-        url: "models/Xenova/whisper-small/preprocessor_config.json",
+        url: "models/Xenova/whisper-base/preprocessor_config.json",
         bytes: 339,
         sha256: "a6a76d28c93edb273669eb9e0b0636a2bddbb1272c3261e47b7ca6dfdbac1b8d",
         required: true
       }),
       Object.freeze({
         name: "quant_config",
-        url: "models/Xenova/whisper-small/quant_config.json",
+        url: "models/Xenova/whisper-base/quant_config.json",
         bytes: 2840,
         sha256: "757dc2d96699ce44e209c63c79ee4d41758a4baff39de9c5bc59ad90de454e81",
         required: true
       }),
       Object.freeze({
         name: "quantize_config",
-        url: "models/Xenova/whisper-small/quantize_config.json",
+        url: "models/Xenova/whisper-base/quantize_config.json",
         bytes: 2840,
-        sha256: "8d753d43dd1af715b29f7b471008e5161aca34deaadfa347d109b60a1d474d84",
+        sha256: "15ed182b51e68a3a75c1c00d7b9c5464364cbc09b26e1baa840868c938dbad5f",
         required: true
       }),
       Object.freeze({
         name: "special_tokens_map",
-        url: "models/Xenova/whisper-small/special_tokens_map.json",
+        url: "models/Xenova/whisper-base/special_tokens_map.json",
         bytes: 2194,
         sha256: "e67ae3a0aaa99abcd9f187138e12db1f65c16a14761c50ef10eef2c174a7a691",
         required: true
       }),
       Object.freeze({
         name: "tokenizer",
-        url: "models/Xenova/whisper-small/tokenizer.json",
+        url: "models/Xenova/whisper-base/tokenizer.json",
         bytes: 2480466,
         sha256: "27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566",
         required: true
       }),
       Object.freeze({
         name: "tokenizer_config",
-        url: "models/Xenova/whisper-small/tokenizer_config.json",
+        url: "models/Xenova/whisper-base/tokenizer_config.json",
         bytes: 282683,
         sha256: "2a4c4281cf9f51ac6ccc406fdc711a087afe6530f671fa7b80953edc498275ce",
         required: true
       }),
       Object.freeze({
         name: "vocab",
-        url: "models/Xenova/whisper-small/vocab.json",
+        url: "models/Xenova/whisper-base/vocab.json",
         bytes: 1036584,
         sha256: "50d6a919f0a0601d56a04eb583c780d18553aa388254ba3158eb6a00f13e2c1a",
         required: true
-      }),
+      })
       ]),
     }),
     translation: Object.freeze({

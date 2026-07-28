@@ -43,7 +43,7 @@ DEFAULT_DOWNLOAD_DIR = Path(
     )
 )
 REAL_MODEL_ASSET_MANIFEST_PATHS = (
-    "models/asr/whisper-small/manifest.json",
+    "models/asr/whisper-base/manifest.json",
     "models/translation/opus-mt-fr-en/manifest.json",
 )
 

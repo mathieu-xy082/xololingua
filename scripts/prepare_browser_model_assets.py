@@ -49,13 +49,13 @@ SPECS = (
     ModelSpec(
         stage="transcription",
         asset_prefix="asr",
-        manifest_url="models/asr/whisper-tiny/manifest.json",
-        model_id="Xenova/whisper-tiny",
-        target_subdir="Xenova/whisper-tiny",
+        manifest_url="models/asr/whisper-base/manifest.json",
+        model_id="Xenova/whisper-base",
+        target_subdir="Xenova/whisper-base",
         default_source_env="XOLOLINGUA_ASR_MODEL_SOURCE",
         default_source_candidates=(
-            ROOT / ".models" / "Xenova" / "whisper-tiny",
-            Path.home() / ".cache" / "huggingface" / "hub" / "models--Xenova--whisper-tiny",
+            ROOT / ".models" / "Xenova" / "whisper-base",
+            Path.home() / ".cache" / "huggingface" / "hub" / "models--Xenova--whisper-base",
         ),
     ),
     ModelSpec(
@@ -84,7 +84,7 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--models-root", type=Path, default=DEFAULT_MODELS_ROOT)
     parser.add_argument("--app-manifest", type=Path, default=DEFAULT_APP_MANIFEST)
-    parser.add_argument("--asr-source", type=Path, default=None, help="Local Transformers.js snapshot for Xenova/whisper-tiny.")
+    parser.add_argument("--asr-source", type=Path, default=None, help="Local Transformers.js snapshot for Xenova/whisper-base.")
     parser.add_argument("--translation-source", type=Path, default=None, help="Local Transformers.js snapshot for Xenova/opus-mt-fr-en.")
     parser.add_argument("--copy-mode", choices=["copy", "symlink"], default="copy")
     parser.add_argument("--no-update-app-manifest", action="store_true")

@@ -191,7 +191,7 @@ class BrowserE2EScriptTests(unittest.TestCase):
 
         self.assertIn("window.__xololinguaCachedModelAssetUrls", script)
         self.assertIn(f"{module.REAL_MODEL_ASSET_MANIFEST_PATHS[0]}?v=browser-model-assets-v1", script)
-        self.assertIn("models/Xenova/whisper-small/added_tokens.json?v=browser-model-assets-v1", script)
+        self.assertIn("models/Xenova/whisper-base/added_tokens.json?v=browser-model-assets-v1", script)
         self.assertIn("models/translation/opus-mt-fr-en/manifest.json?v=browser-model-assets-v1", script)
         self.assertIn("models/Xenova/opus-mt-fr-en/config.json?v=browser-model-assets-v1", script)
         self.assertNotIn("models/translation/nllb-fr-en/manifest.json", script)
