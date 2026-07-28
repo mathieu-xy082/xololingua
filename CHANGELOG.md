@@ -2,9 +2,13 @@
 
 All notable changes to XoloLingua will be documented in this file.
 
-The project has not published a first version yet.
+This project follows Semantic Versioning.
 
 ## Unreleased
+
+No changes yet.
+
+## 1.0.0 - 2026-07-28
 
 ### Added
 

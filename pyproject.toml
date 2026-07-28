@@ -1,6 +1,6 @@
 [project]
 name = "xololingua"
-version = "0.1.0"
+version = "1.0.0"
 description = "Local PWA and processing service for preparing translated SRT subtitles from MP4 videos."
 authors = [{ name = "Mathieu Drouin" }]
 dependencies = [
