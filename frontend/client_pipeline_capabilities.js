@@ -80,8 +80,15 @@ export function createClientPipelineCapabilityReport(capabilitiesByStage) {
   }
 
   const mode = serverFallbackStages.length === 0 ? "client-side" : "hybrid-fallback";
-  const offlineAvailability = createOfflineAvailability({ stages, browserStages, serverFallbackStages });
+  const hasExplicitModelAssets = Object.prototype.hasOwnProperty.call(capabilitiesByStage || {}, "modelAssets");
   const modelAssets = capabilitiesByStage?.modelAssets || createBrowserModelAssetReport();
+  const offlineAvailability = createOfflineAvailability({
+    stages,
+    browserStages,
+    serverFallbackStages,
+    modelAssets,
+    hasExplicitModelAssets,
+  });
 
   return {
     mode,
@@ -113,7 +120,7 @@ function applyModelAssetReadiness(capabilities, modelAssets, stageName) {
   };
 }
 
-function createOfflineAvailability({ stages, browserStages, serverFallbackStages }) {
+function createOfflineAvailability({ stages, browserStages, serverFallbackStages, modelAssets, hasExplicitModelAssets }) {
   const onlineRequiredStages = browserStages.filter((stageName) => requiresOnlineService(stages[stageName]));
   const offlineCapableStages = browserStages.filter((stageName) => !onlineRequiredStages.includes(stageName));
   const processing = serverFallbackStages.length === 0
@@ -125,7 +132,9 @@ function createOfflineAvailability({ stages, browserStages, serverFallbackStages
       : "backend-required";
 
   return {
-    assets: "available",
+    assets: hasExplicitModelAssets
+      ? modelAssets?.status || (modelAssets?.totalMissingBytes > 0 ? "bootstrap-required" : "available")
+      : "available",
     processing,
     offlineCapableStages,
     backendRequiredStages: [...serverFallbackStages],
@@ -208,6 +217,18 @@ function formatBytes(bytes) {
 }
 
 function createOfflineScopeLabel(offlineAvailability) {
+  if (offlineAvailability.assets === "unavailable") {
+    return "Model asset storage is unavailable; offline ML processing needs Python fallback until browser storage is available.";
+  }
+  if (offlineAvailability.assets === "bootstrap-required") {
+    const offlineLabels = offlineAvailability.offlineCapableStages
+      .map((stageName) => PIPELINE_STAGE_LABELS[stageName])
+      .join(", ");
+    const stageSuffix = offlineLabels
+      ? ` before full offline ML processing; ${offlineLabels} can run offline after assets are ready`
+      : " before offline ML processing";
+    return `Model assets need bootstrap${stageSuffix}.`;
+  }
   if (offlineAvailability.backendRequiredStages.length === 0) {
     if (offlineAvailability.onlineRequiredStages.length > 0) {
       const offlineLabels = offlineAvailability.offlineCapableStages

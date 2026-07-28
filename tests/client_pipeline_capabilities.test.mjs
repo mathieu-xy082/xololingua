@@ -155,6 +155,28 @@ test("client pipeline report separates offline shell assets from backend-only pr
   );
 });
 
+test("client pipeline report marks model assets as bootstrap-required when ML weights are not cached", () => {
+  const report = createClientPipelineCapabilityReport({
+    audioExtraction: { strategy: "ffmpeg.wasm" },
+    vad: { strategy: "vad-web" },
+    transcription: { strategy: "transformers.js" },
+    translation: { strategy: "local-transformers.js" },
+    modelAssets: {
+      status: "bootstrap-required",
+      offlineReadyStages: ["transcription"],
+      bootstrapRequiredStages: ["translation"],
+      totalMissingBytes: sumAssetBytes("translation"),
+      stageRows: [],
+    },
+  });
+
+  assert.equal(report.offlineAvailability.assets, "bootstrap-required");
+  assert.equal(
+    report.demoSummary.offlineScopeLabel,
+    "Model assets need bootstrap before full offline ML processing; Audio extraction, VAD / segmentation, Transcription, Translation can run offline after assets are ready.",
+  );
+});
+
 test("client pipeline report does not mark browser cloud translation as offline-capable", () => {
   const report = createClientPipelineCapabilityReport({
     audioExtraction: { strategy: "ffmpeg.wasm" },
