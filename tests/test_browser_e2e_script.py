@@ -332,8 +332,8 @@ class BrowserE2EScriptTests(unittest.TestCase):
             "cachedCount": 0,
             "missingCount": 2,
             "missingLocalAssets": [
-                "models/asr/whisper-tiny/manifest.json",
-                "models/translation/nllb-fr-en/manifest.json",
+                module.REAL_MODEL_ASSET_MANIFEST_PATHS[0],
+                module.REAL_MODEL_ASSET_MANIFEST_PATHS[1],
             ],
             "warmup": {"asr": "not-run", "translation": "not-run"},
             "inference": {"asr": "not-run", "translation": "not-run"},
