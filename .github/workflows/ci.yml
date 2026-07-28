@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - "ci/**"
+      - "ec/**"
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PIP_CACHE_DIR: ${{ github.workspace }}/.cache/pip
+  PDM_CACHE_DIR: ${{ github.workspace }}/.cache/pdm
+  PDM_CHECK_UPDATE: "false"
+  PDM_VENV_IN_PROJECT: "1"
+  PDM_VERSION: "2.28.0"
+
+jobs:
+  check:
+    name: Python + frontend checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+
+      - name: Cache PDM and project virtualenv
+        uses: actions/cache@v4
+        with:
+          path: |
+            .cache/pdm
+            .venv
+          key: ${{ runner.os }}-py312-pdm-${{ hashFiles('pyproject.toml', 'pdm.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-py312-pdm-
+
+      - name: Install Python and frontend dependencies
+        run: |
+          python --version
+          python -m pip install --upgrade pip "pdm==$PDM_VERSION"
+          pdm --version
+          node --version
+          npm --version
+          npm ci
+          PDM_IGNORE_ACTIVE_VENV=1 pdm install -G test --frozen-lockfile
+
+      - name: Run checks
+        run: PDM_IGNORE_ACTIVE_VENV=1 pdm run check
