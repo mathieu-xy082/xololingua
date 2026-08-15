@@ -5,6 +5,7 @@ import { createClientTranscriber } from "./frontend/client_transcriber.js";
 import { createClientTranslator } from "./frontend/client_translator.js";
 import { bootstrapBrowserModelAssets } from "./frontend/model_asset_bootstrap.js";
 import { BROWSER_MODEL_ASSET_MANIFEST } from "./frontend/model_asset_manifest.js";
+import { resolveTranscriptionModel, resolveTranslationModel } from "./frontend/dynamic_model_resolver.js";
 import {
   collectClientPipelineCapabilities,
   collectClientPipelineCapabilitiesWithModelAssetBootstrap,
@@ -18,6 +19,7 @@ import { createVadWebRuntimeSegmenter } from "./frontend/vad_web_runtime.js";
 const MAX_DURATION_SECONDS = 2.5 * 60 * 60;
 const SEGMENT_SECONDS = 12;
 const LOCAL_SERVICE_URL = "http://127.0.0.1:8765";
+globalThis.__xololinguaDynamicModels = true;
 const APP_ASSET_VERSION = "2026-07-15-1";
 const backendClient = createBackendClient({ baseUrl: LOCAL_SERVICE_URL });
 let clientPipelineCapabilities = globalThis.__xololinguaCachedModelAssetUrls?.length > 0
@@ -34,6 +36,9 @@ const appClientAdapters = createAppClientAdapters({
   clientTranscriber: globalThis.XOLOLINGUA_CLIENT_TRANSCRIBER || createClientTranscriber({
     workerUrl: "frontend/transcription_worker.js",
     modelId: BROWSER_MODEL_ASSET_MANIFEST.models.transcription.modelId,
+    modelResolver: resolveTranscriptionModel,
+    remoteModels: true,
+    purgeAfterUse: true,
     warmupTimeoutMs: BROWSER_MODEL_ASSET_MANIFEST.models.transcription.warmup.timeoutMs,
     warmupSampleSeconds: BROWSER_MODEL_ASSET_MANIFEST.models.transcription.warmup.sampleSeconds,
     maxDurationSeconds: BROWSER_MODEL_ASSET_MANIFEST.models.transcription.limits.maxAudioSeconds,
@@ -44,6 +49,9 @@ const appClientAdapters = createAppClientAdapters({
   clientTranslator: globalThis.XOLOLINGUA_CLIENT_TRANSLATOR || createClientTranslator({
     workerUrl: "frontend/translation_worker.js",
     modelId: BROWSER_MODEL_ASSET_MANIFEST.models.translation.modelId,
+    modelResolver: resolveTranslationModel,
+    remoteModels: true,
+    purgeAfterUse: true,
     warmupTimeoutMs: BROWSER_MODEL_ASSET_MANIFEST.models.translation.warmup.timeoutMs,
     warmupSampleText: BROWSER_MODEL_ASSET_MANIFEST.models.translation.warmup.sampleText,
     maxSegments: BROWSER_MODEL_ASSET_MANIFEST.models.translation.limits.maxSegments,
@@ -210,6 +218,12 @@ function renderPipelineCapabilitySummary() {
 
 function renderModelBootstrapPanel(modelAssetBootstrap, progressEvent) {
   if (!els.modelBootstrapPanel) return;
+  els.modelBootstrapStatus.textContent = "Models are downloaded automatically for the selected language pair and purged after subtitle generation.";
+  els.modelBootstrapProgressText.textContent = state.busyStep === "subtitle" ? "active" : "on demand";
+  els.modelBootstrapProgressBar.style.width = state.busyStep === "subtitle" ? "50%" : "0%";
+  els.modelBootstrapButton.hidden = true;
+  return;
+
   const status = modelAssetBootstrap?.status || "unavailable";
   const totalBytes = modelAssetBootstrap?.totalRequiredBytes || progressEvent?.totalBytes || 0;
   const missingBytes = modelAssetBootstrap?.totalMissingBytes ?? progressEvent?.remainingBytes ?? totalBytes;

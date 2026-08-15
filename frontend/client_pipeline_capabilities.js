@@ -105,6 +105,13 @@ function applyModelAssetReadiness(capabilities, modelAssets, stageName) {
   if (capabilities?.strategy === "unavailable") {
     return capabilities;
   }
+  if (capabilities?.remoteModels) {
+    return {
+      ...capabilities,
+      modelDelivery: "on-demand",
+      modelRetention: "purge-after-use",
+    };
+  }
   const stageAssetRow = modelAssets.stageRows.find((row) => row.stage === stageName);
   if (!stageAssetRow || stageAssetRow.status === "offline-ready") {
     return capabilities;

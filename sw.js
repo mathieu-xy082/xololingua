@@ -42,6 +42,7 @@ const ASSETS = [
   "frontend/client_pipeline_capabilities.js",
   "frontend/model_asset_bootstrap.js",
   "frontend/model_asset_manifest.js",
+  "frontend/dynamic_model_resolver.js",
   "frontend/client_pipeline_router.js",
   "frontend/pipeline_stage_contract.js",
   "frontend/client_srt_formatter.js",
@@ -93,6 +94,7 @@ self.addEventListener("message", (event) => {
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   const url = new URL(event.request.url);
+  if (url.origin !== self.location.origin) return;
   if (url.pathname.includes("/models/") && isTrackedModelAssetRequest(url)) {
     event.respondWith(cacheModelAssetRequest(event.request));
     return;
