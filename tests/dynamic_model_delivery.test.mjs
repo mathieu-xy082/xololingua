@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import { createClientTranscriber, detectClientTranscriptionCapabilities } from "../frontend/client_transcriber.js";
 import { createClientTranslator, detectClientTranslationCapabilities } from "../frontend/client_translator.js";
@@ -39,7 +41,10 @@ test("dynamic translation sends one transient pair-specific worker request", asy
       messages.push(message);
       queueMicrotask(() => this.onmessage({ data: {
         type: "result",
-        result: { segments: message.request.segments.map((segment) => ({ index: segment.index, text: `RU:${segment.text}` })) },
+        result: {
+          segments: message.request.segments.map((segment) => ({ index: segment.index, text: `RU:${segment.text}` })),
+          metadata: { cachePurged: true, filesDeleted: 7 },
+        },
       } }));
     }
     terminate() {}
@@ -68,6 +73,8 @@ test("dynamic translation sends one transient pair-specific worker request", asy
   });
   assert.equal(result.metadata.modelId, "Xenova/opus-mt-fr-ru");
   assert.equal(result.metadata.purgeAfterUse, true);
+  assert.equal(result.metadata.cachePurged, true);
+  assert.equal(result.metadata.filesDeleted, 7);
 });
 
 test("dynamic transcription requests a remote transient Whisper model", async () => {
@@ -94,5 +101,16 @@ test("workers release runtime memory and clear their targeted Transformers.js ca
     assert.match(source, /\.dispose\(\)/);
     assert.match(source, /ModelRegistry\.clear_pipeline_cache/);
     assert.match(source, /purgeAfterUse/);
+  }
+});
+
+test("dynamic model workers are syntactically valid JavaScript", () => {
+  const root = fileURLToPath(new URL("..", import.meta.url));
+  for (const worker of ["transcription_worker.js", "translation_worker.js"]) {
+    const checked = spawnSync(process.execPath, ["--check", `frontend/${worker}`], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(checked.status, 0, checked.stderr || checked.stdout);
   }
 });

@@ -166,6 +166,7 @@ async function releaseRecognizer(modelId, purgeCache) {
       report = await ModelRegistry.clear_pipeline_cache("automatic-speech-recognition", modelId, { dtype: "q4" });
     } catch (error) {
       return { cachePurged: false, filesDeleted: 0, purgeError: error?.message || String(error) };
+    }
     return { cachePurged: true, filesDeleted: report?.filesDeleted || 0 };
   }
   return { cachePurged: false, filesDeleted: 0 };

@@ -81,6 +81,7 @@ export function createClientTranslator({
         model.purgeAfterUse ? undefined : maxBatchSize,
       );
       const translatedSegments = [];
+      let workerMetadata = null;
       for (const [batchIndex, batch] of batches.entries()) {
         const translateRequest = createTranslatorWorkerRequest({
           request,
@@ -98,6 +99,9 @@ export function createClientTranslator({
           )),
         );
         translatedSegments.push(...(result.segments || []));
+        if (result.metadata) {
+          workerMetadata = { ...(workerMetadata || {}), ...result.metadata };
+        }
       }
       const translatedByIndex = new Map(
         translatedSegments.map((segment) => [segment.index, segment]),
@@ -110,6 +114,7 @@ export function createClientTranslator({
           ...(model.remoteModels ? { remoteModels: true } : {}),
           ...(model.purgeAfterUse ? { purgeAfterUse: true } : {}),
           ...(warmupMetadata ? { warmup: warmupMetadata } : {}),
+          ...(workerMetadata || {}),
         } } : {}),
         segments: request.segments.map((segment) => {
           const translated = translatedByIndex.get(segment.index) || {};
