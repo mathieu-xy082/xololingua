@@ -138,9 +138,17 @@ test("PWA shell displays honest offline asset and Python fallback metadata", () 
 test("PWA asset cache version changes with the app shell version", () => {
   const [, appAssetVersion] = appSource.match(/APP_ASSET_VERSION\s*=\s*["']([^"']+)["']/) || [];
   const [, cacheName] = serviceWorkerSource.match(/CACHE_NAME\s*=\s*["']([^"']+)["']/) || [];
+  const indexAssetVersions = new Set(
+    [...indexSource.matchAll(/\?v=([^"']+)/g)].map((match) => match[1]),
+  );
+  const serviceWorkerAssetVersions = new Set(
+    [...serviceWorkerSource.matchAll(/\?v=([^"']+)/g)].map((match) => match[1]),
+  );
 
   assert.ok(appAssetVersion);
   assert.equal(cacheName, `xololingua-${appAssetVersion}`);
+  assert.deepEqual(indexAssetVersions, new Set([appAssetVersion]));
+  assert.deepEqual(serviceWorkerAssetVersions, new Set([appAssetVersion]));
   assert.match(indexSource, new RegExp(`app\\.js\\?v=${appAssetVersion}`));
   assert.match(indexSource, new RegExp(`styles\\.css\\?v=${appAssetVersion}`));
   assert.match(serviceWorkerSource, new RegExp(`app\\.js\\?v=${appAssetVersion}`));
