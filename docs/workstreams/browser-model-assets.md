@@ -180,7 +180,7 @@ que lorsque le nouveau gate réel est implémenté, documenté, et vert, ou lors
 4. Valider le cycle réel sans manifests statiques. ✅ Le gate `pdm run e2e-browser-real-models` observe les requêtes Hugging Face, interdit les anciennes URLs locales `/models/`, vérifie l'exécution navigateur, le SRT, la comparaison backend et l'absence d'entrées modèle dans Cache API.
 5. Retirer l'ancien outillage. ✅ Les manifests packagés, le bootstrap manuel, le préparateur de snapshots et leurs tests ont été supprimés après le passage réel français → russe.
 
-Validation du 15 août 2026 sur un extrait français de 60 secondes : 28 requêtes de modèle, aucun échec, 6 blocs SRT, couverture de 99,8 %, similarité backend de 1,000 et aucune entrée de modèle restante dans Cache API.
+Validation du 15 août 2026 sur un extrait français de 60 secondes : 28 requêtes de modèle, aucun échec, 6 blocs SRT, couverture de 99,8 %, similarité backend de 1,000, aucune entrée de modèle restante dans Cache API et cache HTTP Chromium ramené de 481 Mio à 62 Mio sans poids de modèle.
 
 ## Contraintes d'hygiène
 

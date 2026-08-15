@@ -11,6 +11,7 @@ This project follows Semantic Versioning.
 - Added on-demand browser model resolution for transcription and source-to-target OPUS-MT translation.
 - Added automatic remote Transformers.js model downloads with visible pipeline progress and Python fallback on unavailable pairs.
 - Added per-pipeline model disposal and targeted browser-cache purge after transcription and translation.
+- Added `no-store` remote model fetches so purged weights are not retained by the browser HTTP cache.
 
 ### Changed
 

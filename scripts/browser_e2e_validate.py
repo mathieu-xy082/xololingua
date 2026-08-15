@@ -43,6 +43,7 @@ DEFAULT_DOWNLOAD_DIR = Path(
     )
 )
 DYNAMIC_TRANSCRIPTION_MODEL_ID = "Xenova/whisper-base"
+DEFAULT_MAX_HTTP_CACHE_BYTES = 96 * 1024 * 1024
 
 
 class ManagedProcess:
@@ -150,6 +151,12 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--compare-min-text-similarity", type=float, default=0.90)
     parser.add_argument("--compare-max-block-delta", type=int, default=2)
     parser.add_argument("--compare-max-last-end-delta", type=float, default=5.0)
+    parser.add_argument(
+        "--max-http-cache-bytes",
+        type=int,
+        default=DEFAULT_MAX_HTTP_CACHE_BYTES,
+        help="Maximum Chromium HTTP cache size after a real-model run.",
+    )
     args = parser.parse_args(argv)
     if args.real_browser_models and args.inject_backend_reference_browser_ml:
         parser.error("--real-browser-models cannot be combined with --inject-backend-reference-browser-ml")
@@ -714,6 +721,16 @@ def inspect_dynamic_model_cache_in_page(page, model_ids: list[str]) -> dict:
     )
 
 
+def inspect_chromium_http_cache(profile_dir: Path) -> dict:
+    cache_dir = profile_dir / "Default" / "Cache"
+    files = [path for path in cache_dir.rglob("*") if path.is_file()] if cache_dir.is_dir() else []
+    return {
+        "path": str(cache_dir),
+        "files": len(files),
+        "bytes": sum(path.stat().st_size for path in files),
+    }
+
+
 def format_real_model_diagnostics(report: dict) -> str:
     warmup = report.get("warmup") or {}
     inference = report.get("inference") or {}
@@ -726,6 +743,7 @@ def format_real_model_diagnostics(report: dict) -> str:
         f"downloadFailures={report.get('failedRequests', 0)}",
         f"cachePurged={str(bool(report.get('cachePurged'))).lower()}",
         f"remainingCacheEntries={report.get('remainingCacheEntries', 0)}",
+        f"httpCacheBytes={report.get('httpCacheBytes', 0)}",
         f"warmup=asr:{warmup.get('asr', 'unknown')},translation:{warmup.get('translation', 'unknown')}",
         f"inference=asr:{inference.get('asr', 'unknown')},translation:{inference.get('translation', 'unknown')}",
         f"coverage={report.get('coverage', 'unknown')}",
@@ -761,6 +779,7 @@ def run_browser_workflow(args: argparse.Namespace) -> Path | None:
     local_model_urls: list[str] = []
     real_model_report: dict | None = None
     frontend_origin = urllib.parse.urlparse(args.frontend_url)
+    user_data_dir: Path | None = None
 
     with sync_playwright() as p:
         log_step("Launching Chromium")
@@ -943,6 +962,15 @@ def run_browser_workflow(args: argparse.Namespace) -> Path | None:
 
     if destination is None:
         return destination
+
+    if real_model_report and user_data_dir:
+        http_cache = inspect_chromium_http_cache(user_data_dir)
+        real_model_report["httpCacheBytes"] = http_cache["bytes"]
+        if http_cache["bytes"] > args.max_http_cache_bytes:
+            raise AssertionError(
+                "Chromium retained an unexpectedly large HTTP cache after model purge: "
+                f"{http_cache['bytes']} bytes > {args.max_http_cache_bytes} bytes at {http_cache['path']}"
+            )
 
     if transcribe_segments:
         segment_diagnostics = {

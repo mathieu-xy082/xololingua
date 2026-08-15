@@ -278,6 +278,20 @@ class BrowserE2EScriptTests(unittest.TestCase):
         self.assertTrue(report["cachePurged"])
         self.assertEqual(page.evaluate.call_args.args[1], model_ids)
 
+    def test_chromium_http_cache_inspection_reports_retained_bytes(self):
+        module = self.load_module()
+        with tempfile.TemporaryDirectory() as directory:
+            profile = Path(directory)
+            cache = profile / "Default" / "Cache" / "Cache_Data"
+            cache.mkdir(parents=True)
+            (cache / "entry-a").write_bytes(b"a" * 7)
+            (cache / "entry-b").write_bytes(b"b" * 11)
+
+            report = module.inspect_chromium_http_cache(profile)
+
+        self.assertEqual(report["files"], 2)
+        self.assertEqual(report["bytes"], 18)
+
     def test_compact_real_model_diagnostics_are_one_line_and_include_lifecycle_result(self):
         module = self.load_module()
         diagnostic = module.format_real_model_diagnostics({
@@ -288,6 +302,7 @@ class BrowserE2EScriptTests(unittest.TestCase):
             "failedRequests": 0,
             "cachePurged": True,
             "remainingCacheEntries": 0,
+            "httpCacheBytes": 12_345,
             "warmup": {"asr": "pass", "translation": "pass"},
             "inference": {"asr": "pass", "translation": "pass"},
             "coverage": "pass",
@@ -303,6 +318,7 @@ class BrowserE2EScriptTests(unittest.TestCase):
         self.assertIn("downloads=23", diagnostic)
         self.assertIn("cachePurged=true", diagnostic)
         self.assertIn("remainingCacheEntries=0", diagnostic)
+        self.assertIn("httpCacheBytes=12345", diagnostic)
 
 
 if __name__ == "__main__":

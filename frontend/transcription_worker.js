@@ -10,6 +10,8 @@ env.allowLocalModels = true;
 env.useBrowserCache = true;
 env.localModelPath = "../models/";
 env.backends.onnx.wasm.wasmPaths = "/node_modules/@huggingface/transformers/node_modules/onnxruntime-web/dist/";
+const transformersFetch = env.fetch;
+env.fetch = (input, init = {}) => transformersFetch(input, withTransientRemoteCache(input, init));
 
 let recognizerPromise;
 let recognizerModelId;
@@ -145,6 +147,11 @@ function configureModelSource(remoteModels) {
   env.allowRemoteModels = Boolean(remoteModels);
   env.allowLocalModels = !remoteModels;
   env.useBrowserCache = true;
+}
+
+function withTransientRemoteCache(input, init) {
+  const url = typeof input === "string" ? input : input?.url || String(input);
+  return url.startsWith(env.remoteHost) ? { ...init, cache: "no-store" } : init;
 }
 
 async function releaseRecognizer(modelId, purgeCache) {

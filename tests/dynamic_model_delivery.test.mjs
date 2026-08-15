@@ -101,6 +101,7 @@ test("workers release runtime memory and clear their targeted Transformers.js ca
     assert.match(source, /\.dispose\(\)/);
     assert.match(source, /ModelRegistry\.clear_pipeline_cache/);
     assert.match(source, /purgeAfterUse/);
+    assert.match(source, /cache:\s*"no-store"/);
   }
 });
 
