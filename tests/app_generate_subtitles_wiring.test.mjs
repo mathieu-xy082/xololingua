@@ -65,7 +65,7 @@ test("app configures browser VAD segmentation adapter with the backend-compatibl
   assert.match(appSource, /clientAudioExtractor:/);
   assert.match(appSource, /clientVadSegmenter:/);
   assert.match(appSource, /XOLOLINGUA_CLIENT_VAD_SEGMENTER/);
-  assert.match(appSource, /createVadWebRuntimeSegmenter\(\{\s*vadProfile:\s*["']backend-compatible["'],?\s*\}\)/);
+  assert.match(appSource, /createVadWebRuntimeSegmenter\(\{[\s\S]*?vadProfile:\s*["']backend-compatible["'][\s\S]*?workerUrl:\s*["']frontend\/vad_worker\.js["'][\s\S]*?\}\)/);
 });
 
 test("app configures local ffmpeg wasm audio extraction instead of relying on WebCodecs-only detection", () => {

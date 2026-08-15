@@ -197,6 +197,58 @@ test("createVadWebRuntimeSegmenter decodes browser WAV blobs and runs NonRealTim
   });
 });
 
+test("createVadWebRuntimeSegmenter transfers PCM to a worker and reports incremental progress", async () => {
+  const audioBlob = new Blob([new Uint8Array([1, 2, 3])], { type: "audio/wav" });
+  const pcm = new Float32Array(320000);
+  const environment = {
+    vad: {
+      utils: {
+        audioFileToArray: async () => ({ audio: pcm, sampleRate: 16000 }),
+      },
+      NonRealTimeVAD: { new: async () => assert.fail("main-thread VAD must not run") },
+    },
+    ort: { env: { wasm: {} } },
+  };
+  const posted = [];
+  let terminated = false;
+  const worker = {
+    postMessage(message, transfer) {
+      posted.push({ message, transfer });
+      queueMicrotask(() => {
+        this.onmessage({ data: { type: "progress", progress: 65 } });
+        this.onmessage({
+          data: {
+            type: "result",
+            result: { segments: [{ start: 0, end: 12000 }], rawSegmentCount: 1 },
+          },
+        });
+      });
+    },
+    terminate() {
+      terminated = true;
+    },
+  };
+  const progress = [];
+  const segmenter = createVadWebRuntimeSegmenter({
+    environment,
+    workerUrl: "frontend/vad_worker.js",
+    workerFactory: (url) => {
+      assert.equal(url, "frontend/vad_worker.js");
+      return worker;
+    },
+  });
+
+  const result = await segmenter({ audioBlob, audioFileName: "browser.wav" }, (value) => progress.push(value));
+
+  assert.deepEqual(progress, [0, 15, 65, 100]);
+  assert.deepEqual(result.segments, [{ start: 0, end: 12 }]);
+  assert.equal(posted.length, 1);
+  assert.equal(posted[0].message.type, "segment");
+  assert.equal(posted[0].message.request.sampleRate, 16000);
+  assert.equal(posted[0].transfer[0], posted[0].message.request.pcmBuffer);
+  assert.equal(terminated, true);
+});
+
 test("createVadWebRuntimeSegmenter converts vad-web millisecond timings to seconds", async () => {
   const audioBlob = new Blob([new Uint8Array([1, 2, 3])], { type: "audio/wav" });
   const pcm = new Float32Array(320000);

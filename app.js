@@ -16,7 +16,7 @@ const MAX_DURATION_SECONDS = 2.5 * 60 * 60;
 const SEGMENT_SECONDS = 12;
 const LOCAL_SERVICE_URL = "http://127.0.0.1:8765";
 globalThis.__xololinguaDynamicModels = true;
-const APP_ASSET_VERSION = "2026-08-15-4";
+const APP_ASSET_VERSION = "2026-08-15-5";
 const backendClient = createBackendClient({ baseUrl: LOCAL_SERVICE_URL });
 const clientPipelineCapabilities = collectClientPipelineCapabilities();
 const appClientAdapters = createAppClientAdapters({
@@ -24,7 +24,10 @@ const appClientAdapters = createAppClientAdapters({
     ffmpegWasmExtractor: createAppFfmpegWasmAudioExtractor(),
   }),
   clientVadSegmenter: globalThis.XOLOLINGUA_CLIENT_VAD_SEGMENTER || createClientVadSegmenter({
-    vadWebSegmenter: createVadWebRuntimeSegmenter({ vadProfile: "backend-compatible" }),
+    vadWebSegmenter: createVadWebRuntimeSegmenter({
+      vadProfile: "backend-compatible",
+      workerUrl: "frontend/vad_worker.js",
+    }),
   }),
   clientTranscriber: globalThis.XOLOLINGUA_CLIENT_TRANSCRIBER || createClientTranscriber({
     workerUrl: "frontend/transcription_worker.js",
