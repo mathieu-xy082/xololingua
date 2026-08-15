@@ -30,10 +30,11 @@ test("dynamic ML stages stay browser-routable with on-demand delivery", () => {
 });
 
 test("PWA explains automatic transient delivery instead of exposing manual setup", () => {
-  assert.match(indexSource, /Models are downloaded automatically for the selected language pair and purged after use\./);
+  assert.match(indexSource, /Models will be downloaded automatically for the selected language pair and purged after subtitle generation\./);
   assert.doesNotMatch(indexSource, /modelBootstrapButton/);
   assert.match(indexSource, /id="modelDeliveryPanel"/);
-  assert.match(appSource, /models are downloaded automatically for the selected language pair and purged after subtitle generation/i);
+  assert.match(appSource, /updateModelDelivery\(state\.modelDelivery, job\)/);
+  assert.match(appSource, /finishModelDelivery\(state\.modelDelivery/);
 });
 
 test("service worker leaves cross-origin model responses to the transient Transformers.js cache", () => {

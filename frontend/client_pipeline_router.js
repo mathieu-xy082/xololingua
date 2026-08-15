@@ -357,12 +357,21 @@ async function runStage({
 
   const runtime = browserFailureReason || !useBrowser ? "server-fallback" : "browser";
   const strategy = browserFailureReason ? "python-backend" : stage.strategy;
-  const metadata = createStageMetadata({
-    stageName,
-    stage,
-    browserFailureReason,
-    runtimeIsFallback: browserFailureReason || !useBrowser,
-  });
+  const adapterMetadata = (stageName === "transcription" || stageName === "translation")
+    && payload?.metadata
+    && typeof payload.metadata === "object"
+    && !Array.isArray(payload.metadata)
+    ? payload.metadata
+    : {};
+  const metadata = {
+    ...adapterMetadata,
+    ...createStageMetadata({
+      stageName,
+      stage,
+      browserFailureReason,
+      runtimeIsFallback: browserFailureReason || !useBrowser,
+    }),
+  };
   const result = normalizeStageResult({
     stageName,
     runtime,

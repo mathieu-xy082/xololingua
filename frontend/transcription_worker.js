@@ -45,7 +45,7 @@ self.onmessage = async (event) => {
 
 async function warmupRecognizer({ modelId = DEFAULT_MODEL_ID, sampleSeconds = 1, sourceLanguage = "auto", remoteModels = false } = {}) {
   configureModelSource(remoteModels);
-  self.postMessage({ type: "progress", event: { stage: "asr-warmup", progress: 5, message: "Loading local ASR model..." } });
+  self.postMessage({ type: "progress", event: { stage: "asr-warmup", progress: 5, message: "Loading ASR model..." } });
   const recognizer = await getRecognizer(modelId);
   self.postMessage({ type: "progress", event: { stage: "asr-warmup", progress: 70, message: "Running ASR warmup sample..." } });
   const sampleLength = Math.max(1, Math.round(DEFAULT_SAMPLE_RATE * Math.max(0.1, sampleSeconds)));

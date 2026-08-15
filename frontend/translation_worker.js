@@ -52,7 +52,7 @@ async function warmupTranslator({
   purgeOnError = false,
 } = {}) {
   configureModelSource(remoteModels);
-  self.postMessage({ type: "progress", event: { stage: "translation-warmup", progress: 5, message: "Loading local translation model..." } });
+  self.postMessage({ type: "progress", event: { stage: "translation-warmup", progress: 5, message: "Loading translation model..." } });
   let translator;
   try {
     translator = await getTranslator(modelId);

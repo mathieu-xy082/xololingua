@@ -743,6 +743,7 @@ def format_real_model_diagnostics(report: dict) -> str:
         f"downloadFailures={report.get('failedRequests', 0)}",
         f"cachePurged={str(bool(report.get('cachePurged'))).lower()}",
         f"remainingCacheEntries={report.get('remainingCacheEntries', 0)}",
+        f"uiLifecycle={report.get('uiLifecycle', 'unknown')}",
         f"httpCacheBytes={report.get('httpCacheBytes', 0)}",
         f"warmup=asr:{warmup.get('asr', 'unknown')},translation:{warmup.get('translation', 'unknown')}",
         f"inference=asr:{inference.get('asr', 'unknown')},translation:{inference.get('translation', 'unknown')}",
@@ -930,6 +931,18 @@ def run_browser_workflow(args: argparse.Namespace) -> Path | None:
                         "Dynamic model cache was not purged after subtitle generation: "
                         + ", ".join(entry.get("url", "") for entry in remaining[:5])
                     )
+                model_delivery_status = page.locator("#modelDeliveryStatus").inner_text()
+                model_delivery_progress = page.locator("#modelDeliveryProgressText").inner_text()
+                if "purge confirmed" not in model_delivery_status.lower():
+                    raise AssertionError(
+                        "Model delivery UI did not confirm the verified cache purge: "
+                        + model_delivery_status
+                    )
+                if model_delivery_progress.strip().lower() != "purged":
+                    raise AssertionError(
+                        "Model delivery UI did not reach the purged state: "
+                        + model_delivery_progress
+                    )
                 real_model_report = {
                     "status": "pass",
                     "runtime": "chromium",
@@ -938,6 +951,7 @@ def run_browser_workflow(args: argparse.Namespace) -> Path | None:
                     "failedRequests": len(failed_model_requests),
                     "cachePurged": True,
                     "remainingCacheEntries": 0,
+                    "uiLifecycle": "purged",
                     "warmup": {"asr": "pass", "translation": "pass"},
                     "inference": {"asr": "pass", "translation": "pass"},
                     "coverage": "pass",

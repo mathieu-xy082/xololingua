@@ -11,12 +11,20 @@ import { createClientVadSegmenter } from "./frontend/client_vad_segmenter.js";
 import { createAppFfmpegWasmAudioExtractor } from "./frontend/ffmpeg_wasm_runtime.js";
 import { formatPipelineStageRuntime, formatPipelineStageSummary } from "./frontend/pipeline_stage_status.js";
 import { createVadWebRuntimeSegmenter } from "./frontend/vad_web_runtime.js";
+import {
+  beginModelDelivery,
+  createModelDeliveryTracker,
+  describeModelDelivery,
+  failModelDelivery,
+  finishModelDelivery,
+  updateModelDelivery,
+} from "./frontend/model_delivery_status.js";
 
 const MAX_DURATION_SECONDS = 2.5 * 60 * 60;
 const SEGMENT_SECONDS = 12;
 const LOCAL_SERVICE_URL = "http://127.0.0.1:8765";
 globalThis.__xololinguaDynamicModels = true;
-const APP_ASSET_VERSION = "2026-08-15-6";
+const APP_ASSET_VERSION = "2026-08-15-7";
 const backendClient = createBackendClient({ baseUrl: LOCAL_SERVICE_URL });
 const clientPipelineCapabilities = collectClientPipelineCapabilities();
 const appClientAdapters = createAppClientAdapters({
@@ -106,6 +114,7 @@ const state = {
   subtitleNotice: "",
   subtitleTranscriptionProgress: 0,
   subtitleTranslationProgress: 0,
+  modelDelivery: createModelDeliveryTracker(),
   busyStep: ""
 };
 
@@ -207,9 +216,10 @@ function renderPipelineCapabilitySummary() {
 
 function renderModelDeliveryPanel() {
   if (!els.modelDeliveryPanel) return;
-  els.modelDeliveryStatus.textContent = "Models are downloaded automatically for the selected language pair and purged after subtitle generation.";
-  els.modelDeliveryProgressText.textContent = state.busyStep === "subtitle" ? "active" : "on demand";
-  els.modelDeliveryProgressBar.style.width = state.busyStep === "subtitle" ? "50%" : "0%";
+  const delivery = describeModelDelivery(state.modelDelivery);
+  els.modelDeliveryStatus.textContent = delivery.status;
+  els.modelDeliveryProgressText.textContent = delivery.progressText;
+  els.modelDeliveryProgressBar.style.width = `${delivery.progress}%`;
 }
 
 async function fetchTranslationPairs() {
@@ -435,6 +445,8 @@ async function generateSubtitles() {
   state.subtitleNotice = "";
   els.subtitleStatus.textContent = "Starting subtitle generation job...";
   setSubtitleProgress(0, 0);
+  const transcriptionModel = resolveTranscriptionModel({ sourceLanguage: state.sourceLanguage });
+  state.modelDelivery = beginModelDelivery(state.modelDelivery, transcriptionModel);
   render();
 
   try {
@@ -446,14 +458,26 @@ async function generateSubtitles() {
         segments: state.segments,
       },
       (job) => {
+        state.modelDelivery = updateModelDelivery(state.modelDelivery, job);
+        renderModelDeliveryPanel();
         els.subtitleStatus.textContent = job.message || job.stage;
         syncSubtitleProgress(job);
       },
     );
+    state.modelDelivery = finishModelDelivery(state.modelDelivery, {
+      stageResult: transcription,
+      modelId: transcriptionModel.modelId,
+    });
     state.segments = transcription.payload.segments;
     renderSegmentReview();
     els.subtitleStatus.textContent = `Subtitle generation: ${formatPipelineStageRuntime({ stage: "transcription", ...transcription })}. Translating subtitles...`;
 
+    const translationModel = resolveTranslationModel({
+      sourceLanguage: state.sourceLanguage,
+      targetLanguage: state.targetLanguage,
+    });
+    state.modelDelivery = beginModelDelivery(state.modelDelivery, translationModel);
+    renderModelDeliveryPanel();
     const translation = await hybridPipelineRouter.runTranslation(
       {
         extractedAudio: state.extractedAudio,
@@ -466,10 +490,16 @@ async function generateSubtitles() {
         },
       },
       (job) => {
+        state.modelDelivery = updateModelDelivery(state.modelDelivery, job);
+        renderModelDeliveryPanel();
         els.subtitleStatus.textContent = job.message || job.stage;
         syncSubtitleProgress(job);
       },
     );
+    state.modelDelivery = finishModelDelivery(state.modelDelivery, {
+      stageResult: translation,
+      modelId: translationModel.modelId,
+    });
     state.segments = translation.payload.segments;
     state.pipelineStageReports = [...state.pipelineStageReports, { stage: "transcription", ...transcription }, { stage: "translation", ...translation }];
     renderSegmentReview();
@@ -499,6 +529,7 @@ async function generateSubtitles() {
     setSubtitleProgress(100, 100);
     render();
   } catch (error) {
+    state.modelDelivery = failModelDelivery(state.modelDelivery, error);
     state.subtitleNotice = error.message;
     state.busyStep = "";
     state.subtitleJobId = "";
@@ -719,6 +750,7 @@ function resetSubtitle() {
   state.subtitleNotice = "";
   state.subtitleTranscriptionProgress = 0;
   state.subtitleTranslationProgress = 0;
+  state.modelDelivery = createModelDeliveryTracker();
   els.subtitleStatus.textContent = "Run segmentation first.";
   els.downloadLink.hidden = true;
   els.downloadLink.removeAttribute("href");
