@@ -3,13 +3,9 @@ import { createAppClientAdapters, createAppHybridPipelineRouter } from "./fronte
 import { createClientAudioExtractor } from "./frontend/client_audio_extractor.js";
 import { createClientTranscriber } from "./frontend/client_transcriber.js";
 import { createClientTranslator } from "./frontend/client_translator.js";
-import { bootstrapBrowserModelAssets } from "./frontend/model_asset_bootstrap.js";
-import { BROWSER_MODEL_ASSET_MANIFEST } from "./frontend/model_asset_manifest.js";
+import { BROWSER_ML_CONFIG } from "./frontend/browser_ml_config.js";
 import { resolveTranscriptionModel, resolveTranslationModel } from "./frontend/dynamic_model_resolver.js";
-import {
-  collectClientPipelineCapabilities,
-  collectClientPipelineCapabilitiesWithModelAssetBootstrap,
-} from "./frontend/client_pipeline_capabilities.js";
+import { collectClientPipelineCapabilities } from "./frontend/client_pipeline_capabilities.js";
 import { formatSrt, formatSrtTime } from "./frontend/client_srt_formatter.js";
 import { createClientVadSegmenter } from "./frontend/client_vad_segmenter.js";
 import { createAppFfmpegWasmAudioExtractor } from "./frontend/ffmpeg_wasm_runtime.js";
@@ -20,12 +16,9 @@ const MAX_DURATION_SECONDS = 2.5 * 60 * 60;
 const SEGMENT_SECONDS = 12;
 const LOCAL_SERVICE_URL = "http://127.0.0.1:8765";
 globalThis.__xololinguaDynamicModels = true;
-const APP_ASSET_VERSION = "2026-07-15-1";
+const APP_ASSET_VERSION = "2026-08-15-2";
 const backendClient = createBackendClient({ baseUrl: LOCAL_SERVICE_URL });
-let clientPipelineCapabilities = globalThis.__xololinguaCachedModelAssetUrls?.length > 0
-  ? collectClientPipelineCapabilities()
-  : await collectClientPipelineCapabilitiesWithModelAssetBootstrap()
-    .catch(() => collectClientPipelineCapabilities());
+const clientPipelineCapabilities = collectClientPipelineCapabilities();
 const appClientAdapters = createAppClientAdapters({
   clientAudioExtractor: globalThis.XOLOLINGUA_CLIENT_AUDIO_EXTRACTOR || createClientAudioExtractor({
     ffmpegWasmExtractor: createAppFfmpegWasmAudioExtractor(),
@@ -35,30 +28,30 @@ const appClientAdapters = createAppClientAdapters({
   }),
   clientTranscriber: globalThis.XOLOLINGUA_CLIENT_TRANSCRIBER || createClientTranscriber({
     workerUrl: "frontend/transcription_worker.js",
-    modelId: BROWSER_MODEL_ASSET_MANIFEST.models.transcription.modelId,
+    modelId: BROWSER_ML_CONFIG.transcription.defaultModelId,
     modelResolver: resolveTranscriptionModel,
     remoteModels: true,
     purgeAfterUse: true,
-    warmupTimeoutMs: BROWSER_MODEL_ASSET_MANIFEST.timeouts.assetCacheMs,
-    warmupSampleSeconds: BROWSER_MODEL_ASSET_MANIFEST.models.transcription.warmup.sampleSeconds,
-    maxDurationSeconds: BROWSER_MODEL_ASSET_MANIFEST.models.transcription.limits.maxAudioSeconds,
-    maxAudioBytes: BROWSER_MODEL_ASSET_MANIFEST.models.transcription.limits.maxAudioBytes,
-    maxSegments: BROWSER_MODEL_ASSET_MANIFEST.models.translation.limits.maxSegments,
-    maxWorkerResponseMs: BROWSER_MODEL_ASSET_MANIFEST.timeouts.asrInferencePerSegmentMs,
+    warmupTimeoutMs: BROWSER_ML_CONFIG.modelDownloadTimeoutMs,
+    warmupSampleSeconds: BROWSER_ML_CONFIG.transcription.warmupSampleSeconds,
+    maxDurationSeconds: BROWSER_ML_CONFIG.transcription.maxAudioSeconds,
+    maxAudioBytes: BROWSER_ML_CONFIG.transcription.maxAudioBytes,
+    maxSegments: BROWSER_ML_CONFIG.transcription.maxSegments,
+    maxWorkerResponseMs: BROWSER_ML_CONFIG.transcription.inferenceTimeoutMs,
   }),
   clientTranslator: globalThis.XOLOLINGUA_CLIENT_TRANSLATOR || createClientTranslator({
     workerUrl: "frontend/translation_worker.js",
-    modelId: BROWSER_MODEL_ASSET_MANIFEST.models.translation.modelId,
+    modelId: BROWSER_ML_CONFIG.translation.defaultModelId,
     modelResolver: resolveTranslationModel,
     remoteModels: true,
     purgeAfterUse: true,
-    warmupTimeoutMs: BROWSER_MODEL_ASSET_MANIFEST.timeouts.assetCacheMs,
-    warmupSampleText: BROWSER_MODEL_ASSET_MANIFEST.models.translation.warmup.sampleText,
-    maxSegments: BROWSER_MODEL_ASSET_MANIFEST.models.translation.limits.maxSegments,
+    warmupTimeoutMs: BROWSER_ML_CONFIG.modelDownloadTimeoutMs,
+    warmupSampleText: BROWSER_ML_CONFIG.translation.warmupSampleText,
+    maxSegments: BROWSER_ML_CONFIG.translation.maxSegments,
     maxBatchSize: Math.max(1, Math.floor(
-      BROWSER_MODEL_ASSET_MANIFEST.models.translation.limits.maxCharactersPerBatch / 400,
+      BROWSER_ML_CONFIG.translation.maxCharactersPerBatch / 400,
     )),
-    maxWorkerResponseMs: BROWSER_MODEL_ASSET_MANIFEST.timeouts.translationInferencePerBatchMs,
+    maxWorkerResponseMs: BROWSER_ML_CONFIG.translation.inferenceTimeoutMs,
   }),
 });
 const hybridPipelineRouter = createAppHybridPipelineRouter({
@@ -156,17 +149,14 @@ const els = {
   pipelineBrowserStages: document.querySelector("#pipelineBrowserStages"),
   pipelineFallbackStages: document.querySelector("#pipelineFallbackStages"),
   pipelineFallbackEndpoints: document.querySelector("#pipelineFallbackEndpoints"),
-  modelBootstrapPanel: document.querySelector("#modelBootstrapPanel"),
-  modelBootstrapStatus: document.querySelector("#modelBootstrapStatus"),
-  modelBootstrapProgressText: document.querySelector("#modelBootstrapProgressText"),
-  modelBootstrapProgressBar: document.querySelector("#modelBootstrapProgressBar"),
-  modelBootstrapButton: document.querySelector("#modelBootstrapButton")
+  modelDeliveryPanel: document.querySelector("#modelDeliveryPanel"),
+  modelDeliveryStatus: document.querySelector("#modelDeliveryStatus"),
+  modelDeliveryProgressText: document.querySelector("#modelDeliveryProgressText"),
+  modelDeliveryProgressBar: document.querySelector("#modelDeliveryProgressBar")
 };
 
 let deferredInstallPrompt = null;
 let _pairsFetched = false;
-const modelBootstrapButton = els.modelBootstrapButton;
-
 populateLanguages();
 bindEvents();
 bindInstallPrompt();
@@ -205,81 +195,18 @@ function renderPipelineCapabilitySummary() {
   els.pipelineFallbackEndpoints.replaceChildren(
     ...summary.serverFallbackEndpoints.map((fallback) => {
       const item = document.createElement("li");
-      const stageRow = summary.stageRows.find((row) => row.stage === fallback.stage);
-      const bootstrapDetail = stageRow?.modelAssetBootstrapLabel
-        ? ` — ${stageRow.modelAssetBootstrapLabel}`
-        : "";
-      item.textContent = `${fallback.label}: ${fallback.endpoints.join(", ")}${bootstrapDetail}`;
+      item.textContent = `${fallback.label}: ${fallback.endpoints.join(", ")}`;
       return item;
     }),
   );
-  renderModelBootstrapPanel(clientPipelineCapabilities.modelAssetBootstrap);
+  renderModelDeliveryPanel();
 }
 
-function renderModelBootstrapPanel(modelAssetBootstrap, progressEvent) {
-  if (!els.modelBootstrapPanel) return;
-  els.modelBootstrapStatus.textContent = "Models are downloaded automatically for the selected language pair and purged after subtitle generation.";
-  els.modelBootstrapProgressText.textContent = state.busyStep === "subtitle" ? "active" : "on demand";
-  els.modelBootstrapProgressBar.style.width = state.busyStep === "subtitle" ? "50%" : "0%";
-  els.modelBootstrapButton.hidden = true;
-  return;
-
-  const status = modelAssetBootstrap?.status || "unavailable";
-  const totalBytes = modelAssetBootstrap?.totalRequiredBytes || progressEvent?.totalBytes || 0;
-  const missingBytes = modelAssetBootstrap?.totalMissingBytes ?? progressEvent?.remainingBytes ?? totalBytes;
-  const completedBytes = Math.max(0, totalBytes - missingBytes);
-  const progress = Number.isFinite(progressEvent?.progress)
-    ? progressEvent.progress
-    : totalBytes > 0
-      ? Math.round((completedBytes / totalBytes) * 100)
-      : status === "offline-ready" ? 100 : 0;
-  els.modelBootstrapProgressText.textContent = `${progress}%`;
-  els.modelBootstrapProgressBar.style.width = `${Math.max(0, Math.min(100, progress))}%`;
-
-  if (status === "offline-ready") {
-    els.modelBootstrapStatus.textContent = "Browser model assets are cached. ASR and translation can run offline in browser.";
-    els.modelBootstrapButton.textContent = "Model assets cached";
-    els.modelBootstrapButton.disabled = true;
-    return;
-  }
-
-  const missingAssets = modelAssetBootstrap?.missingModelAssets || [];
-  const retryLabel = progressEvent?.status === "failed" ? "Retry model asset cache" : "Cache model assets";
-  els.modelBootstrapStatus.textContent = progressEvent?.status === "downloading"
-    ? `Caching ${progressEvent.assetName || "model asset"}... ${formatBytes(progressEvent.remainingBytes)} remaining.`
-    : missingAssets.length > 0
-      ? `${missingAssets.length} browser model asset(s) missing (${formatBytes(missingBytes)}). Python fallback stays active until cached.`
-      : "Browser model assets need cache verification before ML stages run offline.";
-  els.modelBootstrapButton.textContent = retryLabel;
-  els.modelBootstrapButton.disabled = state.busyStep === "modelBootstrap";
-}
-
-async function bootstrapModelAssets() {
-  if (state.busyStep === "modelBootstrap") return;
-  state.busyStep = "modelBootstrap";
-  let finalProgressEvent;
-  renderModelBootstrapPanel(clientPipelineCapabilities.modelAssetBootstrap, { progress: 0, remainingBytes: clientPipelineCapabilities.modelAssetBootstrap?.totalMissingBytes || 0 });
-  try {
-    const result = await bootstrapBrowserModelAssets({
-      manifest: BROWSER_MODEL_ASSET_MANIFEST,
-      onProgress: (event) => renderModelBootstrapPanel(clientPipelineCapabilities.modelAssetBootstrap, event),
-    });
-    clientPipelineCapabilities = await collectClientPipelineCapabilitiesWithModelAssetBootstrap()
-      .catch(() => ({ ...clientPipelineCapabilities, modelAssetBootstrap: result.report }));
-    if (result.status !== "offline-ready") {
-      finalProgressEvent = { status: "failed", progress: 0, remainingBytes: result.report.totalMissingBytes };
-    }
-  } catch (error) {
-    finalProgressEvent = { status: "failed", progress: 0, error: error.message, remainingBytes: clientPipelineCapabilities.modelAssetBootstrap?.totalMissingBytes || 0 };
-    els.modelBootstrapStatus.textContent = `Model asset bootstrap failed: ${error.message}. Python fallback remains active; retry when assets are available.`;
-    els.modelBootstrapButton.textContent = "Retry model asset cache";
-  } finally {
-    state.busyStep = "";
-    renderPipelineCapabilitySummary();
-    if (finalProgressEvent) {
-      renderModelBootstrapPanel(clientPipelineCapabilities.modelAssetBootstrap, finalProgressEvent);
-    }
-  }
+function renderModelDeliveryPanel() {
+  if (!els.modelDeliveryPanel) return;
+  els.modelDeliveryStatus.textContent = "Models are downloaded automatically for the selected language pair and purged after subtitle generation.";
+  els.modelDeliveryProgressText.textContent = state.busyStep === "subtitle" ? "active" : "on demand";
+  els.modelDeliveryProgressBar.style.width = state.busyStep === "subtitle" ? "50%" : "0%";
 }
 
 async function fetchTranslationPairs() {
@@ -372,7 +299,6 @@ function bindEvents() {
   els.toggleSegmentsButton.addEventListener("click", toggleSegmentDetails);
   els.generateButton.addEventListener("click", generateSubtitles);
   els.cancelGenerateButton.addEventListener("click", cancelSubtitleGeneration);
-  modelBootstrapButton.addEventListener("click", bootstrapModelAssets);
 }
 
 function loadVideoFile(file) {
@@ -733,6 +659,7 @@ function render() {
   els.cancelGenerateButton.disabled = state.subtitleCancelRequested || !state.subtitleJobId;
   renderSegmentReview();
   renderSubtitleStatus();
+  renderModelDeliveryPanel();
 }
 
 function canSegment() {

@@ -98,7 +98,7 @@ The production PWA does not require users to prepare model files manually. When 
 - Transformers.js reports download progress through the existing subtitle progress UI;
 - after each ML stage, the worker releases its runtime and clears the corresponding model files from the Transformers.js browser cache.
 
-The first run therefore requires internet access to Hugging Face. If the resolved OPUS-MT repository does not exist, a download fails, or the browser cannot run the model, the hybrid router records the failure and uses the Python fallback. Static packaged models and the explicit bootstrap tooling remain available for offline validation, but are not part of the normal user workflow.
+The first run therefore requires internet access to Hugging Face. If the resolved OPUS-MT repository does not exist, a download fails, or the browser cannot run the model, the hybrid router records the failure and uses the Python fallback. Static packaged models and their explicit bootstrap tooling remain temporarily available for legacy offline validation, but the PWA runtime and service worker no longer import, inspect, or cache them.
 
 Remote model responses are not stored in the PWA shell cache. Temporary Transformers.js caching is enabled only to share files between warmup and inference within one pipeline run, and is purged after use.
 

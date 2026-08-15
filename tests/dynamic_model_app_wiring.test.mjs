@@ -15,7 +15,7 @@ test("app enables on-demand model delivery and injects pair-aware resolvers", ()
   assert.match(appSource, /purgeAfterUse:\s*true/g);
 });
 
-test("dynamic ML stages stay browser-routable before static model bootstrap", () => {
+test("dynamic ML stages stay browser-routable with on-demand delivery", () => {
   const report = collectClientPipelineCapabilities({
     Worker() {},
     __xololinguaDynamicModels: true,
@@ -26,11 +26,13 @@ test("dynamic ML stages stay browser-routable before static model bootstrap", ()
   assert.equal(report.stages.translation.runtime, "browser");
   assert.equal(report.stages.transcription.modelDelivery, "on-demand");
   assert.equal(report.stages.translation.modelRetention, "purge-after-use");
+  assert.deepEqual(report.offlineAvailability.onlineRequiredStages, ["transcription", "translation"]);
 });
 
 test("PWA explains automatic transient delivery instead of exposing manual setup", () => {
   assert.match(indexSource, /Models are downloaded automatically for the selected language pair and purged after use\./);
-  assert.match(indexSource, /id="modelBootstrapButton"[^>]*hidden/);
+  assert.doesNotMatch(indexSource, /modelBootstrapButton/);
+  assert.match(indexSource, /id="modelDeliveryPanel"/);
   assert.match(appSource, /models are downloaded automatically for the selected language pair and purged after subtitle generation/i);
 });
 

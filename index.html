@@ -6,16 +6,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#1f6f5b">
   <title>XoloLingua</title>
-  <link rel="manifest" href="manifest.webmanifest?v=2026-07-15-1">
-  <link rel="icon" href="assets/icon.svg?v=2026-07-15-1" type="image/svg+xml">
-  <link rel="stylesheet" href="styles.css?v=2026-07-15-1">
+  <link rel="manifest" href="manifest.webmanifest?v=2026-08-15-2">
+  <link rel="icon" href="assets/icon.svg?v=2026-08-15-2" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css?v=2026-08-15-2">
 </head>
 
 <body>
   <div class="app-shell">
     <header class="topbar">
       <a class="brand" href="/" aria-label="XoloLingua home">
-        <img src="assets/icon.svg?v=2026-07-15-1" alt="" width="40" height="40">
+        <img src="assets/icon.svg?v=2026-08-15-2" alt="" width="40" height="40">
         <span>XoloLingua</span>
       </a>
       <button class="install-button" id="installButton" type="button" hidden>Install</button>
@@ -72,18 +72,17 @@
             </div>
           </dl>
           <ul class="fallback-endpoints" id="pipelineFallbackEndpoints"></ul>
-          <div class="model-bootstrap" id="modelBootstrapPanel">
-            <p id="modelBootstrapStatus">Models are downloaded automatically for the selected language pair and purged after use.</p>
+          <div class="model-bootstrap" id="modelDeliveryPanel">
+            <p id="modelDeliveryStatus">Models are downloaded automatically for the selected language pair and purged after use.</p>
             <div class="progress-block">
               <div class="progress-label">
                 <span>Model delivery</span>
-                <strong id="modelBootstrapProgressText">on demand</strong>
+                <strong id="modelDeliveryProgressText">on demand</strong>
               </div>
               <div class="progress-track">
-                <span id="modelBootstrapProgressBar"></span>
+                <span id="modelDeliveryProgressBar"></span>
               </div>
             </div>
-            <button class="secondary-button" id="modelBootstrapButton" type="button" hidden>Cache model assets</button>
           </div>
         </div>
       </section>
@@ -240,10 +239,10 @@
     </main>
   </div>
 
-  <script src="node_modules/@ffmpeg/ffmpeg/dist/ffmpeg.min.js?v=2026-07-15-1"></script>
-  <script src="node_modules/onnxruntime-web/dist/ort.min.js?v=2026-07-15-1"></script>
-  <script src="node_modules/@ricky0123/vad-web/dist/bundle.min.js?v=2026-07-15-1"></script>
-  <script src="app.js?v=2026-07-15-1" type="module"></script>
+  <script src="node_modules/@ffmpeg/ffmpeg/dist/ffmpeg.min.js?v=2026-08-15-2"></script>
+  <script src="node_modules/onnxruntime-web/dist/ort.min.js?v=2026-08-15-2"></script>
+  <script src="node_modules/@ricky0123/vad-web/dist/bundle.min.js?v=2026-08-15-2"></script>
+  <script src="app.js?v=2026-08-15-2" type="module"></script>
 </body>
 
 </html>

@@ -14,6 +14,9 @@ This project follows Semantic Versioning.
 
 ### Changed
 
+- Detached the PWA runtime and service worker from the legacy static model manifests and bootstrap cache.
+- Replaced packaged-model metadata in the runtime graph with lightweight dynamic browser ML limits and timeouts.
+
 ## 1.0.0 - 2026-07-28
 
 ### Added
