@@ -356,6 +356,43 @@ test("app hybrid router wiring runs transcription through the Python transcripti
   });
 });
 
+test("app hybrid router wiring registers browser WAV only when Python transcription fallback needs it", async () => {
+  const calls = [];
+  const audio = {
+    audioBlob: new Blob([new Uint8Array([1])], { type: "audio/wav" }),
+    audioFileName: "browser.wav",
+  };
+  const router = createAppHybridPipelineRouter({
+    backendClient: {
+      registerAudio: async (receivedAudio) => {
+        calls.push(["registerAudio", receivedAudio.audioFileName]);
+        return { audioId: "registered-audio" };
+      },
+      transcribeAudio: async ({ audioId }) => {
+        calls.push(["transcribeAudio", audioId]);
+        return [{ index: 1, start: 0, end: 1.5, text: "Bonjour" }];
+      },
+    },
+    capabilityReport: {
+      stages: {
+        transcription: { runtime: "server-fallback", strategy: "python-backend" },
+      },
+    },
+  });
+
+  const result = await router.runTranscription({
+    audio,
+    sourceLanguage: { code: "fr", name: "French" },
+    segments: [{ index: 1, start: 0, end: 1.5 }],
+  });
+
+  assert.deepEqual(calls, [
+    ["registerAudio", "browser.wav"],
+    ["transcribeAudio", "registered-audio"],
+  ]);
+  assert.equal(result.runtime, "server-fallback");
+});
+
 test("app hybrid router wiring translates already-transcribed segments through the Python translation fallback", async () => {
   const calls = [];
   const jobUpdates = [];

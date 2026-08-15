@@ -16,7 +16,7 @@ const MAX_DURATION_SECONDS = 2.5 * 60 * 60;
 const SEGMENT_SECONDS = 12;
 const LOCAL_SERVICE_URL = "http://127.0.0.1:8765";
 globalThis.__xololinguaDynamicModels = true;
-const APP_ASSET_VERSION = "2026-08-15-3";
+const APP_ASSET_VERSION = "2026-08-15-4";
 const backendClient = createBackendClient({ baseUrl: LOCAL_SERVICE_URL });
 const clientPipelineCapabilities = collectClientPipelineCapabilities();
 const appClientAdapters = createAppClientAdapters({
@@ -408,14 +408,6 @@ async function segmentAudio() {
 
   els.segmentationStatus.textContent = `Audio extracted: ${formatBytes(state.extractedAudio.audioSizeBytes)} WAV. Segmenting speech audio...`;
   try {
-    if (!state.extractedAudio.audioId && state.extractedAudio.audioBlob) {
-      els.segmentationStatus.textContent = "Registering browser-extracted audio for Python fallback stages...";
-      const registeredAudio = await backendClient.registerAudio(state.extractedAudio, (progress) => {
-        const scaledProgress = 35 + Math.round(progress * 0.15);
-        setProgress("segmentation", scaledProgress);
-      });
-      state.extractedAudio = { ...state.extractedAudio, ...registeredAudio };
-    }
     const segmentation = await hybridPipelineRouter.runVadSegmentation(state.extractedAudio, (progress) => {
       const scaledProgress = 50 + Math.round(progress * 0.5);
       setProgress("segmentation", scaledProgress);

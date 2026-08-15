@@ -33,6 +33,12 @@ test("app consumes canonical VAD stage payload segments while preserving segment
   assert.match(appSource, /finishSegmentation\(segmentation\.payload\.segments, stageReports\)/);
 });
 
+test("app attempts browser VAD before registering audio for a Python fallback", () => {
+  assert.doesNotMatch(appSource, /Registering browser-extracted audio for Python fallback stages/);
+  assert.doesNotMatch(appSource, /backendClient\.registerAudio\(state\.extractedAudio/);
+  assert.match(appSource, /hybridPipelineRouter\.runVadSegmentation\(state\.extractedAudio/);
+});
+
 test("app carries canonical audio extraction metadata into segmentation status details", () => {
   assert.match(appSource, /state\.extractedAudio = \{ \.\.\.extraction\.payload, \.\.\.extraction\.metadata \};/);
   assert.match(appSource, /formatBytes\(state\.extractedAudio\.audioSizeBytes\)/);
