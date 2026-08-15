@@ -1,13 +1,15 @@
 import { mapClientMlProgress } from "./client_ml_progress.js";
 
 export function detectClientTranscriptionCapabilities(environment = globalThis) {
+  const dynamicModels = Boolean(environment?.__xololinguaDynamicModels);
   const transformersJs = typeof environment?.Worker === "function";
   const webGpu = Boolean(environment?.navigator?.gpu);
 
   return {
     transformersJs,
     webGpu,
-    strategy: transformersJs ? "transformers.js" : "unavailable",
+    ...(dynamicModels && transformersJs ? { remoteModels: true, transientModelCache: true } : {}),
+    strategy: transformersJs ? dynamicModels ? "remote-transformers.js" : "transformers.js" : "unavailable",
   };
 }
 
@@ -16,6 +18,9 @@ export function createClientTranscriber({
   transformerWorker,
   workerUrl,
   modelId,
+  modelResolver,
+  remoteModels = false,
+  purgeAfterUse = false,
   warmupTimeoutMs,
   warmupSampleSeconds = 1,
   maxDurationSeconds,
@@ -27,7 +32,8 @@ export function createClientTranscriber({
   let warmupMetadata;
 
   const ensureWarmup = async (request, onProgress) => {
-    if (!modelId || !workerUrl || typeof environment?.Worker !== "function") {
+    const model = resolveModelRequest({ request, modelId, modelResolver, remoteModels, purgeAfterUse });
+    if (!model.modelId || !workerUrl || typeof environment?.Worker !== "function") {
       return undefined;
     }
     if (!warmupPromise) {
@@ -41,9 +47,11 @@ export function createClientTranscriber({
         failureMessage: "Browser transcription warmup failed.",
       });
       warmupPromise = warmupWorker({
-        modelId,
+        modelId: model.modelId,
         sampleSeconds: warmupSampleSeconds,
         sourceLanguage: request?.sourceLanguage || "auto",
+        ...(model.remoteModels ? { remoteModels: true } : {}),
+        ...(model.purgeAfterUse ? { purgeOnError: true } : {}),
       }, onProgress).then((metadata) => {
         warmupMetadata = metadata || {};
         return warmupMetadata;
@@ -85,6 +93,7 @@ export function createClientTranscriber({
         throw new Error(`Browser transcription limit exceeded: ${segmentCount} segments is greater than the ${maxSegments} ${segmentLabel} limit.`);
       }
 
+      const model = resolveModelRequest({ request, modelId, modelResolver, remoteModels, purgeAfterUse });
       await ensureWarmup(request, (event) => onProgress(mapClientMlProgress(event, "asr-warmup")));
 
       const transcribe = typeof transformerWorker === "function"
@@ -95,13 +104,19 @@ export function createClientTranscriber({
         throw new Error("Browser transcription requires transformers.js in a Web Worker or a configured transcription fallback.");
       }
 
-      const workerRequest = await prepareTranscriptionWorkerRequest({ request, modelId, environment });
+      const workerRequest = await prepareTranscriptionWorkerRequest({
+        request,
+        modelId: model.modelId,
+        environment,
+        remoteModels: model.remoteModels,
+        purgeAfterUse: model.purgeAfterUse,
+      });
       const result = await transcribe(
         workerRequest,
         (event) => onProgress(mapClientMlProgress(event, "transcribing")),
       );
       const output = {
-        strategy: result.strategy || (modelId ? "whisper-transformers.js" : "transformers.js"),
+        strategy: result.strategy || (model.modelId ? "whisper-transformers.js" : "transformers.js"),
         language: result.language || request.sourceLanguage || "unknown",
         segments: (result.segments || []).map((segment, index) => ({
           index: segment.index || index + 1,
@@ -110,9 +125,12 @@ export function createClientTranscriber({
           text: segment.text || "",
         })),
       };
-      if (modelId) {
+      if (model.modelId) {
         output.metadata = {
-          modelId,
+          modelId: model.modelId,
+          ...(model.remoteModels ? { remoteModels: true } : {}),
+          ...(model.purgeAfterUse ? { purgeAfterUse: true } : {}),
+          ...(result.metadata || {}),
           warmup: warmupMetadata || {},
           warmupTimeoutMs,
         };
@@ -134,9 +152,30 @@ function createTranscriptionWorkerClient({ environment, workerUrl, maxWorkerResp
   });
 }
 
-async function prepareTranscriptionWorkerRequest({ request = {}, modelId, environment }) {
+function resolveModelRequest({ request, modelId, modelResolver, remoteModels, purgeAfterUse }) {
+  const resolved = typeof modelResolver === "function" ? modelResolver(request || {}) : {};
+  return {
+    modelId: resolved?.modelId || modelId,
+    remoteModels: resolved?.remote ?? remoteModels,
+    purgeAfterUse: resolved?.purgeAfterUse ?? purgeAfterUse,
+  };
+}
+
+async function prepareTranscriptionWorkerRequest({
+  request = {},
+  modelId,
+  environment,
+  remoteModels = false,
+  purgeAfterUse = false,
+}) {
   const audio = await prepareTranscriptionAudio(request.audio, environment);
-  return modelId ? { ...request, audio, modelId } : { ...request, audio };
+  return {
+    ...request,
+    audio,
+    ...(modelId ? { modelId } : {}),
+    ...(remoteModels ? { remoteModels: true } : {}),
+    ...(purgeAfterUse ? { purgeAfterUse: true } : {}),
+  };
 }
 
 async function prepareTranscriptionAudio(audio, environment) {

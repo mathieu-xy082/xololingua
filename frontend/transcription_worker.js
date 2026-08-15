@@ -1,12 +1,13 @@
-import { env, pipeline } from "../node_modules/@huggingface/transformers/dist/transformers.min.js";
+import { env, ModelRegistry, pipeline } from "../node_modules/@huggingface/transformers/dist/transformers.min.js";
 
 const DEFAULT_MODEL_ID = "Xenova/whisper-base";
 const DEFAULT_SAMPLE_RATE = 16_000;
 
-// Browser real-model mode must be explicit/local. The bootstrap workflow is
-// responsible for placing compatible Transformers.js assets under this root.
-env.allowRemoteModels = false;
+// Production requests download Whisper on demand. Local models remain
+// available for deterministic and offline validation runs.
+env.allowRemoteModels = true;
 env.allowLocalModels = true;
+env.useBrowserCache = true;
 env.localModelPath = "../models/";
 env.backends.onnx.wasm.wasmPaths = "/node_modules/@huggingface/transformers/node_modules/onnxruntime-web/dist/";
 
@@ -30,6 +31,9 @@ self.onmessage = async (event) => {
 
     throw new Error(`Unsupported transcription worker message type: ${message.type || "unknown"}.`);
   } catch (error) {
+    if (message.request?.purgeAfterUse || message.request?.purgeOnError) {
+      await releaseRecognizer(message.request.modelId || DEFAULT_MODEL_ID, true);
+    }
     self.postMessage({
       type: "error",
       error: error instanceof Error ? error.message : String(error),
@@ -37,7 +41,8 @@ self.onmessage = async (event) => {
   }
 };
 
-async function warmupRecognizer({ modelId = DEFAULT_MODEL_ID, sampleSeconds = 1, sourceLanguage = "auto" } = {}) {
+async function warmupRecognizer({ modelId = DEFAULT_MODEL_ID, sampleSeconds = 1, sourceLanguage = "auto", remoteModels = false } = {}) {
+  configureModelSource(remoteModels);
   self.postMessage({ type: "progress", event: { stage: "asr-warmup", progress: 5, message: "Loading local ASR model..." } });
   const recognizer = await getRecognizer(modelId);
   self.postMessage({ type: "progress", event: { stage: "asr-warmup", progress: 70, message: "Running ASR warmup sample..." } });
@@ -54,6 +59,7 @@ async function warmupRecognizer({ modelId = DEFAULT_MODEL_ID, sampleSeconds = 1,
 
 async function transcribeAudio(request = {}) {
   const modelId = request.modelId || DEFAULT_MODEL_ID;
+  configureModelSource(request.remoteModels);
   const recognizer = await getRecognizer(modelId);
   const audioInput = await resolveAudioInput(request);
   const sourceLanguage = normalizeLanguageCode(request.sourceLanguage);
@@ -63,11 +69,15 @@ async function transcribeAudio(request = {}) {
     ? await transcribeVadSegments({ recognizer, audioInput, sampleRate, segments: vadSegments, sourceLanguage })
     : await transcribeWholeAudio({ recognizer, audioInput, request, sourceLanguage });
 
-  return {
+  const result = {
     strategy: "whisper-transformers.js",
     language: sourceLanguage || "unknown",
     segments: segments.filter((segment) => segment.text || segment.end > segment.start),
   };
+  if (request.purgeAfterUse) {
+    result.metadata = await releaseRecognizer(modelId, true);
+  }
+  return result;
 }
 
 async function transcribeVadSegments({ recognizer, audioInput, sampleRate, segments, sourceLanguage }) {
@@ -129,6 +139,36 @@ async function getRecognizer(modelId) {
     });
   }
   return recognizerPromise;
+}
+
+function configureModelSource(remoteModels) {
+  env.allowRemoteModels = Boolean(remoteModels);
+  env.allowLocalModels = !remoteModels;
+  env.useBrowserCache = true;
+}
+
+async function releaseRecognizer(modelId, purgeCache) {
+  const pending = recognizerPromise;
+  let recognizer = null;
+  try {
+    recognizer = await pending;
+  } catch {
+    // A partial download may still have populated the Transformers.js cache.
+  }
+  if (recognizer && typeof recognizer.dispose === "function") {
+    await recognizer.dispose();
+  }
+  recognizerPromise = undefined;
+  recognizerModelId = undefined;
+  if (purgeCache && typeof ModelRegistry?.clear_pipeline_cache === "function") {
+    let report;
+    try {
+      report = await ModelRegistry.clear_pipeline_cache("automatic-speech-recognition", modelId, { dtype: "q4" });
+    } catch (error) {
+      return { cachePurged: false, filesDeleted: 0, purgeError: error?.message || String(error) };
+    return { cachePurged: true, filesDeleted: report?.filesDeleted || 0 };
+  }
+  return { cachePurged: false, filesDeleted: 0 };
 }
 
 async function resolveAudioInput(request) {

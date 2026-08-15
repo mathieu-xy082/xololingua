@@ -1,12 +1,13 @@
-import { env, pipeline } from "../node_modules/@huggingface/transformers/dist/transformers.min.js";
+import { env, ModelRegistry, pipeline } from "../node_modules/@huggingface/transformers/dist/transformers.min.js";
 
 const DEFAULT_MODEL_ID = "Xenova/opus-mt-fr-en";
 const DEFAULT_SAMPLE_TEXT = "Bonjour le monde.";
 
-// Browser real-model mode must be explicit/local. The bootstrap workflow is
-// responsible for placing compatible Transformers.js assets under this root.
-env.allowRemoteModels = false;
+// Production requests select a remote model per language pair. Local models
+// remain available for deterministic and offline validation runs.
+env.allowRemoteModels = true;
 env.allowLocalModels = true;
+env.useBrowserCache = true;
 env.localModelPath = "../models/";
 env.backends.onnx.wasm.wasmPaths = "/node_modules/@huggingface/transformers/node_modules/onnxruntime-web/dist/";
 
@@ -30,6 +31,9 @@ self.onmessage = async (event) => {
 
     throw new Error(`Unsupported translation worker message type: ${message.type || "unknown"}.`);
   } catch (error) {
+    if (message.request?.purgeAfterUse || message.request?.purgeOnError) {
+      await releaseTranslator(message.request.modelId || DEFAULT_MODEL_ID, true);
+    }
     self.postMessage({
       type: "error",
       error: error instanceof Error ? error.message : String(error),
@@ -42,11 +46,20 @@ async function warmupTranslator({
   sampleText = DEFAULT_SAMPLE_TEXT,
   sourceLanguage = "fr",
   targetLanguage = "en",
+  remoteModels = false,
+  purgeOnError = false,
 } = {}) {
+  configureModelSource(remoteModels);
   self.postMessage({ type: "progress", event: { stage: "translation-warmup", progress: 5, message: "Loading local translation model..." } });
-  const translator = await getTranslator(modelId);
-  self.postMessage({ type: "progress", event: { stage: "translation-warmup", progress: 70, message: "Running translation warmup sample..." } });
-  await translator(sampleText || DEFAULT_SAMPLE_TEXT, createTranslationOptions({ sourceLanguage, targetLanguage }));
+  let translator;
+  try {
+    translator = await getTranslator(modelId);
+    self.postMessage({ type: "progress", event: { stage: "translation-warmup", progress: 70, message: "Running translation warmup sample..." } });
+    await translator(sampleText || DEFAULT_SAMPLE_TEXT, createTranslationOptions({ sourceLanguage, targetLanguage }));
+  } catch (error) {
+    if (purgeOnError) await releaseTranslator(modelId, true);
+    throw error;
+  }
   self.postMessage({ type: "progress", event: { stage: "translation-warmup", progress: 100, message: "Translation model warmup complete." } });
   return {
     modelId,
@@ -58,6 +71,7 @@ async function warmupTranslator({
 
 async function translateSegments(request = {}) {
   const modelId = request.modelId || DEFAULT_MODEL_ID;
+  configureModelSource(request.remoteModels);
   const translator = await getTranslator(modelId);
   const sourceLanguage = normalizeLanguageCode(request.sourceLanguage || "fr");
   const targetLanguage = normalizeLanguageCode(request.targetLanguage || "en");
@@ -87,11 +101,15 @@ async function translateSegments(request = {}) {
   }
 
   self.postMessage({ type: "progress", event: { stage: "translating", progress: 100, message: "Translation batch complete." } });
-  return {
+  const result = {
     strategy: "opus-mt-transformers.js",
     languagePair: { source: sourceLanguage, target: targetLanguage },
     segments: translatedSegments,
   };
+  if (request.purgeAfterUse) {
+    result.metadata = await releaseTranslator(modelId, true);
+  }
+  return result;
 }
 
 async function getTranslator(modelId) {
@@ -105,6 +123,36 @@ async function getTranslator(modelId) {
     });
   }
   return translatorPromise;
+}
+
+function configureModelSource(remoteModels) {
+  env.allowRemoteModels = Boolean(remoteModels);
+  env.allowLocalModels = !remoteModels;
+  env.useBrowserCache = true;
+}
+
+async function releaseTranslator(modelId, purgeCache) {
+  const pending = translatorPromise;
+  let translator = null;
+  try {
+    translator = await pending;
+  } catch {
+    // A partial download may still have populated the Transformers.js cache.
+  }
+  if (translator && typeof translator.dispose === "function") {
+    await translator.dispose();
+  }
+  translatorPromise = undefined;
+  translatorModelId = undefined;
+  if (purgeCache && typeof ModelRegistry?.clear_pipeline_cache === "function") {
+    let report;
+    try {
+      report = await ModelRegistry.clear_pipeline_cache("translation", modelId, { dtype: "q4" });
+    } catch (error) {
+      return { cachePurged: false, filesDeleted: 0, purgeError: error?.message || String(error) };
+    return { cachePurged: true, filesDeleted: report?.filesDeleted || 0 };
+  }
+  return { cachePurged: false, filesDeleted: 0 };
 }
 
 function createTranslationOptions({ sourceLanguage, targetLanguage } = {}) {

@@ -1,6 +1,7 @@
 import { mapClientMlProgress } from "./client_ml_progress.js";
 
 export function detectClientTranslationCapabilities(environment = globalThis) {
+  const dynamicModels = Boolean(environment?.__xololinguaDynamicModels);
   const localTransformersJs = typeof environment?.Worker === "function";
   const cloudProvider = Boolean(environment?.translationCloudProvider)
     || typeof environment?.createCloudTranslator === "function";
@@ -8,8 +9,9 @@ export function detectClientTranslationCapabilities(environment = globalThis) {
   return {
     localTransformersJs,
     cloudProvider,
+    ...(dynamicModels && localTransformersJs ? { remoteModels: true, transientModelCache: true } : {}),
     strategy: localTransformersJs
-      ? "local-transformers.js"
+      ? dynamicModels ? "remote-transformers.js" : "local-transformers.js"
       : cloudProvider
         ? "cloud-provider"
         : "unavailable",
@@ -21,6 +23,9 @@ export function createClientTranslator({
   localTranslatorWorker,
   workerUrl,
   modelId,
+  modelResolver,
+  remoteModels = false,
+  purgeAfterUse = false,
   warmupTimeoutMs,
   warmupSampleText,
   cloudTranslator,
@@ -32,6 +37,8 @@ export function createClientTranslator({
     capabilities: detectClientTranslationCapabilities(environment),
 
     async translateSegments(request, onProgress = () => {}) {
+      const model = resolveModelRequest({ request, modelId, modelResolver, remoteModels, purgeAfterUse });
+
       const segmentCount = request?.segments?.length || 0;
       if (
         Number.isFinite(maxSegments)
@@ -48,7 +55,7 @@ export function createClientTranslator({
         ? localTranslate
         : cloudTranslator;
       const strategy = typeof localTranslate === "function"
-        ? "local-transformers.js"
+        ? model.remoteModels ? "remote-transformers.js" : "local-transformers.js"
         : "cloud-provider";
 
       if (typeof translate !== "function") {
@@ -59,21 +66,28 @@ export function createClientTranslator({
         ? await warmupLocalTranslatorWorker({
             environment,
             workerUrl,
-            modelId,
+            modelId: model.modelId,
             warmupTimeoutMs,
             warmupSampleText,
             sourceLanguage: request.sourceLanguage,
             targetLanguage: request.targetLanguage,
+            remoteModels: model.remoteModels,
+            purgeOnError: model.purgeAfterUse,
           }, (event) => onProgress(mapClientMlProgress(event, "translation-warmup")))
         : null;
 
-      const batches = createSegmentBatches(request.segments, maxBatchSize);
+      const batches = createSegmentBatches(
+        request.segments,
+        model.purgeAfterUse ? undefined : maxBatchSize,
+      );
       const translatedSegments = [];
       for (const [batchIndex, batch] of batches.entries()) {
         const translateRequest = createTranslatorWorkerRequest({
           request,
-          modelId,
+          modelId: model.modelId,
           segments: batch,
+          remoteModels: model.remoteModels,
+          purgeAfterUse: model.purgeAfterUse && batchIndex === batches.length - 1,
         });
         const result = await translate(
           translateRequest,
@@ -91,7 +105,12 @@ export function createClientTranslator({
 
       return {
         strategy,
-        ...(warmupMetadata ? { metadata: { warmup: warmupMetadata } } : {}),
+        ...((model.remoteModels || model.purgeAfterUse || warmupMetadata) ? { metadata: {
+          ...(model.remoteModels || model.purgeAfterUse ? { modelId: model.modelId } : {}),
+          ...(model.remoteModels ? { remoteModels: true } : {}),
+          ...(model.purgeAfterUse ? { purgeAfterUse: true } : {}),
+          ...(warmupMetadata ? { warmup: warmupMetadata } : {}),
+        } } : {}),
         segments: request.segments.map((segment) => {
           const translated = translatedByIndex.get(segment.index) || {};
           return {
@@ -118,12 +137,29 @@ function createSegmentBatches(segments = [], maxBatchSize) {
   return batches.length > 0 ? batches : [[]];
 }
 
-function createTranslatorWorkerRequest({ request = {}, modelId, segments = [] }) {
+function resolveModelRequest({ request, modelId, modelResolver, remoteModels, purgeAfterUse }) {
+  const resolved = typeof modelResolver === "function" ? modelResolver(request || {}) : {};
+  return {
+    modelId: resolved?.modelId || modelId,
+    remoteModels: resolved?.remote ?? remoteModels,
+    purgeAfterUse: resolved?.purgeAfterUse ?? purgeAfterUse,
+  };
+}
+
+function createTranslatorWorkerRequest({
+  request = {},
+  modelId,
+  segments = [],
+  remoteModels = false,
+  purgeAfterUse = false,
+}) {
   return {
     ...(modelId ? { modelId } : {}),
     segments,
     sourceLanguage: request.sourceLanguage,
     targetLanguage: request.targetLanguage,
+    ...(remoteModels ? { remoteModels: true } : {}),
+    ...(purgeAfterUse ? { purgeAfterUse: true } : {}),
   };
 }
 
@@ -157,6 +193,8 @@ function warmupLocalTranslatorWorker({
   warmupSampleText,
   sourceLanguage,
   targetLanguage,
+  remoteModels,
+  purgeOnError,
 }, onProgress) {
   if (!Number.isFinite(warmupTimeoutMs) || warmupTimeoutMs <= 0) {
     return null;
@@ -177,6 +215,8 @@ function warmupLocalTranslatorWorker({
     ...(warmupSampleText ? { sampleText: warmupSampleText } : {}),
     sourceLanguage,
     targetLanguage,
+    ...(remoteModels ? { remoteModels: true } : {}),
+    ...(purgeOnError ? { purgeOnError: true } : {}),
   }, onProgress);
 }
 
