@@ -23,24 +23,21 @@ self.onmessage = async (event) => {
 };
 
 async function segmentPcm({
-  pcmBuffer,
-  sampleRate,
+  audioBuffer,
   modelURL,
   ortWasmBasePath,
   vadOptions = {},
   chunkSeconds = DEFAULT_CHUNK_SECONDS,
 } = {}) {
-  if (!(pcmBuffer instanceof ArrayBuffer)) {
-    throw new Error("VAD worker requires a transferred PCM ArrayBuffer.");
-  }
-  if (!Number.isFinite(sampleRate) || sampleRate <= 0) {
-    throw new Error("VAD worker requires a positive sample rate.");
+  if (!(audioBuffer instanceof ArrayBuffer)) {
+    throw new Error("VAD worker requires a transferred WAV ArrayBuffer.");
   }
   if (typeof self.vad?.NonRealTimeVAD?.new !== "function") {
     throw new Error("vad-web failed to load in the VAD worker.");
   }
 
-  const pcm = new Float32Array(pcmBuffer);
+  const { pcm, sampleRate } = decodeWavPcm(audioBuffer);
+  self.postMessage({ type: "progress", progress: 20 });
   const detector = await self.vad.NonRealTimeVAD.new({
     modelURL,
     ...vadOptions,
@@ -75,5 +72,88 @@ async function segmentPcm({
     });
   }
 
-  return { segments, rawSegmentCount: segments.length };
+  return {
+    segments,
+    rawSegmentCount: segments.length,
+    pcmSampleCount: pcm.length,
+    sourceSampleRate: sampleRate,
+  };
+}
+
+function decodeWavPcm(audioBuffer) {
+  const view = new DataView(audioBuffer);
+  if (view.byteLength < 44 || readFourCc(view, 0) !== "RIFF" || readFourCc(view, 8) !== "WAVE") {
+    throw new Error("VAD worker received an invalid RIFF/WAVE audio file.");
+  }
+
+  let format = null;
+  let dataOffset = -1;
+  let dataSize = 0;
+  for (let offset = 12; offset + 8 <= view.byteLength;) {
+    const chunkId = readFourCc(view, offset);
+    const declaredSize = view.getUint32(offset + 4, true);
+    const chunkOffset = offset + 8;
+    const availableSize = Math.min(declaredSize, Math.max(0, view.byteLength - chunkOffset));
+
+    if (chunkId === "fmt " && availableSize >= 16) {
+      format = {
+        audioFormat: view.getUint16(chunkOffset, true),
+        channelCount: view.getUint16(chunkOffset + 2, true),
+        sampleRate: view.getUint32(chunkOffset + 4, true),
+        blockAlign: view.getUint16(chunkOffset + 12, true),
+        bitsPerSample: view.getUint16(chunkOffset + 14, true),
+      };
+    } else if (chunkId === "data") {
+      dataOffset = chunkOffset;
+      dataSize = availableSize;
+    }
+
+    const nextOffset = chunkOffset + declaredSize + (declaredSize % 2);
+    if (nextOffset <= offset || nextOffset > view.byteLength) break;
+    offset = nextOffset;
+  }
+
+  if (!format || dataOffset < 0) {
+    throw new Error("VAD worker WAV file is missing its format or audio data chunk.");
+  }
+  const { audioFormat, channelCount, sampleRate, blockAlign, bitsPerSample } = format;
+  if (!Number.isFinite(sampleRate) || sampleRate <= 0 || channelCount <= 0 || blockAlign <= 0) {
+    throw new Error("VAD worker WAV file has invalid audio format metadata.");
+  }
+
+  const isPcm16 = audioFormat === 1 && bitsPerSample === 16;
+  const isFloat32 = audioFormat === 3 && bitsPerSample === 32;
+  if (!isPcm16 && !isFloat32) {
+    throw new Error(
+      `VAD worker supports 16-bit PCM and 32-bit float WAV audio; received format ${audioFormat}/${bitsPerSample}-bit.`,
+    );
+  }
+
+  const bytesPerSample = bitsPerSample / 8;
+  if (blockAlign < channelCount * bytesPerSample) {
+    throw new Error("VAD worker WAV file has an invalid block alignment.");
+  }
+  const frameCount = Math.floor(dataSize / blockAlign);
+  const pcm = new Float32Array(frameCount);
+  for (let frame = 0; frame < frameCount; frame += 1) {
+    const frameOffset = dataOffset + frame * blockAlign;
+    let mixedSample = 0;
+    for (let channel = 0; channel < channelCount; channel += 1) {
+      const sampleOffset = frameOffset + channel * bytesPerSample;
+      mixedSample += isPcm16
+        ? view.getInt16(sampleOffset, true) / 32768
+        : view.getFloat32(sampleOffset, true);
+    }
+    pcm[frame] = mixedSample / channelCount;
+  }
+  return { pcm, sampleRate };
+}
+
+function readFourCc(view, offset) {
+  return String.fromCharCode(
+    view.getUint8(offset),
+    view.getUint8(offset + 1),
+    view.getUint8(offset + 2),
+    view.getUint8(offset + 3),
+  );
 }

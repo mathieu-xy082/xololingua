@@ -197,13 +197,12 @@ test("createVadWebRuntimeSegmenter decodes browser WAV blobs and runs NonRealTim
   });
 });
 
-test("createVadWebRuntimeSegmenter transfers PCM to a worker and reports incremental progress", async () => {
+test("createVadWebRuntimeSegmenter transfers raw WAV audio to a worker and reports incremental progress", async () => {
   const audioBlob = new Blob([new Uint8Array([1, 2, 3])], { type: "audio/wav" });
-  const pcm = new Float32Array(320000);
   const environment = {
     vad: {
       utils: {
-        audioFileToArray: async () => ({ audio: pcm, sampleRate: 16000 }),
+        audioFileToArray: async () => assert.fail("main-thread WAV decoding must not run"),
       },
       NonRealTimeVAD: { new: async () => assert.fail("main-thread VAD must not run") },
     },
@@ -219,7 +218,12 @@ test("createVadWebRuntimeSegmenter transfers PCM to a worker and reports increme
         this.onmessage({
           data: {
             type: "result",
-            result: { segments: [{ start: 0, end: 12000 }], rawSegmentCount: 1 },
+            result: {
+              segments: [{ start: 0, end: 12000 }],
+              rawSegmentCount: 1,
+              pcmSampleCount: 320000,
+              sourceSampleRate: 16000,
+            },
           },
         });
       });
@@ -244,8 +248,10 @@ test("createVadWebRuntimeSegmenter transfers PCM to a worker and reports increme
   assert.deepEqual(result.segments, [{ start: 0, end: 12 }]);
   assert.equal(posted.length, 1);
   assert.equal(posted[0].message.type, "segment");
-  assert.equal(posted[0].message.request.sampleRate, 16000);
-  assert.equal(posted[0].transfer[0], posted[0].message.request.pcmBuffer);
+  assert.equal(posted[0].message.request.sampleRate, undefined);
+  assert.equal(posted[0].message.request.pcmBuffer, undefined);
+  assert.ok(posted[0].message.request.audioBuffer instanceof ArrayBuffer);
+  assert.equal(posted[0].transfer[0], posted[0].message.request.audioBuffer);
   assert.equal(terminated, true);
 });
 

@@ -116,32 +116,34 @@ export function createVadWebRuntimeSegmenter({
       throw new Error("Browser VAD runtime requires an audioBlob or Blob input from browser audio extraction.");
     }
 
-    onProgress(0);
-    const decoded = await environment.vad.utils.audioFileToArray(audioBlob);
-    const pcm = decoded?.audio;
-    const sourceSampleRate = decoded?.sampleRate ?? audio?.sampleRate ?? audio?.sampleRateHz;
-    if (!(pcm instanceof Float32Array)) {
-      throw new Error("Browser VAD runtime audio decoder must return a Float32Array at decoded.audio.");
-    }
-    if (typeof sourceSampleRate !== "number" || sourceSampleRate <= 0) {
-      throw new Error("Browser VAD runtime audio decoder must return a positive numeric sampleRate.");
-    }
-
-    onProgress(15);
-    const audioDurationSeconds = pcm.length / sourceSampleRate;
     const createWorker = resolveVadWorkerFactory(environment, workerFactory);
-    const rawResult = createWorker
-      ? await runVadInWorker({
+    onProgress(0);
+    let rawResult;
+    if (createWorker) {
+      const audioBuffer = await audioBlob.arrayBuffer();
+      onProgress(15);
+      rawResult = await runVadInWorker({
           createWorker,
           workerUrl,
-          pcm,
-          sampleRate: sourceSampleRate,
+          audioBuffer,
           modelURL,
           ortWasmBasePath,
           vadOptions: resolvedVadProfile.options,
           onProgress,
-        })
-      : await runVadOnMainThread({
+        });
+    } else {
+      const decoded = await environment.vad.utils.audioFileToArray(audioBlob);
+      const pcm = decoded?.audio;
+      const sourceSampleRate = decoded?.sampleRate ?? audio?.sampleRate ?? audio?.sampleRateHz;
+      if (!(pcm instanceof Float32Array)) {
+        throw new Error("Browser VAD runtime audio decoder must return a Float32Array at decoded.audio.");
+      }
+      if (typeof sourceSampleRate !== "number" || sourceSampleRate <= 0) {
+        throw new Error("Browser VAD runtime audio decoder must return a positive numeric sampleRate.");
+      }
+
+      onProgress(15);
+      rawResult = await runVadOnMainThread({
           environment,
           pcm,
           sampleRate: sourceSampleRate,
@@ -150,6 +152,19 @@ export function createVadWebRuntimeSegmenter({
           vadOptions: resolvedVadProfile.options,
           onProgress,
         });
+      rawResult.pcmSampleCount = pcm.length;
+      rawResult.sourceSampleRate = sourceSampleRate;
+    }
+
+    const pcmSampleCount = rawResult.pcmSampleCount;
+    const sourceSampleRate = rawResult.sourceSampleRate;
+    if (!Number.isFinite(pcmSampleCount) || pcmSampleCount < 0) {
+      throw new Error("Browser VAD runtime must report a valid PCM sample count.");
+    }
+    if (!Number.isFinite(sourceSampleRate) || sourceSampleRate <= 0) {
+      throw new Error("Browser VAD runtime must report a positive source sample rate.");
+    }
+    const audioDurationSeconds = pcmSampleCount / sourceSampleRate;
     const segments = rawResult.segments.map((segment) => ({
         start: normalizeVadTimestamp(segment.start, {
           audioDurationSeconds,
@@ -169,7 +184,7 @@ export function createVadWebRuntimeSegmenter({
       diagnostics: {
         audioFileName: audio?.audioFileName ?? audioBlob?.name ?? null,
         model,
-        pcmSampleCount: pcm.length,
+        pcmSampleCount,
         rawSegmentCount: rawResult.rawSegmentCount,
         boundedSegmentCount: boundedSegments.length,
         sourceSampleRate,
@@ -223,8 +238,7 @@ async function runVadOnMainThread({
 async function runVadInWorker({
   createWorker,
   workerUrl,
-  pcm,
-  sampleRate,
+  audioBuffer,
   modelURL,
   ortWasmBasePath,
   vadOptions,
@@ -234,9 +248,9 @@ async function runVadInWorker({
   if (!worker || typeof worker.postMessage !== "function") {
     throw new Error("Browser VAD worker factory must return a Web Worker.");
   }
-  const pcmBuffer = pcm.byteOffset === 0 && pcm.byteLength === pcm.buffer.byteLength
-    ? pcm.buffer
-    : pcm.slice().buffer;
+  if (!(audioBuffer instanceof ArrayBuffer)) {
+    throw new Error("Browser VAD worker requires an audio ArrayBuffer.");
+  }
 
   try {
     return await new Promise((resolve, reject) => {
@@ -256,13 +270,12 @@ async function runVadInWorker({
       worker.postMessage({
         type: "segment",
         request: {
-          pcmBuffer,
-          sampleRate,
+          audioBuffer,
           modelURL,
           ortWasmBasePath,
           vadOptions,
         },
-      }, [pcmBuffer]);
+      }, [audioBuffer]);
     });
   } finally {
     worker.terminate?.();
