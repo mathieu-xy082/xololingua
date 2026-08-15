@@ -24,7 +24,7 @@ const MAX_DURATION_SECONDS = 2.5 * 60 * 60;
 const SEGMENT_SECONDS = 12;
 const LOCAL_SERVICE_URL = "http://127.0.0.1:8765";
 globalThis.__xololinguaDynamicModels = true;
-const APP_ASSET_VERSION = "2026-08-15-7";
+const APP_ASSET_VERSION = "2026-08-16-1";
 const backendClient = createBackendClient({ baseUrl: LOCAL_SERVICE_URL });
 const clientPipelineCapabilities = collectClientPipelineCapabilities();
 const appClientAdapters = createAppClientAdapters({
@@ -468,6 +468,7 @@ async function generateSubtitles() {
       stageResult: transcription,
       modelId: transcriptionModel.modelId,
     });
+    setSubtitleProgress(100, 0);
     state.segments = transcription.payload.segments;
     renderSegmentReview();
     els.subtitleStatus.textContent = `Subtitle generation: ${formatPipelineStageRuntime({ stage: "transcription", ...transcription })}. Translating subtitles...`;
@@ -812,7 +813,30 @@ function setSubtitleProgress(transcription, translation) {
 function syncSubtitleProgress(job) {
   const rawProgress = clampProgress(job.progress || 0);
 
+  if (
+    state.modelDelivery.current?.stage === "transcription"
+    && (job.stage === "loading-model" || job.stage === "asr-warmup")
+  ) {
+    const preparation = Math.max(1, Math.min(10, Math.round(state.modelDelivery.current.progress / 10)));
+    setSubtitleProgress(preparation, 0);
+    return;
+  }
+
+  if (
+    state.modelDelivery.current?.stage === "translation"
+    && (job.stage === "loading-model" || job.stage === "translation-warmup")
+  ) {
+    const preparation = Math.max(1, Math.min(10, Math.round(state.modelDelivery.current.progress / 10)));
+    setSubtitleProgress(100, preparation);
+    return;
+  }
+
   if (job.stage === "transcribing") {
+    if (typeof job.transcriptionProgress === "number") {
+      const transcription = 10 + Math.round(clampProgress(job.transcriptionProgress) * 0.9);
+      setSubtitleProgress(transcription, 0);
+      return;
+    }
     const transcription = Math.round((rawProgress / 55) * 100);
     setSubtitleProgress(transcription, 0);
     return;

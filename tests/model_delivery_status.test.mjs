@@ -25,7 +25,56 @@ test("model delivery status reports real worker file progress", () => {
   assert.deepEqual(describeModelDelivery(tracker), {
     status: "Downloading Xenova/whisper-base — model_quantized.onnx...",
     progress: 50,
-    progressText: "50% · 50.0 MB / 100.0 MB",
+    progressText: "50% · 50.0 MB / 100.0 MB · 0/1 assets",
+  });
+});
+
+test("model delivery status does not report a tiny completed asset as the whole model", () => {
+  let tracker = beginModelDelivery(createModelDeliveryTracker(), {
+    stage: "transcription",
+    modelId: "Xenova/whisper-base",
+  });
+  tracker = updateModelDelivery(tracker, {
+    stage: "loading-model",
+    status: "done",
+    file: "preprocessor_config.json",
+    loaded: 339,
+    total: 339,
+    progress: 100,
+  });
+
+  assert.deepEqual(describeModelDelivery(tracker), {
+    status: "Downloading Xenova/whisper-base — preprocessor_config.json...",
+    progress: 5,
+    progressText: "5% · 339 B / 339 B · 1/1 assets",
+  });
+});
+
+test("model delivery status aggregates parallel asset downloads and selects the largest active file", () => {
+  let tracker = beginModelDelivery(createModelDeliveryTracker(), {
+    stage: "transcription",
+    modelId: "Xenova/whisper-base",
+  });
+  tracker = updateModelDelivery(tracker, {
+    stage: "loading-model",
+    status: "done",
+    file: "preprocessor_config.json",
+    loaded: 339,
+    total: 339,
+  });
+  tracker = updateModelDelivery(tracker, {
+    stage: "loading-model",
+    status: "progress",
+    file: "onnx/model_quantized.onnx",
+    loaded: 25 * 1024 * 1024,
+    total: 100 * 1024 * 1024,
+    progress: 25,
+  });
+
+  assert.deepEqual(describeModelDelivery(tracker), {
+    status: "Downloading Xenova/whisper-base — model_quantized.onnx...",
+    progress: 25,
+    progressText: "25% · 25.0 MB / 100.0 MB · 1/2 assets",
   });
 });
 

@@ -92,6 +92,7 @@ async function translateSegments(request = {}) {
       event: {
         stage: "translating",
         progress: Math.round((offset / Math.max(1, segments.length)) * 100),
+        translationProgress: Math.round((offset / Math.max(1, segments.length)) * 100),
         message: `Translating segment ${offset + 1}/${segments.length}...`,
       },
     });
@@ -102,7 +103,7 @@ async function translateSegments(request = {}) {
     });
   }
 
-  self.postMessage({ type: "progress", event: { stage: "translating", progress: 100, message: "Translation batch complete." } });
+  self.postMessage({ type: "progress", event: { stage: "translating", progress: 100, translationProgress: 100, message: "Translation batch complete." } });
   const result = {
     strategy: "opus-mt-transformers.js",
     languagePair: { source: sourceLanguage, target: targetLanguage },

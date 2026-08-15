@@ -84,6 +84,7 @@ async function transcribeAudio(request = {}) {
 
 async function transcribeVadSegments({ recognizer, audioInput, sampleRate, segments, sourceLanguage }) {
   const transcribed = [];
+  reportTranscriptionProgress(1, `Transcribing speech segment 1/${segments.length}...`);
   for (const [offset, segment] of segments.entries()) {
     const pcmSlice = slicePcmForSegment(audioInput, sampleRate, segment);
     const output = await recognizer(pcmSlice, createWhisperOptions({ sourceLanguage, returnTimestamps: false }));
@@ -93,12 +94,21 @@ async function transcribeVadSegments({ recognizer, audioInput, sampleRate, segme
       end: Number(segment.end || segment.start || 0),
       text: extractWhisperText(output),
     });
+    const completed = offset + 1;
+    reportTranscriptionProgress(
+      Math.round((completed / Math.max(1, segments.length)) * 100),
+      completed < segments.length
+        ? `Transcribed ${completed}/${segments.length} speech segments; processing segment ${completed + 1}...`
+        : `Transcribed all ${segments.length} speech segments.`,
+    );
   }
   return transcribed;
 }
 
 async function transcribeWholeAudio({ recognizer, audioInput, request, sourceLanguage }) {
+  reportTranscriptionProgress(1, "Transcribing speech audio...");
   const output = await recognizer(audioInput, createWhisperOptions({ sourceLanguage, returnTimestamps: true }));
+  reportTranscriptionProgress(100, "Speech transcription complete.");
   const chunks = Array.isArray(output?.chunks) ? output.chunks : [];
   if (chunks.length > 0) {
     return chunks.map((chunk, index) => ({
@@ -114,6 +124,18 @@ async function transcribeWholeAudio({ recognizer, audioInput, request, sourceLan
     end: Number(request.audio?.durationSeconds || 0),
     text: extractWhisperText(output),
   }];
+}
+
+function reportTranscriptionProgress(progress, message) {
+  self.postMessage({
+    type: "progress",
+    event: {
+      stage: "transcribing",
+      progress,
+      transcriptionProgress: progress,
+      message,
+    },
+  });
 }
 
 function slicePcmForSegment(audioInput, sampleRate, segment) {

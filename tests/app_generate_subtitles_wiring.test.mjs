@@ -24,6 +24,12 @@ test("app maps direct translation endpoint progress without subtitle-job scaling
   assert.match(appSource, /setSubtitleProgress\(100, job\.translationProgress\)/);
 });
 
+test("app reserves visible progress for browser model preparation and uses direct browser ASR progress", () => {
+  assert.match(appSource, /job\.stage === "loading-model" \|\| job\.stage === "asr-warmup"/);
+  assert.match(appSource, /typeof job\.transcriptionProgress === "number"/);
+  assert.match(appSource, /10 \+ Math\.round\(clampProgress\(job\.transcriptionProgress\) \* 0\.9\)/);
+});
+
 test("app segmentation no longer exposes legacy direct backend adapters outside the hybrid router", () => {
   assert.doesNotMatch(appSource, /function extractAudioAdapter\(/);
   assert.doesNotMatch(appSource, /function serviceSegmentAudioAdapter\(/);

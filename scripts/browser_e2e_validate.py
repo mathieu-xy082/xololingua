@@ -744,6 +744,7 @@ def format_real_model_diagnostics(report: dict) -> str:
         f"cachePurged={str(bool(report.get('cachePurged'))).lower()}",
         f"remainingCacheEntries={report.get('remainingCacheEntries', 0)}",
         f"uiLifecycle={report.get('uiLifecycle', 'unknown')}",
+        f"uiProgress={report.get('uiProgress', 'unknown')}",
         f"httpCacheBytes={report.get('httpCacheBytes', 0)}",
         f"warmup=asr:{warmup.get('asr', 'unknown')},translation:{warmup.get('translation', 'unknown')}",
         f"inference=asr:{inference.get('asr', 'unknown')},translation:{inference.get('translation', 'unknown')}",
@@ -901,6 +902,23 @@ def run_browser_workflow(args: argparse.Namespace) -> Path | None:
                 return destination
 
             log_step("Clicking Generate subtitles")
+            if args.real_browser_models:
+                page.evaluate(
+                    """
+                    () => {
+                      const speech = document.querySelector('#subtitleTranscriptionProgressText');
+                      const model = document.querySelector('#modelDeliveryProgressText');
+                      window.__xololinguaProgressTrace = { speech: [], model: [] };
+                      const capture = () => {
+                        window.__xololinguaProgressTrace.speech.push(speech?.textContent || '');
+                        window.__xololinguaProgressTrace.model.push(model?.textContent || '');
+                      };
+                      new MutationObserver(capture).observe(speech, { childList: true, subtree: true, characterData: true });
+                      new MutationObserver(capture).observe(model, { childList: true, subtree: true, characterData: true });
+                      capture();
+                    }
+                    """
+                )
             page.locator("#generateButton").click()
             download_link = page.locator("#downloadLink")
             expect(download_link).to_be_visible(timeout=args.subtitle_timeout_ms)
@@ -943,6 +961,22 @@ def run_browser_workflow(args: argparse.Namespace) -> Path | None:
                         "Model delivery UI did not reach the purged state: "
                         + model_delivery_progress
                     )
+                progress_trace = page.evaluate("() => window.__xololinguaProgressTrace")
+                speech_progress = [
+                    int(value.removesuffix("%"))
+                    for value in progress_trace.get("speech", [])
+                    if value.removesuffix("%").isdigit()
+                ]
+                if not any(0 < value < 100 for value in speech_progress):
+                    raise AssertionError(
+                        "Speech-to-text UI never exposed intermediate progress: "
+                        + ", ".join(progress_trace.get("speech", []))
+                    )
+                if not any("assets" in value for value in progress_trace.get("model", [])):
+                    raise AssertionError(
+                        "Model delivery UI never exposed aggregate asset progress: "
+                        + ", ".join(progress_trace.get("model", []))
+                    )
                 real_model_report = {
                     "status": "pass",
                     "runtime": "chromium",
@@ -952,6 +986,7 @@ def run_browser_workflow(args: argparse.Namespace) -> Path | None:
                     "cachePurged": True,
                     "remainingCacheEntries": 0,
                     "uiLifecycle": "purged",
+                    "uiProgress": "pass",
                     "warmup": {"asr": "pass", "translation": "pass"},
                     "inference": {"asr": "pass", "translation": "pass"},
                     "coverage": "pass",

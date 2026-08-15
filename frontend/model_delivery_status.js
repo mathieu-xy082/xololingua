@@ -11,6 +11,8 @@ export function beginModelDelivery(tracker, { stage, modelId } = {}) {
     current: {
       stage,
       modelId,
+      phase: "preparing",
+      files: {},
       file: "",
       loaded: null,
       total: null,
@@ -23,30 +25,49 @@ export function beginModelDelivery(tracker, { stage, modelId } = {}) {
 export function updateModelDelivery(tracker, event = {}) {
   if (!tracker?.current) return tracker || createModelDeliveryTracker();
 
-  const progress = Number.isFinite(event.progress)
-    ? clampProgress(event.progress)
-    : tracker.current.progress;
+  if (event.stage === "transcribing" || event.stage === "translating") {
+    return {
+      ...tracker,
+      current: {
+        ...tracker.current,
+        phase: "inference",
+        progress: 100,
+        message: `${tracker.current.modelId} is loaded; ${event.stage} is running in the browser...`,
+      },
+    };
+  }
+
+  if (!isModelLifecycleEvent(event)) return tracker;
+
   const file = typeof event.file === "string"
     ? event.file
     : typeof event.name === "string"
       ? event.name
       : tracker.current.file;
-  const loaded = Number.isFinite(event.loaded) ? event.loaded : tracker.current.loaded;
-  const total = Number.isFinite(event.total) && event.total > 0 ? event.total : tracker.current.total;
-  const isDownload = event.stage === "loading-model"
-    || ["download", "progress", "initiate"].includes(event.status);
-  const fileLabel = file ? ` — ${shortFileName(file)}` : "";
-  const message = isDownload
-    ? `Downloading ${tracker.current.modelId}${fileLabel}...`
-    : `Loading ${tracker.current.modelId} in the browser...`;
+  const files = updateFileProgress(tracker.current.files, file, event);
+  const aggregate = aggregateFileProgress(files);
+  const runtimeReady = event.status === "ready"
+    || ((event.stage === "asr-warmup" || event.stage === "translation-warmup")
+      && Number(event.progress) >= 70);
+  const activeFile = selectActiveFile(files, file);
+  const progress = runtimeReady ? 100 : calculateDeliveryProgress(aggregate, tracker.current.progress);
+  const message = runtimeReady
+    ? `${tracker.current.modelId} is loaded; preparing browser inference...`
+    : activeFile
+      ? `Downloading ${tracker.current.modelId} — ${shortFileName(activeFile)}...`
+      : `Preparing ${tracker.current.modelId} download...`;
 
   return {
     ...tracker,
     current: {
       ...tracker.current,
-      file,
-      loaded,
-      total,
+      phase: runtimeReady ? "ready" : "downloading",
+      files,
+      file: activeFile || file,
+      loaded: aggregate.loaded,
+      total: aggregate.total,
+      completedFileCount: aggregate.completed,
+      fileCount: aggregate.count,
       progress,
       message,
     },
@@ -82,11 +103,11 @@ export function failModelDelivery(tracker, error) {
 
 export function describeModelDelivery(tracker) {
   if (tracker?.current) {
-    const { progress, loaded, total, message } = tracker.current;
+    const { progress, loaded, total, message, phase, completedFileCount, fileCount } = tracker.current;
     return {
       status: message,
       progress,
-      progressText: formatProgress(progress, loaded, total),
+      progressText: formatProgress({ progress, loaded, total, phase, completedFileCount, fileCount }),
     };
   }
 
@@ -122,11 +143,70 @@ export function describeModelDelivery(tracker) {
   };
 }
 
-function formatProgress(progress, loaded, total) {
+function formatProgress({ progress, loaded, total, phase, completedFileCount = 0, fileCount = 0 }) {
+  if (phase === "inference" || phase === "ready") {
+    const assetLabel = fileCount > 0 ? ` · ${completedFileCount}/${fileCount} assets` : "";
+    return `ready${assetLabel}`;
+  }
   if (Number.isFinite(loaded) && Number.isFinite(total) && total > 0) {
-    return `${progress}% · ${formatBytes(loaded)} / ${formatBytes(total)}`;
+    return `${progress}% · ${formatBytes(loaded)} / ${formatBytes(total)} · ${completedFileCount}/${fileCount} assets`;
   }
   return `${progress}%`;
+}
+
+function isModelLifecycleEvent(event) {
+  return event.stage === "loading-model"
+    || event.stage === "asr-warmup"
+    || event.stage === "translation-warmup"
+    || ["download", "progress", "initiate", "done", "ready"].includes(event.status);
+}
+
+function updateFileProgress(existingFiles = {}, file, event) {
+  if (!file) return existingFiles;
+  const previous = existingFiles[file] || {};
+  const total = Number.isFinite(event.total) && event.total > 0 ? event.total : previous.total;
+  let loaded = Number.isFinite(event.loaded) ? event.loaded : previous.loaded;
+  const done = event.status === "done" || (Number.isFinite(event.progress) && clampProgress(event.progress) >= 100);
+  if (done && Number.isFinite(total)) loaded = total;
+  return {
+    ...existingFiles,
+    [file]: {
+      loaded: Number.isFinite(loaded) ? loaded : 0,
+      total: Number.isFinite(total) ? total : 0,
+      done,
+    },
+  };
+}
+
+function aggregateFileProgress(files = {}) {
+  const entries = Object.entries(files);
+  return entries.reduce((aggregate, [, file]) => {
+    aggregate.count += 1;
+    if (file.done) aggregate.completed += 1;
+    if (file.total > 0) {
+      aggregate.total += file.total;
+      aggregate.loaded += Math.min(file.loaded, file.total);
+    }
+    return aggregate;
+  }, { loaded: 0, total: 0, completed: 0, count: 0 });
+}
+
+function selectActiveFile(files = {}, latestFile = "") {
+  const incomplete = Object.entries(files)
+    .filter(([, file]) => !file.done)
+    .sort(([, left], [, right]) => right.total - left.total);
+  if (incomplete.length > 0) return incomplete[0][0];
+  return latestFile;
+}
+
+function calculateDeliveryProgress(aggregate, previousProgress) {
+  if (aggregate.total > 0 && aggregate.completed < aggregate.count) {
+    return Math.min(99, Math.round((aggregate.loaded / aggregate.total) * 100));
+  }
+  if (aggregate.count > 0) {
+    return Math.max(5, Math.min(95, previousProgress || 0));
+  }
+  return Math.max(1, Math.min(95, previousProgress || 0));
 }
 
 function formatBytes(bytes) {

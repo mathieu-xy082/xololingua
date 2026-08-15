@@ -303,6 +303,7 @@ class BrowserE2EScriptTests(unittest.TestCase):
             "cachePurged": True,
             "remainingCacheEntries": 0,
             "uiLifecycle": "purged",
+            "uiProgress": "pass",
             "httpCacheBytes": 12_345,
             "warmup": {"asr": "pass", "translation": "pass"},
             "inference": {"asr": "pass", "translation": "pass"},
@@ -320,6 +321,7 @@ class BrowserE2EScriptTests(unittest.TestCase):
         self.assertIn("cachePurged=true", diagnostic)
         self.assertIn("remainingCacheEntries=0", diagnostic)
         self.assertIn("uiLifecycle=purged", diagnostic)
+        self.assertIn("uiProgress=pass", diagnostic)
         self.assertIn("httpCacheBytes=12345", diagnostic)
 
 
