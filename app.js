@@ -39,7 +39,7 @@ const appClientAdapters = createAppClientAdapters({
     modelResolver: resolveTranscriptionModel,
     remoteModels: true,
     purgeAfterUse: true,
-    warmupTimeoutMs: BROWSER_MODEL_ASSET_MANIFEST.models.transcription.warmup.timeoutMs,
+    warmupTimeoutMs: BROWSER_MODEL_ASSET_MANIFEST.timeouts.assetCacheMs,
     warmupSampleSeconds: BROWSER_MODEL_ASSET_MANIFEST.models.transcription.warmup.sampleSeconds,
     maxDurationSeconds: BROWSER_MODEL_ASSET_MANIFEST.models.transcription.limits.maxAudioSeconds,
     maxAudioBytes: BROWSER_MODEL_ASSET_MANIFEST.models.transcription.limits.maxAudioBytes,
@@ -52,7 +52,7 @@ const appClientAdapters = createAppClientAdapters({
     modelResolver: resolveTranslationModel,
     remoteModels: true,
     purgeAfterUse: true,
-    warmupTimeoutMs: BROWSER_MODEL_ASSET_MANIFEST.models.translation.warmup.timeoutMs,
+    warmupTimeoutMs: BROWSER_MODEL_ASSET_MANIFEST.timeouts.assetCacheMs,
     warmupSampleText: BROWSER_MODEL_ASSET_MANIFEST.models.translation.warmup.sampleText,
     maxSegments: BROWSER_MODEL_ASSET_MANIFEST.models.translation.limits.maxSegments,
     maxBatchSize: Math.max(1, Math.floor(

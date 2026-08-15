@@ -89,6 +89,19 @@ The frontend keeps explicit capability probes for each migration stage and aggre
 
 The aggregate report labels the current flow as `client-side` only when every stage has a browser runtime. Any unavailable stage produces `hybrid-fallback` with a concrete list of `serverFallbackStages`, so milestone demos can state exactly which parts still rely on the Python service. The report also exposes a `demoSummary` with readable stage labels, `serverFallbackEndpoints`, and ordered `stageRows` that pair each stage with its browser or Python fallback runtime; for example `Hybrid PWA: 2 browser stages, 2 Python fallback stages` plus `POST /api/segment-audio` for segmentation fallback, to keep the July milestone presentation aligned with the tested contract.
 
+### On-demand browser models
+
+The production PWA does not require users to prepare model files manually. When subtitle generation starts, the frontend resolves and downloads only the models required by the current request:
+
+- transcription uses the multilingual `Xenova/whisper-base` model;
+- translation resolves a directional OPUS-MT model from the detected source and selected target, for example `Xenova/opus-mt-fr-ru` for French to Russian;
+- Transformers.js reports download progress through the existing subtitle progress UI;
+- after each ML stage, the worker releases its runtime and clears the corresponding model files from the Transformers.js browser cache.
+
+The first run therefore requires internet access to Hugging Face. If the resolved OPUS-MT repository does not exist, a download fails, or the browser cannot run the model, the hybrid router records the failure and uses the Python fallback. Static packaged models and the explicit bootstrap tooling remain available for offline validation, but are not part of the normal user workflow.
+
+Remote model responses are not stored in the PWA shell cache. Temporary Transformers.js caching is enabled only to share files between warmup and inference within one pipeline run, and is purged after use.
+
 The ffmpeg.wasm audio-extraction prototype keeps explicit browser memory and duration guards: normal client-side operation accepts videos up to 1 hour or 800 MiB by default, while CI/demo runs can still pass shorter per-extractor overrides (for example 60 seconds) to keep validation fast. It rejects inputs before loading the WASM runtime when `File.size` metadata is available, then rechecks the fetched byte buffer before writing into the ffmpeg.wasm virtual filesystem, releasing the runtime when `releaseAfterRun` is enabled, so streams or synthetic file-like inputs cannot bypass the browser memory guard. Browser metadata probing fails explicitly after 10 seconds by default so stalled video headers do not leave object URLs or extraction promises hanging. The extractor exposes an opt-in `releaseAfterRun` mode that terminates/exits the ffmpeg.wasm runtime after virtual filesystem cleanup, which is useful for demo flows that process one short clip at a time and need to return the WASM heap promptly. If ffmpeg.wasm cannot transcode a selected file, the browser error keeps the original failure as its cause while directing users to the Python fallback. Larger media or unsupported codecs should use the explicit Python `/api/extract-audio` fallback until a streaming/WebCodecs path is available.
 
 ## Build and Run Locally
