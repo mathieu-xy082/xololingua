@@ -13,6 +13,7 @@ test("app enables on-demand model delivery and injects pair-aware resolvers", ()
   assert.match(appSource, /modelResolver:\s*resolveTranscriptionModel/);
   assert.match(appSource, /modelResolver:\s*resolveTranslationModel/);
   assert.match(appSource, /purgeAfterUse:\s*true/g);
+  assert.match(appSource, /devicePreference:\s*BROWSER_ML_CONFIG\.devicePreference/g);
 });
 
 test("dynamic ML stages stay browser-routable with on-demand delivery", () => {

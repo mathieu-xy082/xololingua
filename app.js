@@ -24,7 +24,7 @@ const MAX_DURATION_SECONDS = 2.5 * 60 * 60;
 const SEGMENT_SECONDS = 12;
 const LOCAL_SERVICE_URL = "http://127.0.0.1:8765";
 globalThis.__xololinguaDynamicModels = true;
-const APP_ASSET_VERSION = "2026-08-16-1";
+const APP_ASSET_VERSION = "2026-08-16-2";
 const backendClient = createBackendClient({ baseUrl: LOCAL_SERVICE_URL });
 const clientPipelineCapabilities = collectClientPipelineCapabilities();
 const appClientAdapters = createAppClientAdapters({
@@ -43,6 +43,7 @@ const appClientAdapters = createAppClientAdapters({
     modelResolver: resolveTranscriptionModel,
     remoteModels: true,
     purgeAfterUse: true,
+    devicePreference: BROWSER_ML_CONFIG.devicePreference,
     warmupTimeoutMs: BROWSER_ML_CONFIG.modelDownloadTimeoutMs,
     warmupSampleSeconds: BROWSER_ML_CONFIG.transcription.warmupSampleSeconds,
     maxDurationSeconds: BROWSER_ML_CONFIG.transcription.maxAudioSeconds,
@@ -56,6 +57,7 @@ const appClientAdapters = createAppClientAdapters({
     modelResolver: resolveTranslationModel,
     remoteModels: true,
     purgeAfterUse: true,
+    devicePreference: BROWSER_ML_CONFIG.devicePreference,
     warmupTimeoutMs: BROWSER_ML_CONFIG.modelDownloadTimeoutMs,
     warmupSampleText: BROWSER_ML_CONFIG.translation.warmupSampleText,
     maxSegments: BROWSER_ML_CONFIG.translation.maxSegments,

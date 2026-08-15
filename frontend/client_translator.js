@@ -26,6 +26,7 @@ export function createClientTranslator({
   modelResolver,
   remoteModels = false,
   purgeAfterUse = false,
+  devicePreference,
   warmupTimeoutMs,
   warmupSampleText,
   cloudTranslator,
@@ -37,7 +38,7 @@ export function createClientTranslator({
     capabilities: detectClientTranslationCapabilities(environment),
 
     async translateSegments(request, onProgress = () => {}) {
-      const model = resolveModelRequest({ request, modelId, modelResolver, remoteModels, purgeAfterUse });
+      const model = resolveModelRequest({ request, modelId, modelResolver, remoteModels, purgeAfterUse, devicePreference });
 
       const segmentCount = request?.segments?.length || 0;
       if (
@@ -73,6 +74,7 @@ export function createClientTranslator({
             targetLanguage: request.targetLanguage,
             remoteModels: model.remoteModels,
             purgeOnError: model.purgeAfterUse,
+            device: model.device,
           }, (event) => onProgress(mapClientMlProgress(event, "translation-warmup")))
         : null;
 
@@ -89,6 +91,7 @@ export function createClientTranslator({
           segments: batch,
           remoteModels: model.remoteModels,
           purgeAfterUse: model.purgeAfterUse && batchIndex === batches.length - 1,
+          device: model.device,
         });
         const result = await translate(
           translateRequest,
@@ -113,6 +116,7 @@ export function createClientTranslator({
           ...(model.remoteModels || model.purgeAfterUse ? { modelId: model.modelId } : {}),
           ...(model.remoteModels ? { remoteModels: true } : {}),
           ...(model.purgeAfterUse ? { purgeAfterUse: true } : {}),
+          ...(model.device ? { devicePreference: model.device } : {}),
           ...(warmupMetadata ? { warmup: warmupMetadata } : {}),
           ...(workerMetadata || {}),
         } } : {}),
@@ -142,12 +146,13 @@ function createSegmentBatches(segments = [], maxBatchSize) {
   return batches.length > 0 ? batches : [[]];
 }
 
-function resolveModelRequest({ request, modelId, modelResolver, remoteModels, purgeAfterUse }) {
+function resolveModelRequest({ request, modelId, modelResolver, remoteModels, purgeAfterUse, devicePreference }) {
   const resolved = typeof modelResolver === "function" ? modelResolver(request || {}) : {};
   return {
     modelId: resolved?.modelId || modelId,
     remoteModels: resolved?.remote ?? remoteModels,
     purgeAfterUse: resolved?.purgeAfterUse ?? purgeAfterUse,
+    device: resolved?.device || resolved?.devicePreference || devicePreference,
   };
 }
 
@@ -157,6 +162,7 @@ function createTranslatorWorkerRequest({
   segments = [],
   remoteModels = false,
   purgeAfterUse = false,
+  device,
 }) {
   return {
     ...(modelId ? { modelId } : {}),
@@ -165,6 +171,7 @@ function createTranslatorWorkerRequest({
     targetLanguage: request.targetLanguage,
     ...(remoteModels ? { remoteModels: true } : {}),
     ...(purgeAfterUse ? { purgeAfterUse: true } : {}),
+    ...(device ? { device } : {}),
   };
 }
 
@@ -200,6 +207,7 @@ function warmupLocalTranslatorWorker({
   targetLanguage,
   remoteModels,
   purgeOnError,
+  device,
 }, onProgress) {
   if (!Number.isFinite(warmupTimeoutMs) || warmupTimeoutMs <= 0) {
     return null;
@@ -222,6 +230,7 @@ function warmupLocalTranslatorWorker({
     targetLanguage,
     ...(remoteModels ? { remoteModels: true } : {}),
     ...(purgeOnError ? { purgeOnError: true } : {}),
+    ...(device ? { device } : {}),
   }, onProgress);
 }
 

@@ -25,6 +25,20 @@ export function beginModelDelivery(tracker, { stage, modelId } = {}) {
 export function updateModelDelivery(tracker, event = {}) {
   if (!tracker?.current) return tracker || createModelDeliveryTracker();
 
+  if (event.stage === "inference-runtime") {
+    return {
+      ...tracker,
+      current: {
+        ...tracker.current,
+        executionDevice: event.device || "wasm",
+        executionDeviceLabel: event.deviceLabel || "WASM CPU",
+        deviceFallbackReason: event.fallbackReason || "",
+        progress: Math.max(1, tracker.current.progress),
+        message: event.message || `Using ${event.deviceLabel || "WASM CPU"} for browser inference.`,
+      },
+    };
+  }
+
   if (event.stage === "transcribing" || event.stage === "translating") {
     return {
       ...tracker,
@@ -32,7 +46,7 @@ export function updateModelDelivery(tracker, event = {}) {
         ...tracker.current,
         phase: "inference",
         progress: 100,
-        message: `${tracker.current.modelId} is loaded; ${event.stage} is running in the browser...`,
+        message: `${tracker.current.modelId} is loaded; ${event.stage} is running with ${tracker.current.executionDeviceLabel || "the browser runtime"}...`,
       },
     };
   }
@@ -85,6 +99,9 @@ export function finishModelDelivery(tracker, { stageResult, modelId } = {}) {
       cachePurged: metadata.cachePurged === true,
       filesDeleted: Number.isFinite(metadata.filesDeleted) ? metadata.filesDeleted : 0,
       purgeError: metadata.purgeError || "",
+      executionDevice: metadata.executionDevice || "unknown",
+      executionDeviceLabel: metadata.executionDeviceLabel || metadata.executionDevice || "unknown runtime",
+      deviceFallbackReason: metadata.deviceFallbackReason || "",
     },
   ];
   return { current: null, completed };
@@ -136,8 +153,9 @@ export function describeModelDelivery(tracker) {
   }
 
   const deletedFiles = completed.reduce((total, entry) => total + entry.filesDeleted, 0);
+  const runtimeLabels = [...new Set(completed.map((entry) => entry.executionDeviceLabel).filter(Boolean))];
   return {
-    status: `Browser models used successfully; transient cache purge confirmed (${deletedFiles} cached files deleted).`,
+    status: `Browser models used successfully with ${runtimeLabels.join(" / ")}; transient cache purge confirmed (${deletedFiles} cached files deleted).`,
     progress: 100,
     progressText: "purged",
   };

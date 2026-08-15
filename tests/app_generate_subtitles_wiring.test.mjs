@@ -85,6 +85,7 @@ test("app configures browser ASR with the dynamic ML download timeout", () => {
   assert.match(appSource, /globalThis\.XOLOLINGUA_CLIENT_TRANSCRIBER\s*\|\|\s*createClientTranscriber\(\{/);
   assert.match(appSource, /workerUrl:\s*["']frontend\/transcription_worker\.js["']/);
   assert.match(appSource, /warmupTimeoutMs:\s*BROWSER_ML_CONFIG\.modelDownloadTimeoutMs/);
+  assert.match(appSource, /devicePreference:\s*BROWSER_ML_CONFIG\.devicePreference/);
   assert.match(appSource, /maxWorkerResponseMs:\s*BROWSER_ML_CONFIG\.transcription\.inferenceTimeoutMs/);
 });
 

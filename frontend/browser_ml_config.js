@@ -1,5 +1,6 @@
 export const BROWSER_ML_CONFIG = Object.freeze({
   modelDownloadTimeoutMs: 900_000,
+  devicePreference: "auto",
   transcription: Object.freeze({
     defaultModelId: "Xenova/whisper-base",
     warmupSampleSeconds: 1,

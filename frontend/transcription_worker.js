@@ -1,4 +1,5 @@
 import { env, ModelRegistry, pipeline } from "../node_modules/@huggingface/transformers/dist/transformers.min.js";
+import { createRuntimeMetadata, loadPipelineWithDeviceFallback } from "./browser_inference_device.js";
 
 const DEFAULT_MODEL_ID = "Xenova/whisper-base";
 const DEFAULT_SAMPLE_RATE = 16_000;
@@ -15,6 +16,8 @@ env.fetch = (input, init = {}) => transformersFetch(input, withTransientRemoteCa
 
 let recognizerPromise;
 let recognizerModelId;
+let recognizerDevicePreference;
+let recognizerRuntime;
 
 self.onmessage = async (event) => {
   const message = event?.data || {};
@@ -43,10 +46,10 @@ self.onmessage = async (event) => {
   }
 };
 
-async function warmupRecognizer({ modelId = DEFAULT_MODEL_ID, sampleSeconds = 1, sourceLanguage = "auto", remoteModels = false } = {}) {
+async function warmupRecognizer({ modelId = DEFAULT_MODEL_ID, sampleSeconds = 1, sourceLanguage = "auto", remoteModels = false, device = "auto" } = {}) {
   configureModelSource(remoteModels);
   self.postMessage({ type: "progress", event: { stage: "asr-warmup", progress: 5, message: "Loading ASR model..." } });
-  const recognizer = await getRecognizer(modelId);
+  const recognizer = await getRecognizer(modelId, device);
   self.postMessage({ type: "progress", event: { stage: "asr-warmup", progress: 70, message: "Running ASR warmup sample..." } });
   const sampleLength = Math.max(1, Math.round(DEFAULT_SAMPLE_RATE * Math.max(0.1, sampleSeconds)));
   await recognizer(new Float32Array(sampleLength), createWhisperOptions({ sourceLanguage }));
@@ -56,13 +59,14 @@ async function warmupRecognizer({ modelId = DEFAULT_MODEL_ID, sampleSeconds = 1,
     warmed: true,
     sampleSeconds,
     localModelPath: env.localModelPath,
+    ...createRuntimeMetadata(recognizerRuntime),
   };
 }
 
 async function transcribeAudio(request = {}) {
   const modelId = request.modelId || DEFAULT_MODEL_ID;
   configureModelSource(request.remoteModels);
-  const recognizer = await getRecognizer(modelId);
+  const recognizer = await getRecognizer(modelId, request.device || "auto");
   const audioInput = await resolveAudioInput(request);
   const sourceLanguage = normalizeLanguageCode(request.sourceLanguage);
   const vadSegments = Array.isArray(request.segments) ? request.segments : [];
@@ -152,17 +156,28 @@ function extractWhisperText(output) {
   return String(output?.text || "").trim();
 }
 
-async function getRecognizer(modelId) {
-  if (!recognizerPromise || recognizerModelId !== modelId) {
+async function getRecognizer(modelId, devicePreference = "auto") {
+  if (!recognizerPromise || recognizerModelId !== modelId || recognizerDevicePreference !== devicePreference) {
     recognizerModelId = modelId;
-    recognizerPromise = pipeline("automatic-speech-recognition", modelId, {
+    recognizerDevicePreference = devicePreference;
+    recognizerPromise = loadPipelineWithDeviceFallback({
+      createPipeline: pipeline,
+      task: "automatic-speech-recognition",
+      modelId,
       dtype: "q4",
-      progress_callback: (progress) => {
-        self.postMessage({ type: "progress", event: { stage: "loading-model", ...progress } });
+      devicePreference,
+      environment: self,
+      pipelineOptions: {
+        progress_callback: (progress) => {
+          self.postMessage({ type: "progress", event: { stage: "loading-model", ...progress } });
+        },
       },
+      onLifecycle: (event) => self.postMessage({ type: "progress", event }),
     });
   }
-  return recognizerPromise;
+  const loaded = await recognizerPromise;
+  recognizerRuntime = loaded.runtime;
+  return loaded.pipeline;
 }
 
 function configureModelSource(remoteModels) {
@@ -180,7 +195,7 @@ async function releaseRecognizer(modelId, purgeCache) {
   const pending = recognizerPromise;
   let recognizer = null;
   try {
-    recognizer = await pending;
+    recognizer = (await pending)?.pipeline;
   } catch {
     // A partial download may still have populated the Transformers.js cache.
   }
@@ -189,16 +204,19 @@ async function releaseRecognizer(modelId, purgeCache) {
   }
   recognizerPromise = undefined;
   recognizerModelId = undefined;
+  recognizerDevicePreference = undefined;
+  const runtimeMetadata = createRuntimeMetadata(recognizerRuntime);
+  recognizerRuntime = undefined;
   if (purgeCache && typeof ModelRegistry?.clear_pipeline_cache === "function") {
     let report;
     try {
       report = await ModelRegistry.clear_pipeline_cache("automatic-speech-recognition", modelId, { dtype: "q4" });
     } catch (error) {
-      return { cachePurged: false, filesDeleted: 0, purgeError: error?.message || String(error) };
+      return { ...runtimeMetadata, cachePurged: false, filesDeleted: 0, purgeError: error?.message || String(error) };
     }
-    return { cachePurged: true, filesDeleted: report?.filesDeleted || 0 };
+    return { ...runtimeMetadata, cachePurged: true, filesDeleted: report?.filesDeleted || 0 };
   }
-  return { cachePurged: false, filesDeleted: 0 };
+  return { ...runtimeMetadata, cachePurged: false, filesDeleted: 0 };
 }
 
 async function resolveAudioInput(request) {

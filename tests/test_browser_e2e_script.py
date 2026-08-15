@@ -217,6 +217,14 @@ class BrowserE2EScriptTests(unittest.TestCase):
         with self.assertRaises(SystemExit):
             module.parse_args(["--real-browser-models", "--inject-backend-reference-browser-ml"])
 
+    def test_webgpu_gate_requires_real_browser_models(self):
+        module = self.load_module()
+
+        with self.assertRaises(SystemExit):
+            module.parse_args(["--require-webgpu"])
+        args = module.parse_args(["--real-browser-models", "--require-webgpu"])
+        self.assertTrue(args.require_webgpu)
+
     def test_dynamic_model_ids_are_derived_from_source_and_target(self):
         module = self.load_module()
 
@@ -304,6 +312,7 @@ class BrowserE2EScriptTests(unittest.TestCase):
             "remainingCacheEntries": 0,
             "uiLifecycle": "purged",
             "uiProgress": "pass",
+            "executionDevice": "webgpu",
             "httpCacheBytes": 12_345,
             "warmup": {"asr": "pass", "translation": "pass"},
             "inference": {"asr": "pass", "translation": "pass"},
@@ -322,6 +331,7 @@ class BrowserE2EScriptTests(unittest.TestCase):
         self.assertIn("remainingCacheEntries=0", diagnostic)
         self.assertIn("uiLifecycle=purged", diagnostic)
         self.assertIn("uiProgress=pass", diagnostic)
+        self.assertIn("executionDevice=webgpu", diagnostic)
         self.assertIn("httpCacheBytes=12345", diagnostic)
 
 

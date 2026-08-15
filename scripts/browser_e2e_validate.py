@@ -143,6 +143,14 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--require-webgpu",
+        action="store_true",
+        help=(
+            "Launch Chrome with Linux WebGPU/Vulkan flags and fail unless browser model inference "
+            "reports WebGPU for every ML stage. Requires --real-browser-models."
+        ),
+    )
+    parser.add_argument(
         "--compare-backend-srt",
         action="store_true",
         help="Run the full backend subtitle pipeline and compare its SRT with the browser output.",
@@ -160,6 +168,8 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     args = parser.parse_args(argv)
     if args.real_browser_models and args.inject_backend_reference_browser_ml:
         parser.error("--real-browser-models cannot be combined with --inject-backend-reference-browser-ml")
+    if args.require_webgpu and not args.real_browser_models:
+        parser.error("--require-webgpu requires --real-browser-models")
     return args
 
 
@@ -745,6 +755,7 @@ def format_real_model_diagnostics(report: dict) -> str:
         f"remainingCacheEntries={report.get('remainingCacheEntries', 0)}",
         f"uiLifecycle={report.get('uiLifecycle', 'unknown')}",
         f"uiProgress={report.get('uiProgress', 'unknown')}",
+        f"executionDevice={report.get('executionDevice', 'unknown')}",
         f"httpCacheBytes={report.get('httpCacheBytes', 0)}",
         f"warmup=asr:{warmup.get('asr', 'unknown')},translation:{warmup.get('translation', 'unknown')}",
         f"inference=asr:{inference.get('asr', 'unknown')},translation:{inference.get('translation', 'unknown')}",
@@ -786,6 +797,12 @@ def run_browser_workflow(args: argparse.Namespace) -> Path | None:
     with sync_playwright() as p:
         log_step("Launching Chromium")
         browser = None
+        chromium_args = [
+            "--enable-unsafe-webgpu",
+            "--ignore-gpu-blocklist",
+            "--enable-features=Vulkan",
+        ] if args.require_webgpu else []
+        browser_headless = not args.headed and not args.require_webgpu
         if args.real_browser_models:
             user_data_dir = args.download_dir / "chromium-real-model-profile"
             if user_data_dir.exists():
@@ -793,13 +810,15 @@ def run_browser_workflow(args: argparse.Namespace) -> Path | None:
             user_data_dir.mkdir(parents=True, exist_ok=True)
             context = p.chromium.launch_persistent_context(
                 user_data_dir=str(user_data_dir),
-                headless=not args.headed,
+                headless=browser_headless,
                 slow_mo=args.slow_mo_ms,
                 accept_downloads=True,
                 service_workers="block",
+                args=chromium_args,
+                **({"channel": "chrome"} if args.require_webgpu else {}),
             )
         else:
-            browser = p.chromium.launch(headless=not args.headed, slow_mo=args.slow_mo_ms)
+            browser = p.chromium.launch(headless=browser_headless, slow_mo=args.slow_mo_ms, args=chromium_args)
             context = browser.new_context(accept_downloads=True, service_workers="block")
         if args.inject_backend_reference_browser_ml:
             if not backend_reference:
@@ -857,6 +876,35 @@ def run_browser_workflow(args: argparse.Namespace) -> Path | None:
         try:
             log_step(f"Opening frontend {args.frontend_url}")
             page.goto(args.frontend_url, wait_until="domcontentloaded")
+            if args.require_webgpu:
+                webgpu_report = page.evaluate(
+                    """
+                    async () => {
+                      const adapter = await navigator.gpu?.requestAdapter({ powerPreference: 'high-performance' });
+                      return adapter ? {
+                        available: true,
+                        vendor: adapter.info?.vendor || '',
+                        architecture: adapter.info?.architecture || '',
+                      } : { available: false };
+                    }
+                    """
+                )
+                if not webgpu_report.get("available"):
+                    raise AssertionError("Chrome did not expose a WebGPU adapter to the frontend.")
+                adapter_identity = " ".join([
+                    str(webgpu_report.get("vendor", "")),
+                    str(webgpu_report.get("architecture", "")),
+                ]).strip().lower()
+                if "swiftshader" in adapter_identity or adapter_identity.startswith("google"):
+                    raise AssertionError(
+                        "Chrome exposed a software WebGPU adapter instead of the hardware GPU: "
+                        + adapter_identity
+                    )
+                log_step(
+                    "WebGPU adapter: "
+                    f"{webgpu_report.get('vendor', 'unknown')} "
+                    f"{webgpu_report.get('architecture', '')}".strip()
+                )
 
             log_step(f"Uploading video {args.video}")
             page.locator("#fileInput").set_input_files(str(args.video))
@@ -961,6 +1009,16 @@ def run_browser_workflow(args: argparse.Namespace) -> Path | None:
                         "Model delivery UI did not reach the purged state: "
                         + model_delivery_progress
                     )
+                if args.require_webgpu and "webgpu" not in model_delivery_status.lower():
+                    raise AssertionError(
+                        "Browser model stages did not report WebGPU inference: "
+                        + model_delivery_status
+                    )
+                if args.require_webgpu and "wasm cpu" in model_delivery_status.lower():
+                    raise AssertionError(
+                        "At least one browser model stage fell back to WASM CPU: "
+                        + model_delivery_status
+                    )
                 progress_trace = page.evaluate("() => window.__xololinguaProgressTrace")
                 speech_progress = [
                     int(value.removesuffix("%"))
@@ -987,6 +1045,7 @@ def run_browser_workflow(args: argparse.Namespace) -> Path | None:
                     "remainingCacheEntries": 0,
                     "uiLifecycle": "purged",
                     "uiProgress": "pass",
+                    "executionDevice": "webgpu" if args.require_webgpu else "auto",
                     "warmup": {"asr": "pass", "translation": "pass"},
                     "inference": {"asr": "pass", "translation": "pass"},
                     "coverage": "pass",

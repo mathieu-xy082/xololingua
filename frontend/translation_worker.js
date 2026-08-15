@@ -1,4 +1,5 @@
 import { env, ModelRegistry, pipeline } from "../node_modules/@huggingface/transformers/dist/transformers.min.js";
+import { createRuntimeMetadata, loadPipelineWithDeviceFallback } from "./browser_inference_device.js";
 
 const DEFAULT_MODEL_ID = "Xenova/opus-mt-fr-en";
 const DEFAULT_SAMPLE_TEXT = "Bonjour le monde.";
@@ -15,6 +16,8 @@ env.fetch = (input, init = {}) => transformersFetch(input, withTransientRemoteCa
 
 let translatorPromise;
 let translatorModelId;
+let translatorDevicePreference;
+let translatorRuntime;
 
 self.onmessage = async (event) => {
   const message = event?.data || {};
@@ -50,12 +53,13 @@ async function warmupTranslator({
   targetLanguage = "en",
   remoteModels = false,
   purgeOnError = false,
+  device = "auto",
 } = {}) {
   configureModelSource(remoteModels);
   self.postMessage({ type: "progress", event: { stage: "translation-warmup", progress: 5, message: "Loading translation model..." } });
   let translator;
   try {
-    translator = await getTranslator(modelId);
+    translator = await getTranslator(modelId, device);
     self.postMessage({ type: "progress", event: { stage: "translation-warmup", progress: 70, message: "Running translation warmup sample..." } });
     await translator(sampleText || DEFAULT_SAMPLE_TEXT, createTranslationOptions({ sourceLanguage, targetLanguage }));
   } catch (error) {
@@ -68,13 +72,14 @@ async function warmupTranslator({
     warmed: true,
     sampleText: sampleText || DEFAULT_SAMPLE_TEXT,
     localModelPath: env.localModelPath,
+    ...createRuntimeMetadata(translatorRuntime),
   };
 }
 
 async function translateSegments(request = {}) {
   const modelId = request.modelId || DEFAULT_MODEL_ID;
   configureModelSource(request.remoteModels);
-  const translator = await getTranslator(modelId);
+  const translator = await getTranslator(modelId, request.device || "auto");
   const sourceLanguage = normalizeLanguageCode(request.sourceLanguage || "fr");
   const targetLanguage = normalizeLanguageCode(request.targetLanguage || "en");
   const options = createTranslationOptions({ sourceLanguage, targetLanguage });
@@ -115,17 +120,28 @@ async function translateSegments(request = {}) {
   return result;
 }
 
-async function getTranslator(modelId) {
-  if (!translatorPromise || translatorModelId !== modelId) {
+async function getTranslator(modelId, devicePreference = "auto") {
+  if (!translatorPromise || translatorModelId !== modelId || translatorDevicePreference !== devicePreference) {
     translatorModelId = modelId;
-    translatorPromise = pipeline("translation", modelId, {
+    translatorDevicePreference = devicePreference;
+    translatorPromise = loadPipelineWithDeviceFallback({
+      createPipeline: pipeline,
+      task: "translation",
+      modelId,
       dtype: "q4",
-      progress_callback: (progress) => {
-        self.postMessage({ type: "progress", event: { stage: "loading-model", ...progress } });
+      devicePreference,
+      environment: self,
+      pipelineOptions: {
+        progress_callback: (progress) => {
+          self.postMessage({ type: "progress", event: { stage: "loading-model", ...progress } });
+        },
       },
+      onLifecycle: (event) => self.postMessage({ type: "progress", event }),
     });
   }
-  return translatorPromise;
+  const loaded = await translatorPromise;
+  translatorRuntime = loaded.runtime;
+  return loaded.pipeline;
 }
 
 function configureModelSource(remoteModels) {
@@ -143,7 +159,7 @@ async function releaseTranslator(modelId, purgeCache) {
   const pending = translatorPromise;
   let translator = null;
   try {
-    translator = await pending;
+    translator = (await pending)?.pipeline;
   } catch {
     // A partial download may still have populated the Transformers.js cache.
   }
@@ -152,16 +168,19 @@ async function releaseTranslator(modelId, purgeCache) {
   }
   translatorPromise = undefined;
   translatorModelId = undefined;
+  translatorDevicePreference = undefined;
+  const runtimeMetadata = createRuntimeMetadata(translatorRuntime);
+  translatorRuntime = undefined;
   if (purgeCache && typeof ModelRegistry?.clear_pipeline_cache === "function") {
     let report;
     try {
       report = await ModelRegistry.clear_pipeline_cache("translation", modelId, { dtype: "q4" });
     } catch (error) {
-      return { cachePurged: false, filesDeleted: 0, purgeError: error?.message || String(error) };
+      return { ...runtimeMetadata, cachePurged: false, filesDeleted: 0, purgeError: error?.message || String(error) };
     }
-    return { cachePurged: true, filesDeleted: report?.filesDeleted || 0 };
+    return { ...runtimeMetadata, cachePurged: true, filesDeleted: report?.filesDeleted || 0 };
   }
-  return { cachePurged: false, filesDeleted: 0 };
+  return { ...runtimeMetadata, cachePurged: false, filesDeleted: 0 };
 }
 
 function createTranslationOptions({ sourceLanguage, targetLanguage } = {}) {

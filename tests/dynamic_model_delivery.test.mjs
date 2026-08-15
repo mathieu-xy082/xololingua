@@ -57,6 +57,7 @@ test("dynamic translation sends one transient pair-specific worker request", asy
     environment: { Worker },
     workerUrl: "/frontend/translation_worker.js",
     modelResolver: resolveTranslationModel,
+    devicePreference: "auto",
     maxBatchSize: 1,
   });
 
@@ -70,6 +71,7 @@ test("dynamic translation sends one transient pair-specific worker request", asy
     targetLanguage: "ru",
     remoteModels: true,
     purgeAfterUse: true,
+    device: "auto",
   });
   assert.equal(result.metadata.modelId, "Xenova/opus-mt-fr-ru");
   assert.equal(result.metadata.purgeAfterUse, true);
@@ -86,6 +88,7 @@ test("dynamic transcription requests a remote transient Whisper model", async ()
       return { language: "fr", segments: [{ index: 1, start: 0, end: 1, text: "Bonjour" }] };
     },
     modelResolver: resolveTranscriptionModel,
+    devicePreference: "auto",
   });
 
   await transcriber.transcribeAudio({ audio: { pcm: new Float32Array([0]) }, segments: [], sourceLanguage: "fr" });
@@ -93,6 +96,7 @@ test("dynamic transcription requests a remote transient Whisper model", async ()
   assert.equal(calls[0].modelId, "Xenova/whisper-base");
   assert.equal(calls[0].remoteModels, true);
   assert.equal(calls[0].purgeAfterUse, true);
+  assert.equal(calls[0].device, "auto");
 });
 
 test("workers release runtime memory and clear their targeted Transformers.js caches", () => {
@@ -102,6 +106,7 @@ test("workers release runtime memory and clear their targeted Transformers.js ca
     assert.match(source, /ModelRegistry\.clear_pipeline_cache/);
     assert.match(source, /purgeAfterUse/);
     assert.match(source, /cache:\s*"no-store"/);
+    assert.match(source, /loadPipelineWithDeviceFallback/);
   }
 });
 

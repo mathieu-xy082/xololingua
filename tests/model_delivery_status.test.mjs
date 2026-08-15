@@ -88,7 +88,12 @@ test("model delivery status only claims purge after worker confirmation", () => 
     stageResult: {
       stage: "transcription",
       runtime: "browser",
-      metadata: { cachePurged: true, filesDeleted: 7 },
+      metadata: {
+        cachePurged: true,
+        filesDeleted: 7,
+        executionDevice: "webgpu",
+        executionDeviceLabel: "WebGPU (NVIDIA Lovelace)",
+      },
     },
   });
   tracker = beginModelDelivery(tracker, {
@@ -100,14 +105,42 @@ test("model delivery status only claims purge after worker confirmation", () => 
     stageResult: {
       stage: "translation",
       runtime: "browser",
-      metadata: { cachePurged: true, filesDeleted: 5 },
+      metadata: {
+        cachePurged: true,
+        filesDeleted: 5,
+        executionDevice: "webgpu",
+        executionDeviceLabel: "WebGPU (NVIDIA Lovelace)",
+      },
     },
   });
 
   assert.deepEqual(describeModelDelivery(tracker), {
-    status: "Browser models used successfully; transient cache purge confirmed (12 cached files deleted).",
+    status: "Browser models used successfully with WebGPU (NVIDIA Lovelace); transient cache purge confirmed (12 cached files deleted).",
     progress: 100,
     progressText: "purged",
+  });
+});
+
+test("model delivery status exposes the selected inference engine while work is running", () => {
+  let tracker = beginModelDelivery(createModelDeliveryTracker(), {
+    stage: "transcription",
+    modelId: "Xenova/whisper-base",
+  });
+  tracker = updateModelDelivery(tracker, {
+    stage: "inference-runtime",
+    device: "webgpu",
+    deviceLabel: "WebGPU (NVIDIA Lovelace)",
+    message: "Using WebGPU (NVIDIA Lovelace) for browser inference.",
+  });
+  tracker = updateModelDelivery(tracker, {
+    stage: "transcribing",
+    progress: 25,
+  });
+
+  assert.deepEqual(describeModelDelivery(tracker), {
+    status: "Xenova/whisper-base is loaded; transcribing is running with WebGPU (NVIDIA Lovelace)...",
+    progress: 100,
+    progressText: "ready",
   });
 });
 

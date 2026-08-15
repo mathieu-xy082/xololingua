@@ -21,6 +21,8 @@ const clientPipelineCapabilitiesSource = await readFile(
   new URL("../frontend/client_pipeline_capabilities.js", import.meta.url),
   "utf8",
 );
+const transcriptionWorkerSource = await readFile(new URL("../frontend/transcription_worker.js", import.meta.url), "utf8");
+const translationWorkerSource = await readFile(new URL("../frontend/translation_worker.js", import.meta.url), "utf8");
 
 test("service worker precaches JavaScript modules imported by the PWA shell and app wiring", () => {
   const importedModules = [
@@ -46,6 +48,8 @@ test("service worker precaches the full frontend module graph used by offline as
     ...appHybridRouterWiringSource.matchAll(/import\s+[^;]+from\s+["']\.\/(client_pipeline_router\.js)["']/g),
     ...clientPipelineRouterSource.matchAll(/import\s+[^;]+from\s+["']\.\/(pipeline_stage_contract\.js)["']/g),
     ...clientPipelineCapabilitiesSource.matchAll(/import\s+[^;]+from\s+["']\.\/(client_[^"']+\.js)["']/g),
+    ...transcriptionWorkerSource.matchAll(/import\s+[^;]+from\s+["']\.\/(browser_inference_device\.js)["']/g),
+    ...translationWorkerSource.matchAll(/import\s+[^;]+from\s+["']\.\/(browser_inference_device\.js)["']/g),
     ...appSource.matchAll(/workerUrl:\s*["'](frontend\/[^"']+\.js)["']/g),
   ]
     .map((match) => match[1].startsWith("frontend/") ? match[1] : `frontend/${match[1]}`));
