@@ -144,6 +144,44 @@ test("model delivery status exposes the selected inference engine while work is 
   });
 });
 
+test("model delivery status exposes live and completed ASR performance timings", () => {
+  let tracker = beginModelDelivery(createModelDeliveryTracker(), {
+    stage: "transcription",
+    modelId: "Xenova/whisper-base",
+  });
+  tracker = updateModelDelivery(tracker, {
+    stage: "transcribing",
+    progress: 50,
+    message: "Transcribed 1/2 speech segments in 2.0s (0.50× realtime); processing segment 2...",
+  });
+  assert.equal(
+    describeModelDelivery(tracker).status,
+    "Transcribed 1/2 speech segments in 2.0s (0.50× realtime); processing segment 2...",
+  );
+
+  tracker = finishModelDelivery(tracker, {
+    modelId: "Xenova/whisper-base",
+    stageResult: {
+      stage: "transcription",
+      runtime: "browser",
+      metadata: {
+        cachePurged: true,
+        filesDeleted: 7,
+        executionDevice: "webgpu",
+        executionDeviceLabel: "WebGPU (NVIDIA Lovelace)",
+        timings: { inferenceMs: 8500, audioSeconds: 17, realtimeFactor: 0.5 },
+        warmup: { timings: { warmupTotalMs: 3200 } },
+      },
+    },
+  });
+
+  assert.deepEqual(describeModelDelivery(tracker), {
+    status: "Browser models used successfully with WebGPU (NVIDIA Lovelace); transient cache purge confirmed (7 cached files deleted). ASR: 8.5s inference for 17.0s audio (0.50× realtime); warmup 3.2s.",
+    progress: 100,
+    progressText: "purged",
+  });
+});
+
 test("model delivery status exposes an unconfirmed purge", () => {
   let tracker = beginModelDelivery(createModelDeliveryTracker(), {
     stage: "transcription",

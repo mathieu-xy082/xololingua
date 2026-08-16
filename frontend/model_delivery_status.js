@@ -46,7 +46,8 @@ export function updateModelDelivery(tracker, event = {}) {
         ...tracker.current,
         phase: "inference",
         progress: 100,
-        message: `${tracker.current.modelId} is loaded; ${event.stage} is running with ${tracker.current.executionDeviceLabel || "the browser runtime"}...`,
+        message: event.message
+          || `${tracker.current.modelId} is loaded; ${event.stage} is running with ${tracker.current.executionDeviceLabel || "the browser runtime"}...`,
       },
     };
   }
@@ -102,6 +103,8 @@ export function finishModelDelivery(tracker, { stageResult, modelId } = {}) {
       executionDevice: metadata.executionDevice || "unknown",
       executionDeviceLabel: metadata.executionDeviceLabel || metadata.executionDevice || "unknown runtime",
       deviceFallbackReason: metadata.deviceFallbackReason || "",
+      timings: metadata.timings || {},
+      warmupTimings: metadata.warmup?.timings || {},
     },
   ];
   return { current: null, completed };
@@ -154,11 +157,29 @@ export function describeModelDelivery(tracker) {
 
   const deletedFiles = completed.reduce((total, entry) => total + entry.filesDeleted, 0);
   const runtimeLabels = [...new Set(completed.map((entry) => entry.executionDeviceLabel).filter(Boolean))];
+  const performanceSummary = formatTranscriptionPerformance(completed);
   return {
-    status: `Browser models used successfully with ${runtimeLabels.join(" / ")}; transient cache purge confirmed (${deletedFiles} cached files deleted).`,
+    status: `Browser models used successfully with ${runtimeLabels.join(" / ")}; transient cache purge confirmed (${deletedFiles} cached files deleted).${performanceSummary}`,
     progress: 100,
     progressText: "purged",
   };
+}
+
+function formatTranscriptionPerformance(completed) {
+  const transcription = completed.find((entry) => entry.stage === "transcription");
+  const timings = transcription?.timings;
+  if (!Number.isFinite(timings?.inferenceMs) || !Number.isFinite(timings?.audioSeconds)) return "";
+  const warmupMs = Number(transcription?.warmupTimings?.warmupTotalMs || 0);
+  const realtimeFactor = Number.isFinite(timings.realtimeFactor)
+    ? timings.realtimeFactor
+    : timings.audioSeconds > 0
+      ? (timings.inferenceMs / 1000) / timings.audioSeconds
+      : 0;
+  return ` ASR: ${formatSeconds(timings.inferenceMs)} inference for ${timings.audioSeconds.toFixed(1)}s audio (${realtimeFactor.toFixed(2)}× realtime)${warmupMs > 0 ? `; warmup ${formatSeconds(warmupMs)}` : ""}.`;
+}
+
+function formatSeconds(milliseconds) {
+  return `${(milliseconds / 1000).toFixed(1)}s`;
 }
 
 function formatProgress({ progress, loaded, total, phase, completedFileCount = 0, fileCount = 0 }) {

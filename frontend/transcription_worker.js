@@ -47,51 +47,109 @@ self.onmessage = async (event) => {
 };
 
 async function warmupRecognizer({ modelId = DEFAULT_MODEL_ID, sampleSeconds = 1, sourceLanguage = "auto", remoteModels = false, device = "auto" } = {}) {
+  const warmupStartedAt = nowMs();
   configureModelSource(remoteModels);
   self.postMessage({ type: "progress", event: { stage: "asr-warmup", progress: 5, message: "Loading ASR model..." } });
+  const modelLoadStartedAt = nowMs();
   const recognizer = await getRecognizer(modelId, device);
+  const modelLoadMs = elapsedMs(modelLoadStartedAt);
   self.postMessage({ type: "progress", event: { stage: "asr-warmup", progress: 70, message: "Running ASR warmup sample..." } });
   const sampleLength = Math.max(1, Math.round(DEFAULT_SAMPLE_RATE * Math.max(0.1, sampleSeconds)));
+  const inferenceStartedAt = nowMs();
   await recognizer(new Float32Array(sampleLength), createWhisperOptions({ sourceLanguage }));
-  self.postMessage({ type: "progress", event: { stage: "asr-warmup", progress: 100, message: "ASR model warmup complete." } });
+  const warmupInferenceMs = elapsedMs(inferenceStartedAt);
+  const warmupTotalMs = elapsedMs(warmupStartedAt);
+  self.postMessage({
+    type: "progress",
+    event: {
+      stage: "asr-warmup",
+      progress: 100,
+      message: `ASR warmup complete in ${formatSeconds(warmupTotalMs)} (model ${formatSeconds(modelLoadMs)}, inference ${formatSeconds(warmupInferenceMs)}).`,
+      timings: { modelLoadMs, warmupInferenceMs, warmupTotalMs },
+    },
+  });
   return {
     modelId,
     warmed: true,
     sampleSeconds,
     localModelPath: env.localModelPath,
+    timings: { modelLoadMs, warmupInferenceMs, warmupTotalMs },
     ...createRuntimeMetadata(recognizerRuntime),
   };
 }
 
 async function transcribeAudio(request = {}) {
+  const requestStartedAt = nowMs();
   const modelId = request.modelId || DEFAULT_MODEL_ID;
   configureModelSource(request.remoteModels);
   const recognizer = await getRecognizer(modelId, request.device || "auto");
+  const inputStartedAt = nowMs();
   const audioInput = await resolveAudioInput(request);
+  const inputPreparationMs = elapsedMs(inputStartedAt);
   const sourceLanguage = normalizeLanguageCode(request.sourceLanguage);
   const vadSegments = Array.isArray(request.segments) ? request.segments : [];
   const sampleRate = Number(request.audio?.sampleRate || request.audio?.sampleRateHz || DEFAULT_SAMPLE_RATE);
-  const segments = audioInput instanceof Float32Array && vadSegments.length > 0
+  const transcription = audioInput instanceof Float32Array && vadSegments.length > 0
     ? await transcribeVadSegments({ recognizer, audioInput, sampleRate, segments: vadSegments, sourceLanguage })
     : await transcribeWholeAudio({ recognizer, audioInput, request, sourceLanguage });
 
   const result = {
     strategy: "whisper-transformers.js",
     language: sourceLanguage || "unknown",
-    segments: segments.filter((segment) => segment.text || segment.end > segment.start),
+    segments: transcription.segments.filter((segment) => segment.text || segment.end > segment.start),
+    metadata: {
+      ...createRuntimeMetadata(recognizerRuntime),
+      timings: {
+        ...transcription.timings,
+        inputPreparationMs,
+      },
+    },
   };
   if (request.purgeAfterUse) {
-    result.metadata = await releaseRecognizer(modelId, true);
+    const cleanupStartedAt = nowMs();
+    const releaseMetadata = await releaseRecognizer(modelId, true);
+    result.metadata = {
+      ...result.metadata,
+      ...releaseMetadata,
+      timings: {
+        ...result.metadata.timings,
+        cleanupMs: elapsedMs(cleanupStartedAt),
+        requestTotalMs: elapsedMs(requestStartedAt),
+      },
+    };
+  } else {
+    result.metadata.timings.requestTotalMs = elapsedMs(requestStartedAt);
   }
   return result;
 }
 
 async function transcribeVadSegments({ recognizer, audioInput, sampleRate, segments, sourceLanguage }) {
+  const transcriptionStartedAt = nowMs();
   const transcribed = [];
+  const segmentTimings = [];
+  let totalInferenceMs = 0;
+  let totalPreparationMs = 0;
+  let totalAudioSeconds = 0;
   reportTranscriptionProgress(1, `Transcribing speech segment 1/${segments.length}...`);
   for (const [offset, segment] of segments.entries()) {
+    const preparationStartedAt = nowMs();
     const pcmSlice = slicePcmForSegment(audioInput, sampleRate, segment);
+    const preparationMs = elapsedMs(preparationStartedAt);
+    const audioSeconds = pcmSlice.length / sampleRate;
+    const inferenceStartedAt = nowMs();
     const output = await recognizer(pcmSlice, createWhisperOptions({ sourceLanguage, returnTimestamps: false }));
+    const inferenceMs = elapsedMs(inferenceStartedAt);
+    const realtimeFactor = calculateRealtimeFactor(inferenceMs, audioSeconds);
+    totalPreparationMs += preparationMs;
+    totalInferenceMs += inferenceMs;
+    totalAudioSeconds += audioSeconds;
+    segmentTimings.push({
+      index: segment.index ?? offset + 1,
+      audioSeconds: roundMetric(audioSeconds),
+      preparationMs,
+      inferenceMs,
+      realtimeFactor,
+    });
     transcribed.push({
       index: segment.index ?? offset + 1,
       start: Number(segment.start || 0),
@@ -102,35 +160,73 @@ async function transcribeVadSegments({ recognizer, audioInput, sampleRate, segme
     reportTranscriptionProgress(
       Math.round((completed / Math.max(1, segments.length)) * 100),
       completed < segments.length
-        ? `Transcribed ${completed}/${segments.length} speech segments; processing segment ${completed + 1}...`
-        : `Transcribed all ${segments.length} speech segments.`,
+        ? `Transcribed ${completed}/${segments.length} speech segments in ${formatSeconds(inferenceMs)} (${realtimeFactor.toFixed(2)}× realtime); processing segment ${completed + 1}...`
+        : `Transcribed all ${segments.length} speech segments in ${formatSeconds(totalInferenceMs)} (${calculateRealtimeFactor(totalInferenceMs, totalAudioSeconds).toFixed(2)}× realtime).`,
+      {
+        completedSegments: completed,
+        segmentCount: segments.length,
+        segmentInferenceMs: inferenceMs,
+        segmentAudioSeconds: roundMetric(audioSeconds),
+        segmentRealtimeFactor: realtimeFactor,
+        totalInferenceMs: roundMetric(totalInferenceMs),
+        totalAudioSeconds: roundMetric(totalAudioSeconds),
+      },
     );
   }
-  return transcribed;
+  return {
+    segments: transcribed,
+    timings: {
+      mode: "vad-segments",
+      segmentCount: segments.length,
+      audioSeconds: roundMetric(totalAudioSeconds),
+      preparationMs: roundMetric(totalPreparationMs),
+      inferenceMs: roundMetric(totalInferenceMs),
+      transcriptionWallMs: elapsedMs(transcriptionStartedAt),
+      realtimeFactor: calculateRealtimeFactor(totalInferenceMs, totalAudioSeconds),
+      segments: segmentTimings,
+    },
+  };
 }
 
 async function transcribeWholeAudio({ recognizer, audioInput, request, sourceLanguage }) {
+  const transcriptionStartedAt = nowMs();
+  const audioSeconds = audioInput instanceof Float32Array
+    ? audioInput.length / Number(request.audio?.sampleRate || request.audio?.sampleRateHz || DEFAULT_SAMPLE_RATE)
+    : Number(request.audio?.durationSeconds || 0);
   reportTranscriptionProgress(1, "Transcribing speech audio...");
+  const inferenceStartedAt = nowMs();
   const output = await recognizer(audioInput, createWhisperOptions({ sourceLanguage, returnTimestamps: true }));
-  reportTranscriptionProgress(100, "Speech transcription complete.");
+  const inferenceMs = elapsedMs(inferenceStartedAt);
+  const realtimeFactor = calculateRealtimeFactor(inferenceMs, audioSeconds);
+  reportTranscriptionProgress(
+    100,
+    `Speech transcription complete in ${formatSeconds(inferenceMs)} (${realtimeFactor.toFixed(2)}× realtime).`,
+    { inferenceMs, audioSeconds: roundMetric(audioSeconds), realtimeFactor },
+  );
   const chunks = Array.isArray(output?.chunks) ? output.chunks : [];
   if (chunks.length > 0) {
-    return chunks.map((chunk, index) => ({
-      index: index + 1,
-      start: Array.isArray(chunk.timestamp) ? Number(chunk.timestamp[0] || 0) : 0,
-      end: Array.isArray(chunk.timestamp) ? Number(chunk.timestamp[1] || chunk.timestamp[0] || 0) : 0,
-      text: String(chunk.text || "").trim(),
-    }));
+    return {
+      segments: chunks.map((chunk, index) => ({
+        index: index + 1,
+        start: Array.isArray(chunk.timestamp) ? Number(chunk.timestamp[0] || 0) : 0,
+        end: Array.isArray(chunk.timestamp) ? Number(chunk.timestamp[1] || chunk.timestamp[0] || 0) : 0,
+        text: String(chunk.text || "").trim(),
+      })),
+      timings: createWholeAudioTimings({ audioSeconds, inferenceMs, transcriptionStartedAt }),
+    };
   }
-  return [{
-    index: 1,
-    start: 0,
-    end: Number(request.audio?.durationSeconds || 0),
-    text: extractWhisperText(output),
-  }];
+  return {
+    segments: [{
+      index: 1,
+      start: 0,
+      end: Number(request.audio?.durationSeconds || 0),
+      text: extractWhisperText(output),
+    }],
+    timings: createWholeAudioTimings({ audioSeconds, inferenceMs, transcriptionStartedAt }),
+  };
 }
 
-function reportTranscriptionProgress(progress, message) {
+function reportTranscriptionProgress(progress, message, details = {}) {
   self.postMessage({
     type: "progress",
     event: {
@@ -138,8 +234,44 @@ function reportTranscriptionProgress(progress, message) {
       progress,
       transcriptionProgress: progress,
       message,
+      ...details,
     },
   });
+}
+
+function createWholeAudioTimings({ audioSeconds, inferenceMs, transcriptionStartedAt }) {
+  return {
+    mode: "whole-audio",
+    segmentCount: 1,
+    audioSeconds: roundMetric(audioSeconds),
+    preparationMs: 0,
+    inferenceMs,
+    transcriptionWallMs: elapsedMs(transcriptionStartedAt),
+    realtimeFactor: calculateRealtimeFactor(inferenceMs, audioSeconds),
+  };
+}
+
+function nowMs() {
+  return typeof performance !== "undefined" && typeof performance.now === "function"
+    ? performance.now()
+    : Date.now();
+}
+
+function elapsedMs(startedAt) {
+  return roundMetric(Math.max(0, nowMs() - startedAt));
+}
+
+function calculateRealtimeFactor(inferenceMs, audioSeconds) {
+  if (!Number.isFinite(audioSeconds) || audioSeconds <= 0) return 0;
+  return roundMetric((inferenceMs / 1000) / audioSeconds);
+}
+
+function roundMetric(value) {
+  return Math.round(Number(value || 0) * 10) / 10;
+}
+
+function formatSeconds(milliseconds) {
+  return `${(milliseconds / 1000).toFixed(1)}s`;
 }
 
 function slicePcmForSegment(audioInput, sampleRate, segment) {

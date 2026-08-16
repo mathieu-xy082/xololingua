@@ -31,6 +31,21 @@ export function createClientTranscriber({
 } = {}) {
   let warmupPromise;
   let warmupMetadata;
+  let workerSession;
+
+  const getWorkerSession = () => {
+    if (!workerSession && workerUrl && typeof environment?.Worker === "function") {
+      workerSession = createWorkerRequestSession({ environment, workerUrl });
+    }
+    return workerSession;
+  };
+
+  const closeWorkerSession = () => {
+    workerSession?.close();
+    workerSession = undefined;
+    warmupPromise = undefined;
+    warmupMetadata = undefined;
+  };
 
   const ensureWarmup = async (request, onProgress) => {
     const model = resolveModelRequest({ request, modelId, modelResolver, remoteModels, purgeAfterUse, devicePreference });
@@ -38,27 +53,27 @@ export function createClientTranscriber({
       return undefined;
     }
     if (!warmupPromise) {
-      const warmupWorker = createWorkerRequestClient({
-        environment,
-        workerUrl,
+      const session = getWorkerSession();
+      warmupPromise = session.request({
         requestType: "warmup",
         resultType: "warmup-complete",
+        request: {
+          modelId: model.modelId,
+          sampleSeconds: warmupSampleSeconds,
+          sourceLanguage: request?.sourceLanguage || "auto",
+          ...(model.remoteModels ? { remoteModels: true } : {}),
+          ...(model.purgeAfterUse ? { purgeOnError: true } : {}),
+          ...(model.device ? { device: model.device } : {}),
+        },
+        onProgress,
         maxWorkerResponseMs: warmupTimeoutMs,
         timeoutMessage: `Browser transcription warmup timed out after ${warmupTimeoutMs}ms.`,
         failureMessage: "Browser transcription warmup failed.",
-      });
-      warmupPromise = warmupWorker({
-        modelId: model.modelId,
-        sampleSeconds: warmupSampleSeconds,
-        sourceLanguage: request?.sourceLanguage || "auto",
-        ...(model.remoteModels ? { remoteModels: true } : {}),
-        ...(model.purgeAfterUse ? { purgeOnError: true } : {}),
-        ...(model.device ? { device: model.device } : {}),
-      }, onProgress).then((metadata) => {
+      }).then((metadata) => {
         warmupMetadata = metadata || {};
         return warmupMetadata;
       }).catch((error) => {
-        warmupPromise = undefined;
+        closeWorkerSession();
         throw error;
       });
     }
@@ -100,7 +115,10 @@ export function createClientTranscriber({
 
       const transcribe = typeof transformerWorker === "function"
         ? transformerWorker
-        : createTranscriptionWorkerClient({ environment, workerUrl, maxWorkerResponseMs });
+        : createPersistentTranscriptionWorkerClient({
+          session: getWorkerSession(),
+          maxWorkerResponseMs,
+        });
 
       if (typeof transcribe !== "function") {
         throw new Error("Browser transcription requires transformers.js in a Web Worker or a configured transcription fallback.");
@@ -114,10 +132,18 @@ export function createClientTranscriber({
         purgeAfterUse: model.purgeAfterUse,
         device: model.device,
       });
-      const result = await transcribe(
-        workerRequest,
-        (event) => onProgress(mapClientMlProgress(event, "transcribing")),
-      );
+      const activeWarmupMetadata = warmupMetadata || {};
+      let result;
+      try {
+        result = await transcribe(
+          workerRequest,
+          (event) => onProgress(mapClientMlProgress(event, "transcribing")),
+        );
+      } finally {
+        if (typeof transformerWorker !== "function") {
+          closeWorkerSession();
+        }
+      }
       const output = {
         strategy: result.strategy || (model.modelId ? "whisper-transformers.js" : "transformers.js"),
         language: result.language || request.sourceLanguage || "unknown",
@@ -135,7 +161,7 @@ export function createClientTranscriber({
           ...(model.purgeAfterUse ? { purgeAfterUse: true } : {}),
           ...(model.device ? { devicePreference: model.device } : {}),
           ...(result.metadata || {}),
-          warmup: warmupMetadata || {},
+          warmup: activeWarmupMetadata,
           warmupTimeoutMs,
         };
       }
@@ -144,12 +170,13 @@ export function createClientTranscriber({
   };
 }
 
-function createTranscriptionWorkerClient({ environment, workerUrl, maxWorkerResponseMs }) {
-  return createWorkerRequestClient({
-    environment,
-    workerUrl,
+function createPersistentTranscriptionWorkerClient({ session, maxWorkerResponseMs }) {
+  if (!session) return undefined;
+  return (request, onProgress = () => {}) => session.request({
     requestType: "transcribe",
     resultType: "result",
+    request,
+    onProgress,
     maxWorkerResponseMs,
     timeoutMessage: `Browser transcription worker timed out after ${maxWorkerResponseMs}ms.`,
     failureMessage: "Browser transcription worker failed.",
@@ -212,64 +239,69 @@ async function prepareTranscriptionAudio(audio, environment) {
   }
 }
 
-function createWorkerRequestClient({
-  environment,
-  workerUrl,
-  requestType,
-  resultType,
-  maxWorkerResponseMs,
-  timeoutMessage,
-  failureMessage,
-}) {
-  if (!workerUrl || typeof environment?.Worker !== "function") {
-    return undefined;
-  }
+function createWorkerRequestSession({ environment, workerUrl }) {
+  const worker = new environment.Worker(workerUrl, { type: "module" });
+  let activeRequest;
+  let closed = false;
 
-  return (request, onProgress = () => {}) => new Promise((resolve, reject) => {
-    const worker = new environment.Worker(workerUrl, { type: "module" });
-    let settled = false;
-    let timeoutId;
-    const cleanup = () => {
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
-      if (typeof worker.terminate === "function") {
-        worker.terminate();
-      }
-    };
-    const settle = (callback, value) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      cleanup();
-      callback(value);
-    };
+  const clearActiveRequest = () => {
+    if (activeRequest?.timeoutId) clearTimeout(activeRequest.timeoutId);
+    activeRequest = undefined;
+  };
 
-    if (Number.isFinite(maxWorkerResponseMs) && maxWorkerResponseMs > 0) {
-      timeoutId = setTimeout(() => {
-        settle(reject, new Error(timeoutMessage));
-      }, maxWorkerResponseMs);
+  const close = (error) => {
+    if (closed) return;
+    closed = true;
+    if (activeRequest) {
+      const { reject } = activeRequest;
+      clearActiveRequest();
+      if (error) reject(error);
     }
+    if (typeof worker.terminate === "function") worker.terminate();
+  };
 
-    worker.onerror = (event) => {
-      settle(reject, new Error(event?.message || failureMessage));
-    };
-    worker.onmessage = (event) => {
-      const message = event?.data || {};
-      if (message.type === "progress") {
-        onProgress(message.event);
-        return;
-      }
-      if (message.type === "error") {
-        settle(reject, new Error(message.error || failureMessage));
-        return;
-      }
-      if (message.type === resultType) {
-        settle(resolve, message.result || message.metadata || {});
-      }
-    };
+  worker.onerror = (event) => {
+    const failureMessage = activeRequest?.failureMessage || "Browser transcription worker failed.";
+    close(new Error(event?.message || failureMessage));
+  };
+  worker.onmessage = (event) => {
+    if (!activeRequest) return;
+    const message = event?.data || {};
+    if (message.type === "progress") {
+      activeRequest.onProgress(message.event);
+      return;
+    }
+    if (message.type === "error") {
+      close(new Error(message.error || activeRequest.failureMessage));
+      return;
+    }
+    if (message.type === activeRequest.resultType) {
+      const { resolve } = activeRequest;
+      clearActiveRequest();
+      resolve(message.result || message.metadata || {});
+    }
+  };
 
-    worker.postMessage({ type: requestType, request });
-  });
+  return {
+    request({
+      requestType,
+      resultType,
+      request,
+      onProgress = () => {},
+      maxWorkerResponseMs,
+      timeoutMessage,
+      failureMessage,
+    }) {
+      if (closed) return Promise.reject(new Error("Browser transcription worker session is closed."));
+      if (activeRequest) return Promise.reject(new Error("Browser transcription worker is already processing a request."));
+      return new Promise((resolve, reject) => {
+        activeRequest = { resultType, onProgress, failureMessage, resolve, reject, timeoutId: undefined };
+        if (Number.isFinite(maxWorkerResponseMs) && maxWorkerResponseMs > 0) {
+          activeRequest.timeoutId = setTimeout(() => close(new Error(timeoutMessage)), maxWorkerResponseMs);
+        }
+        worker.postMessage({ type: requestType, request });
+      });
+    },
+    close,
+  };
 }

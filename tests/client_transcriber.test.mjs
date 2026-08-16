@@ -160,7 +160,7 @@ test("client transcriber runs transcription through a configured Web Worker boun
   });
 });
 
-test("client transcriber warms the ASR worker before transcription and reports warmup metadata", async () => {
+test("client transcriber reuses one ASR worker for warmup and transcription", async () => {
   const workerInstances = [];
   class WarmupWorker {
     constructor(url, options) {
@@ -214,8 +214,8 @@ test("client transcriber warms the ASR worker before transcription and reports w
     (event) => progress.push(event),
   );
 
-  assert.equal(workerInstances.length, 2);
-  assert.deepEqual(workerInstances.map((worker) => worker.messages[0]), [
+  assert.equal(workerInstances.length, 1);
+  assert.deepEqual(workerInstances[0].messages, [
     { type: "warmup", request: { modelId: "Xenova/whisper-tiny", sampleSeconds: 1, sourceLanguage: "fr" } },
     {
       type: "transcribe",
@@ -228,7 +228,6 @@ test("client transcriber warms the ASR worker before transcription and reports w
     },
   ]);
   assert.equal(workerInstances[0].terminated, true);
-  assert.equal(workerInstances[1].terminated, true);
   assert.deepEqual(progress, [{ stage: "asr-warmup", progress: 50 }]);
   assert.deepEqual(result, {
     strategy: "whisper-transformers.js",
@@ -240,6 +239,53 @@ test("client transcriber warms the ASR worker before transcription and reports w
       warmupTimeoutMs: 100,
     },
   });
+});
+
+test("client transcriber creates a fresh persistent worker session for the next purged job", async () => {
+  const workerInstances = [];
+  class ReusableWorker {
+    constructor() {
+      this.messages = [];
+      this.terminated = false;
+      workerInstances.push(this);
+    }
+
+    postMessage(message) {
+      this.messages.push(message);
+      queueMicrotask(() => {
+        if (message.type === "warmup") {
+          this.onmessage({ data: { type: "warmup-complete", metadata: { warmed: true } } });
+        } else {
+          this.onmessage({ data: { type: "result", result: { segments: [] } } });
+        }
+      });
+    }
+
+    terminate() {
+      this.terminated = true;
+    }
+  }
+  const transcriber = createClientTranscriber({
+    environment: { Worker: ReusableWorker },
+    workerUrl: "/frontend/transcription_worker.js",
+    modelId: "Xenova/whisper-base",
+    purgeAfterUse: true,
+  });
+  const request = {
+    audio: { pcm: new Float32Array([0]), sampleRate: 16000 },
+    segments: [],
+    sourceLanguage: "fr",
+  };
+
+  await transcriber.transcribeAudio(request);
+  await transcriber.transcribeAudio(request);
+
+  assert.equal(workerInstances.length, 2);
+  assert.deepEqual(workerInstances.map((worker) => worker.messages.map((message) => message.type)), [
+    ["warmup", "transcribe"],
+    ["warmup", "transcribe"],
+  ]);
+  assert.ok(workerInstances.every((worker) => worker.terminated));
 });
 
 test("client transcriber fails fast when ASR warmup times out", async () => {
