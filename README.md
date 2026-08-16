@@ -89,6 +89,20 @@ The frontend keeps explicit capability probes for each migration stage and aggre
 
 The aggregate report labels the current flow as `client-side` only when every stage has a browser runtime. Any unavailable stage produces `hybrid-fallback` with a concrete list of `serverFallbackStages`, so milestone demos can state exactly which parts still rely on the Python service. The report also exposes a `demoSummary` with readable stage labels, `serverFallbackEndpoints`, and ordered `stageRows` that pair each stage with its browser or Python fallback runtime; for example `Hybrid PWA: 2 browser stages, 2 Python fallback stages` plus `POST /api/segment-audio` for segmentation fallback, to keep the July milestone presentation aligned with the tested contract.
 
+### On-demand browser models
+
+The production PWA does not require users to prepare model files manually. When subtitle generation starts, the frontend resolves and downloads only the models required by the current request:
+
+- transcription uses the multilingual `Xenova/whisper-base` model;
+- translation resolves a directional OPUS-MT model from the detected source and selected target, for example `Xenova/opus-mt-fr-ru` for French to Russian;
+- Transformers.js reports download progress through the existing subtitle progress UI;
+- each ML worker requests a high-performance WebGPU adapter and reports the selected engine (`WebGPU (...)` or `WASM CPU`) in the model panel;
+- after each ML stage, the worker releases its runtime and clears the corresponding model files from the Transformers.js browser cache.
+
+The first run therefore requires internet access to Hugging Face. If the resolved OPUS-MT repository does not exist, a download fails, or the browser cannot run the model, the hybrid router records the failure and uses the Python fallback. The former packaged-model manifests and manual bootstrap command have been removed; model delivery is entirely driven by the selected language pair.
+
+Remote model responses bypass the browser HTTP cache and are not stored in the PWA shell cache. Temporary Transformers.js caching is enabled only to share files between warmup and inference within one pipeline run, and is purged after use.
+
 The ffmpeg.wasm audio-extraction prototype keeps explicit browser memory and duration guards: normal client-side operation accepts videos up to 1 hour or 800 MiB by default, while CI/demo runs can still pass shorter per-extractor overrides (for example 60 seconds) to keep validation fast. It rejects inputs before loading the WASM runtime when `File.size` metadata is available, then rechecks the fetched byte buffer before writing into the ffmpeg.wasm virtual filesystem, releasing the runtime when `releaseAfterRun` is enabled, so streams or synthetic file-like inputs cannot bypass the browser memory guard. Browser metadata probing fails explicitly after 10 seconds by default so stalled video headers do not leave object URLs or extraction promises hanging. The extractor exposes an opt-in `releaseAfterRun` mode that terminates/exits the ffmpeg.wasm runtime after virtual filesystem cleanup, which is useful for demo flows that process one short clip at a time and need to return the WASM heap promptly. If ffmpeg.wasm cannot transcode a selected file, the browser error keeps the original failure as its cause while directing users to the Python fallback. Larger media or unsupported codecs should use the explicit Python `/api/extract-audio` fallback until a streaming/WebCodecs path is available.
 
 ## Build and Run Locally
@@ -148,7 +162,15 @@ In a second terminal, start the web application:
 pdm run web
 ```
 
-Open <http://localhost:4173>. The local service health information should appear at the top of the application; its API listens on <http://127.0.0.1:8765>.
+The command opens <http://localhost:4173> in the system default browser. Pass `--no-browser` when only the server is needed. The local service health information should appear at the top of the application; its API listens on <http://127.0.0.1:8765>. XoloLingua requests a high-performance WebGPU adapter from that browser automatically and reports the selected runtime in the model panel.
+
+For diagnostics only, Linux developers can compare the default browser with an isolated Chrome profile carrying explicit Vulkan/WebGPU flags:
+
+```bash
+pdm run debug-webgpu-chrome
+```
+
+This diagnostic helper does not replace the normal `pdm run web` flow and does not modify the default browser profile. During model initialization, the UI reports a hardware label such as `WebGPU (NVIDIA Lovelace)`. `WebGPU (Google Swiftshader)` is software rendering, and `WASM CPU` means the automatic safety fallback was used.
 
 ### Configure Whisper
 
@@ -184,9 +206,10 @@ pdm run api-e2e --target en
 XOLOLINGUA_VALIDATE_API_E2E=1 XOLOLINGUA_API_E2E_TARGET=en pdm run test
 pdm run browser-e2e --target en
 pdm run browser-e2e --target en --require-browser-audio
+pdm run e2e-browser-webgpu --video /path/to/french-sample.mp4
 ```
 
-The API E2E validator auto-starts `pdm run service` when needed, uploads `/root/android-app-games/resources/lisoir_dnde442.mp4`, detects French, extracts and segments audio, creates/polls a subtitle job, and writes a verified `.srt` artifact under `~/.cache/xololingua/e2e-validations/` by default. Override that location with `XOLOLINGUA_API_E2E_OUTPUT_DIR` when a run needs an explicit artifact directory. Browser E2E downloads default to `~/.cache/xololingua/tmp/browser-e2e-downloads/`, can share another temp root through `XOLOLINGUA_TMP_DIR`, and can still be sent to an explicit directory with `XOLOLINGUA_BROWSER_E2E_DOWNLOAD_DIR`. Add `--require-browser-audio` when validating a browser audio extraction build: the Playwright run still checks the final SRT, but it also fails unless the final pipeline status reports `Audio extraction: Browser`, which prevents silent fallback to `POST /api/extract-audio` during that validation.
+The API E2E validator auto-starts `pdm run service` when needed, uploads `/root/android-app-games/resources/lisoir_dnde442.mp4`, detects French, extracts and segments audio, creates/polls a subtitle job, and writes a verified `.srt` artifact under `~/.cache/xololingua/e2e-validations/` by default. Override that location with `XOLOLINGUA_API_E2E_OUTPUT_DIR` when a run needs an explicit artifact directory. Browser E2E downloads default to `~/.cache/xololingua/tmp/browser-e2e-downloads/`, can share another temp root through `XOLOLINGUA_TMP_DIR`, and can still be sent to an explicit directory with `XOLOLINGUA_BROWSER_E2E_DOWNLOAD_DIR`. Add `--require-browser-audio` when validating a browser audio extraction build: the Playwright run still checks the final SRT, but it also fails unless the final pipeline status reports `Audio extraction: Browser`, which prevents silent fallback to `POST /api/extract-audio` during that validation. The `e2e-browser-webgpu` gate additionally launches graphical Chrome with Linux Vulkan/WebGPU flags, rejects missing adapters and SwiftShader, and fails if either browser ML stage reports a WASM fallback.
 
 ## Android
 
@@ -235,7 +258,7 @@ L'objectif est d'éliminer la dépendance au service Python local (`local_servic
 ### Étape 3 — Transcription locale via WebGPU avec fallback WASM/CPU
 - Remplacer la transcription `faster-whisper` (subprocess Python) par [`transformers.js`](https://huggingface.co/docs/transformers.js) (Xenova/Hugging Face)
 - Charger un modèle Whisper directement dans un **Web Worker**
-- Utiliser le backend **WebGPU** si disponible, WASM/CPU sinon (géré automatiquement par `transformers.js`)
+- Utiliser explicitement le backend **WebGPU** lorsqu'un adaptateur matériel est disponible, avec fallback WASM/CPU automatique et raison visible dans l'interface
 - Couvrir également la détection de la langue source (actuellement `POST /api/detect-language`)
 
 ### Étape 4 — Traduction locale ou cloud selon le contexte

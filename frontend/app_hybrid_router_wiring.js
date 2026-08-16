@@ -19,6 +19,12 @@ export function createAppClientAdapters({
   if (typeof clientTranslator?.translateSegments === "function") {
     adapters.translation = (request, onProgress) => clientTranslator.translateSegments(request, onProgress);
   }
+  const cancelers = [clientTranscriber, clientTranslator]
+    .filter((client) => typeof client?.cancel === "function")
+    .map((client) => client.cancel.bind(client));
+  if (cancelers.length > 0) {
+    adapters.cancel = () => cancelers.forEach((cancel) => cancel());
+  }
   return adapters;
 }
 
@@ -50,7 +56,17 @@ export function createAppHybridPipelineRouter({
         });
         return backendClient.segmentAudio(registered.audioId, onProgress);
       },
-      transcription: (request, onProgress) => backendClient.transcribeAudio(request, onProgress),
+      transcription: async (request, onProgress) => {
+        let audioId = request?.audioId || request?.audio?.audioId;
+        if (!audioId) {
+          if (typeof backendClient.registerAudio !== "function") {
+            throw new Error("Python transcription fallback requires an audio id or browser audio registration endpoint.");
+          }
+          const registered = await backendClient.registerAudio(request?.audio);
+          audioId = registered.audioId;
+        }
+        return backendClient.transcribeAudio({ ...request, audioId }, onProgress);
+      },
       translation: async (request, onProgress) => {
         if (typeof backendClient.translateSegments === "function") {
           return backendClient.translateSegments({

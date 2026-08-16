@@ -73,6 +73,51 @@ test("client translator delegates segment translation to an injected local trans
   });
 });
 
+test("client translator executes an English pivot while preserving segment timing and indexes", async () => {
+  const calls = [];
+  const translator = createClientTranslator({
+    environment: {},
+    localTranslatorWorker: async (request) => {
+      calls.push(request);
+      const prefix = request.targetLanguage === "en" ? "EN:" : "ZH:";
+      return {
+        segments: request.segments.map((segment) => ({ index: segment.index, text: `${prefix}${segment.text}` })),
+      };
+    },
+    modelResolver: (request) => {
+      if (request.sourceLanguage === "fr" && request.targetLanguage === "zh") {
+        return {
+          stage: "translation",
+          sourceLanguage: "fr",
+          targetLanguage: "zh",
+          modelId: "Xenova/opus-mt-fr-en",
+          route: [
+            { sourceLanguage: "fr", targetLanguage: "en", modelId: "Xenova/opus-mt-fr-en" },
+            { sourceLanguage: "en", targetLanguage: "zh", modelId: "Xenova/opus-mt-en-zh" },
+          ],
+          pivotLanguage: "en",
+          remote: true,
+          purgeAfterUse: true,
+          dtype: "q4",
+        };
+      }
+      throw new Error("Unexpected route request.");
+    },
+  });
+  const result = await translator.translateSegments({
+    sourceLanguage: "fr",
+    targetLanguage: "zh",
+    segments: [{ index: 7, start: 12.5, end: 14.75, text: "Bonjour" }],
+  });
+
+  assert.deepEqual(calls.map((request) => [request.modelId, request.sourceLanguage, request.targetLanguage]), [
+    ["Xenova/opus-mt-fr-en", "fr", "en"],
+    ["Xenova/opus-mt-en-zh", "en", "zh"],
+  ]);
+  assert.deepEqual(result.segments, [{ index: 7, start: 12.5, end: 14.75, text: "ZH:EN:Bonjour" }]);
+  assert.deepEqual(result.metadata.translationRoute.map((step) => step.targetLanguage), ["en", "zh"]);
+});
+
 test("client translator runs local translation through a configured Web Worker boundary", async () => {
   const workerInstances = [];
   class FakeWorker {
@@ -130,7 +175,41 @@ test("client translator runs local translation through a configured Web Worker b
   });
 });
 
-test("client translator warms the local translation worker before translating batches and reports warmup metadata", async () => {
+test("client translator cancellation terminates an active browser worker", async () => {
+  const workerInstances = [];
+  class StalledWorker {
+    constructor() {
+      this.terminated = false;
+      workerInstances.push(this);
+    }
+
+    postMessage() {}
+
+    terminate() {
+      this.terminated = true;
+    }
+  }
+  const translator = createClientTranslator({
+    environment: { Worker: StalledWorker },
+    workerUrl: "/frontend/translation_worker.js",
+    modelId: "Xenova/opus-mt-fr-en",
+    warmupTimeoutMs: 60_000,
+  });
+  const pending = translator.translateSegments({
+    segments: [{ index: 1, start: 0, end: 1, text: "Bonjour" }],
+    sourceLanguage: "fr",
+    targetLanguage: "en",
+  });
+
+  await new Promise((resolve) => queueMicrotask(resolve));
+  translator.cancel();
+
+  await assert.rejects(pending, /Browser translation cancelled/);
+  assert.equal(workerInstances.length, 1);
+  assert.equal(workerInstances[0].terminated, true);
+});
+
+test("client translator reuses one local worker for warmup and all translation batches", async () => {
   const workerInstances = [];
   class WarmupWorker {
     constructor(url, options) {
@@ -183,8 +262,8 @@ test("client translator warms the local translation worker before translating ba
     (event) => progress.push(event),
   );
 
-  assert.equal(workerInstances.length, 3);
-  assert.deepEqual(workerInstances.map((worker) => worker.messages[0].type), ["warmup", "translate", "translate"]);
+  assert.equal(workerInstances.length, 1);
+  assert.deepEqual(workerInstances[0].messages.map((message) => message.type), ["warmup", "translate", "translate"]);
   assert.deepEqual(workerInstances[0].messages[0], {
     type: "warmup",
     request: {
@@ -194,7 +273,7 @@ test("client translator warms the local translation worker before translating ba
       targetLanguage: "en",
     },
   });
-  assert.deepEqual(workerInstances[1].messages[0].request, {
+  assert.deepEqual(workerInstances[0].messages[1].request, {
     modelId: "Xenova/nllb-200-distilled-600M",
     segments: [segments[0]],
     sourceLanguage: "fr",
@@ -211,7 +290,7 @@ test("client translator warms the local translation worker before translating ba
     ],
   });
   assert.deepEqual(progress[0], { stage: "translation-warmup", progress: 20 });
-  assert.ok(workerInstances.every((worker) => worker.terminated));
+  assert.equal(workerInstances[0].terminated, true);
 });
 
 test("client translator fails fast when translation warmup times out", async () => {

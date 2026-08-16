@@ -6,7 +6,22 @@ This project follows Semantic Versioning.
 
 ## Unreleased
 
-No changes yet.
+### Added
+
+- Added on-demand browser model resolution for transcription and source-to-target OPUS-MT translation.
+- Added bounded English-pivot translation routes when no direct browser model exists, preserving segment timing and indices.
+- Added browser translation routes for English to Hindi, Arabic, and Ukrainian targets.
+- Added automatic remote Transformers.js model downloads with visible pipeline progress and Python fallback on unavailable pairs.
+- Added per-pipeline model disposal and targeted browser-cache purge after transcription and translation.
+- Added `no-store` remote model fetches so purged weights are not retained by the browser HTTP cache.
+
+### Changed
+
+- Changed target-language availability to use browser translation routes instead of requiring the Python translation-pair endpoint, so the PWA remains usable without Python installed.
+- Updated the target-language status message to explain when no direct or bounded browser route is available.
+- Detached the PWA runtime and service worker from the legacy static model manifests and bootstrap cache.
+- Replaced packaged-model metadata in the runtime graph with lightweight dynamic browser ML limits and timeouts.
+- Removed the legacy packaged-model manifests, snapshot preparation command, and manual bootstrap implementation after a real French-to-Russian browser E2E validated on-demand delivery and post-pipeline purge.
 
 ## 1.0.0 - 2026-07-28
 

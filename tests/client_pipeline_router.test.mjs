@@ -283,6 +283,35 @@ test("hybrid pipeline router falls back to the Python transcription endpoint whe
   });
 });
 
+test("hybrid pipeline router preserves browser model purge metadata", async () => {
+  const router = createHybridPipelineRouter({
+    capabilityReport: {
+      stages: {
+        transcription: { runtime: "browser", strategy: "remote-transformers.js" },
+      },
+    },
+    clientAdapters: {
+      transcription: async () => ({
+        segments: [{ index: 1, text: "bonjour" }],
+        metadata: {
+          modelId: "Xenova/whisper-base",
+          cachePurged: true,
+          filesDeleted: 7,
+        },
+      }),
+    },
+    serverAdapters: {},
+  });
+
+  const result = await router.runTranscription({ segments: [] });
+
+  assert.deepEqual(result.metadata, {
+    modelId: "Xenova/whisper-base",
+    cachePurged: true,
+    filesDeleted: 7,
+  });
+});
+
 test("hybrid pipeline router exposes canonical fallback reasons when browser transcription fails", async () => {
   const router = createHybridPipelineRouter({
     capabilityReport: {

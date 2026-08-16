@@ -10,6 +10,19 @@ test("app.js passes global browser ML stage adapters into the hybrid router", as
   assert.match(appSource, /clientAudioExtractor:\s*globalThis\.XOLOLINGUA_CLIENT_AUDIO_EXTRACTOR/);
   assert.match(appSource, /clientTranscriber:\s*globalThis\.XOLOLINGUA_CLIENT_TRANSCRIBER/);
   assert.match(appSource, /clientTranslator:\s*globalThis\.XOLOLINGUA_CLIENT_TRANSLATOR/);
+  assert.match(appSource, /cancelGenerateButton\.disabled = state\.subtitleCancelRequested/);
+});
+
+test("app client adapters expose cancellation for browser ML stages", () => {
+  const calls = [];
+  const adapters = createAppClientAdapters({
+    clientTranscriber: { cancel: () => calls.push("transcription") },
+    clientTranslator: { cancel: () => calls.push("translation") },
+  });
+
+  adapters.cancel();
+
+  assert.deepEqual(calls, ["transcription", "translation"]);
 });
 
 test("app client adapters expose browser audio extraction for the global E2E guard", async () => {
@@ -354,6 +367,43 @@ test("app hybrid router wiring runs transcription through the Python transcripti
       fallbackEndpoints: ["POST /api/transcribe-audio", "POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
     },
   });
+});
+
+test("app hybrid router wiring registers browser WAV only when Python transcription fallback needs it", async () => {
+  const calls = [];
+  const audio = {
+    audioBlob: new Blob([new Uint8Array([1])], { type: "audio/wav" }),
+    audioFileName: "browser.wav",
+  };
+  const router = createAppHybridPipelineRouter({
+    backendClient: {
+      registerAudio: async (receivedAudio) => {
+        calls.push(["registerAudio", receivedAudio.audioFileName]);
+        return { audioId: "registered-audio" };
+      },
+      transcribeAudio: async ({ audioId }) => {
+        calls.push(["transcribeAudio", audioId]);
+        return [{ index: 1, start: 0, end: 1.5, text: "Bonjour" }];
+      },
+    },
+    capabilityReport: {
+      stages: {
+        transcription: { runtime: "server-fallback", strategy: "python-backend" },
+      },
+    },
+  });
+
+  const result = await router.runTranscription({
+    audio,
+    sourceLanguage: { code: "fr", name: "French" },
+    segments: [{ index: 1, start: 0, end: 1.5 }],
+  });
+
+  assert.deepEqual(calls, [
+    ["registerAudio", "browser.wav"],
+    ["transcribeAudio", "registered-audio"],
+  ]);
+  assert.equal(result.runtime, "server-fallback");
 });
 
 test("app hybrid router wiring translates already-transcribed segments through the Python translation fallback", async () => {

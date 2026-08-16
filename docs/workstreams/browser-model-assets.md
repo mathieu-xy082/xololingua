@@ -158,7 +158,7 @@ pdm run api-e2e
 pdm run e2e-browser-strict
 ```
 
-### Nouveau gate réel attendu
+### Gate réel
 
 ```bash
 pdm run e2e-browser-real-models
@@ -174,23 +174,17 @@ que lorsque le nouveau gate réel est implémenté, documenté, et vert, ou lors
 
 ## Découpage recommandé
 
-1. Ajouter manifest modèle + tests unitaires du resolver/cache metadata. ✅ `BROWSER_MODEL_ASSET_MANIFEST` déclare les choix ASR/traduction et refuse les URLs distantes implicites.
-2. Ajouter stratégie de chargement offline/cache et erreurs/fallbacks testées. ✅ `frontend/model_asset_bootstrap.js` inspecte la Cache API réelle, détecte IndexedDB/Cache API, produit `offline-ready` / `bootstrap-required` / `unavailable`, liste `missingModelAssets`, et propage le fallback metadata dans les capacités client async.
-3. Brancher le fallback metadata dans le pipeline/UI. ✅ L'app démarre sur le resolver async réel, conserve l'injection déterministe du gate strict, affiche `modelAssetBootstrapLabel` dans les fallbacks PWA, et les résumés de stages incluent status, taille restante et assets manquants.
-4. Brancher ASR réel browser avec warmup/timeouts. ✅ `frontend/transcription_worker.js` fournit un worker Transformers.js local `warmup` / `transcribe`, `createClientTranscriber` applique `asrWarmupMs` et `asrInferencePerSegmentMs`, l'app passe l'audio browser au transcriber, et le SW précache le worker/runtime ASR.
-5. Brancher traduction réelle browser avec warmup/timeouts. ✅ `frontend/translation_worker.js` fournit un worker Transformers.js local `warmup` / `translate`, `createClientTranslator` applique `translationWarmupMs` et `translationInferencePerBatchMs`, conserve le batching browser, propage les metadata warmup, et le SW précache le worker traduction.
-6. Étendre service worker/cache versionné avec flux de bootstrap/retry utilisateur. ✅ `bootstrapBrowserModelAssets()` télécharge uniquement les assets manquants dans le cache versionné `xololingua-model-assets-*`, expose progress/failedAssets retryables, le panneau PWA `Model assets` permet cache/retry utilisateur, et le SW répond à `BOOTSTRAP_MODEL_ASSETS` sans mettre en cache les réponses non-OK.
-7. Ajouter `e2e-browser-real-models` et diagnostics compactes. ✅ Gate ajouté via `pdm run e2e-browser-real-models`; il interdit l'injection déterministe, préflight les manifests modèles locaux, prépare le bootstrap/cache browser quand les assets existent, puis lance les vrais workers ASR/traduction avec guards runtime/couverture/comparaison backend. Le gate cible les manifests packagés actuels `models/asr/whisper-base/manifest.json` et `models/translation/opus-mt-fr-en/manifest.json`, et sort en skip explicite/actionnable si ces manifests ou leurs checksums sont absents/incohérents.
-8. Valider full ladder et pousser. ⏳ Validation locale effectuée jusqu'au gate réel préparatoire; `prepare-browser-model-assets` prépare désormais les snapshots locaux Transformers.js, génère les manifests `models/asr/whisper-base/manifest.json` et `models/translation/opus-mt-fr-en/manifest.json`, calcule `bytes`/`sha256`, puis injecte les assets réels dans `frontend/model_asset_manifest.js`. Exemple :
-   ```bash
-   pdm run prepare-browser-model-assets --asr-source /path/to/Xenova/whisper-base --translation-source /path/to/Xenova/opus-mt-fr-en
-   pdm run e2e-browser-real-models
-   ```
-   Dans l'environnement cron actuel, les manifests packagés sont présents mais le gate réel doit encore être exécuté jusqu'à succès browser complet (pas seulement préflight/skip) avant d'émettre le marqueur de review.
+1. Résoudre les modèles à partir de la langue source et de la langue cible. ✅ `Xenova/whisper-base` est partagé par l'ASR et un dépôt directionnel `Xenova/opus-mt-<source>-<target>` est sélectionné pour la traduction.
+2. Télécharger les modèles à la demande avec progression et fallback explicite. ✅ Les workers Transformers.js autorisent les modèles distants uniquement pour les requêtes dynamiques et le routeur hybride conserve le fallback Python.
+3. Libérer les runtimes et purger les fichiers après chaque étape ML. ✅ Les workers appellent `dispose()` puis `ModelRegistry.clear_pipeline_cache()` et propagent le résultat de purge.
+4. Valider le cycle réel sans manifests statiques. ✅ Le gate `pdm run e2e-browser-real-models` observe les requêtes Hugging Face, interdit les anciennes URLs locales `/models/`, vérifie l'exécution navigateur, le SRT, la comparaison backend et l'absence d'entrées modèle dans Cache API.
+5. Retirer l'ancien outillage. ✅ Les manifests packagés, le bootstrap manuel, le préparateur de snapshots et leurs tests ont été supprimés après le passage réel français → russe.
+
+Validation du 15 août 2026 sur un extrait français de 60 secondes : 28 requêtes de modèle, aucun échec, 6 blocs SRT, couverture de 99,8 %, similarité backend de 1,000, aucune entrée de modèle restante dans Cache API et cache HTTP Chromium ramené de 481 Mio à 62 Mio sans poids de modèle.
 
 ## Contraintes d'hygiène
 
-- Pas d'assets générés dans le repo sauf petits manifests/scripts utiles.
+- Pas d'assets modèle générés dans le dépôt.
 - Utiliser `/root/.cache/xololingua/tmp` pour téléchargements/tests temporaires.
 - Ne pas casser `e2e-browser-strict` : il reste le gate rapide déterministe.
 - Ne pas continuer d'anciennes branches intégrées (`ec/client-ml-stages`, `ec/pwa-offline-integration`) ; tout nouveau travail se fait ici.

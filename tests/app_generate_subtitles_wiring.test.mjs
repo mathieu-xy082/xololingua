@@ -24,6 +24,12 @@ test("app maps direct translation endpoint progress without subtitle-job scaling
   assert.match(appSource, /setSubtitleProgress\(100, job\.translationProgress\)/);
 });
 
+test("app reserves visible progress for browser model preparation and uses direct browser ASR progress", () => {
+  assert.match(appSource, /job\.stage === "loading-model" \|\| job\.stage === "asr-warmup"/);
+  assert.match(appSource, /typeof job\.transcriptionProgress === "number"/);
+  assert.match(appSource, /10 \+ Math\.round\(clampProgress\(job\.transcriptionProgress\) \* 0\.9\)/);
+});
+
 test("app segmentation no longer exposes legacy direct backend adapters outside the hybrid router", () => {
   assert.doesNotMatch(appSource, /function extractAudioAdapter\(/);
   assert.doesNotMatch(appSource, /function serviceSegmentAudioAdapter\(/);
@@ -31,6 +37,12 @@ test("app segmentation no longer exposes legacy direct backend adapters outside 
 
 test("app consumes canonical VAD stage payload segments while preserving segment review", () => {
   assert.match(appSource, /finishSegmentation\(segmentation\.payload\.segments, stageReports\)/);
+});
+
+test("app attempts browser VAD before registering audio for a Python fallback", () => {
+  assert.doesNotMatch(appSource, /Registering browser-extracted audio for Python fallback stages/);
+  assert.doesNotMatch(appSource, /backendClient\.registerAudio\(state\.extractedAudio/);
+  assert.match(appSource, /hybridPipelineRouter\.runVadSegmentation\(state\.extractedAudio/);
 });
 
 test("app carries canonical audio extraction metadata into segmentation status details", () => {
@@ -59,7 +71,7 @@ test("app configures browser VAD segmentation adapter with the backend-compatibl
   assert.match(appSource, /clientAudioExtractor:/);
   assert.match(appSource, /clientVadSegmenter:/);
   assert.match(appSource, /XOLOLINGUA_CLIENT_VAD_SEGMENTER/);
-  assert.match(appSource, /createVadWebRuntimeSegmenter\(\{\s*vadProfile:\s*["']backend-compatible["'],?\s*\}\)/);
+  assert.match(appSource, /createVadWebRuntimeSegmenter\(\{[\s\S]*?vadProfile:\s*["']backend-compatible["'][\s\S]*?workerUrl:\s*["']frontend\/vad_worker\.js["'][\s\S]*?\}\)/);
 });
 
 test("app configures local ffmpeg wasm audio extraction instead of relying on WebCodecs-only detection", () => {
@@ -68,27 +80,33 @@ test("app configures local ffmpeg wasm audio extraction instead of relying on We
   assert.match(appSource, /globalThis\.XOLOLINGUA_CLIENT_AUDIO_EXTRACTOR \|\| createClientAudioExtractor\(\{/);
 });
 
-test("app configures a local browser ASR transcriber worker with manifest warmup timeout", () => {
+test("app configures browser ASR with the dynamic ML download timeout", () => {
   assert.match(appSource, /import\s+\{\s*createClientTranscriber\s*\}\s+from\s+["']\.\/frontend\/client_transcriber\.js["']/);
   assert.match(appSource, /globalThis\.XOLOLINGUA_CLIENT_TRANSCRIBER\s*\|\|\s*createClientTranscriber\(\{/);
   assert.match(appSource, /workerUrl:\s*["']frontend\/transcription_worker\.js["']/);
-  assert.match(appSource, /warmupTimeoutMs:\s*BROWSER_MODEL_ASSET_MANIFEST\.models\.transcription\.warmup\.timeoutMs/);
-  assert.match(appSource, /maxWorkerResponseMs:\s*BROWSER_MODEL_ASSET_MANIFEST\.timeouts\.asrInferencePerSegmentMs/);
+  assert.match(appSource, /warmupTimeoutMs:\s*BROWSER_ML_CONFIG\.modelDownloadTimeoutMs/);
+  assert.match(appSource, /devicePreference:\s*BROWSER_ML_CONFIG\.devicePreference/);
+  assert.match(appSource, /maxWorkerResponseMs:\s*BROWSER_ML_CONFIG\.transcription\.inferenceTimeoutMs/);
 });
 
-test("app configures a local browser translation worker with manifest warmup timeout", () => {
+test("app configures browser translation with dynamic ML limits", () => {
   assert.match(appSource, /import\s+\{\s*createClientTranslator\s*\}\s+from\s+["']\.\/frontend\/client_translator\.js["']/);
   assert.match(appSource, /globalThis\.XOLOLINGUA_CLIENT_TRANSLATOR\s*\|\|\s*createClientTranslator\(\{/);
   assert.match(appSource, /workerUrl:\s*["']frontend\/translation_worker\.js["']/);
-  assert.match(appSource, /modelId:\s*BROWSER_MODEL_ASSET_MANIFEST\.models\.translation\.modelId/);
-  assert.match(appSource, /warmupTimeoutMs:\s*BROWSER_MODEL_ASSET_MANIFEST\.models\.translation\.warmup\.timeoutMs/);
-  assert.match(appSource, /warmupSampleText:\s*BROWSER_MODEL_ASSET_MANIFEST\.models\.translation\.warmup\.sampleText/);
-  assert.match(appSource, /maxWorkerResponseMs:\s*BROWSER_MODEL_ASSET_MANIFEST\.timeouts\.translationInferencePerBatchMs/);
+  assert.match(appSource, /modelId:\s*BROWSER_ML_CONFIG\.translation\.defaultModelId/);
+  assert.match(appSource, /warmupTimeoutMs:\s*BROWSER_ML_CONFIG\.modelDownloadTimeoutMs/);
+  assert.match(appSource, /warmupSampleText:\s*BROWSER_ML_CONFIG\.translation\.warmupSampleText/);
+  assert.match(appSource, /maxWorkerResponseMs:\s*BROWSER_ML_CONFIG\.translation\.inferenceTimeoutMs/);
 });
 
-test("app renders browser model bootstrap details in the PWA capability summary", () => {
-  assert.match(appSource, /collectClientPipelineCapabilitiesWithModelAssetBootstrap/);
-  assert.match(appSource, /await collectClientPipelineCapabilitiesWithModelAssetBootstrap\(\)/);
-  assert.match(appSource, /summary\.stageRows\.find\(\(row\) => row\.stage === fallback\.stage\)/);
-  assert.match(appSource, /stageRow\?\.modelAssetBootstrapLabel/);
+test("app no longer waits for static browser model bootstrap", () => {
+  assert.match(appSource, /const clientPipelineCapabilities = collectClientPipelineCapabilities\(\)/);
+  assert.doesNotMatch(appSource, /collectClientPipelineCapabilitiesWithModelAssetBootstrap/);
+  assert.doesNotMatch(appSource, /modelAssetBootstrap/);
+});
+
+test("app gates target languages by browser model routes instead of backend pair discovery", () => {
+  assert.match(appSource, /resolveTranslationModel\(\{ sourceLanguage: sourceCode, targetLanguage: targetCode \}\)/);
+  assert.match(appSource, /No browser translation route is available for this language pair/);
+  assert.doesNotMatch(appSource, /pairsLoaded && !isSupportedPair/);
 });

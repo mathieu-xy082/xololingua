@@ -10,7 +10,6 @@ its SRT content.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import re
@@ -19,6 +18,7 @@ import subprocess
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections import Counter
 from contextlib import suppress
@@ -42,10 +42,8 @@ DEFAULT_DOWNLOAD_DIR = Path(
         DEFAULT_TMP_ROOT / "browser-e2e-downloads",
     )
 )
-REAL_MODEL_ASSET_MANIFEST_PATHS = (
-    "models/asr/whisper-base/manifest.json",
-    "models/translation/opus-mt-fr-en/manifest.json",
-)
+DYNAMIC_TRANSCRIPTION_MODEL_ID = "Xenova/whisper-base"
+DEFAULT_MAX_HTTP_CACHE_BYTES = 96 * 1024 * 1024
 
 
 class ManagedProcess:
@@ -139,15 +137,18 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
         "--real-browser-models",
         action="store_true",
         help=(
-            "Run browser ASR/translation with real local model workers only. Deterministic "
-            "backend-reference adapters are forbidden; absent local assets produce a compact "
-            "actionable skip diagnostic."
+            "Run browser ASR/translation with real on-demand Hugging Face models. Deterministic "
+            "backend-reference adapters are forbidden; downloads and post-pipeline cache purge "
+            "are asserted."
         ),
     )
     parser.add_argument(
-        "--bootstrap-model-assets",
+        "--require-webgpu",
         action="store_true",
-        help="Exercise the browser model asset bootstrap/cache panel before real model inference.",
+        help=(
+            "Launch Chrome with Linux WebGPU/Vulkan flags and fail unless browser model inference "
+            "reports WebGPU for every ML stage. Requires --real-browser-models."
+        ),
     )
     parser.add_argument(
         "--compare-backend-srt",
@@ -158,9 +159,17 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--compare-min-text-similarity", type=float, default=0.90)
     parser.add_argument("--compare-max-block-delta", type=int, default=2)
     parser.add_argument("--compare-max-last-end-delta", type=float, default=5.0)
+    parser.add_argument(
+        "--max-http-cache-bytes",
+        type=int,
+        default=DEFAULT_MAX_HTTP_CACHE_BYTES,
+        help="Maximum Chromium HTTP cache size after a real-model run.",
+    )
     args = parser.parse_args(argv)
     if args.real_browser_models and args.inject_backend_reference_browser_ml:
         parser.error("--real-browser-models cannot be combined with --inject-backend-reference-browser-ml")
+    if args.require_webgpu and not args.real_browser_models:
+        parser.error("--require-webgpu requires --real-browser-models")
     return args
 
 
@@ -205,7 +214,7 @@ def maybe_start_servers(args: argparse.Namespace) -> list[ManagedProcess]:
         service.start()
         processes.append(service)
     if not url_ok(args.frontend_url):
-        web = ManagedProcess("web", ["pdm", "run", "web"], ROOT)
+        web = ManagedProcess("web", ["pdm", "run", "web", "--no-browser"], ROOT)
         web.start()
         processes.append(web)
 
@@ -598,13 +607,11 @@ def assert_browser_translation_runtime(pipeline_status: str) -> None:
 
 def create_backend_reference_init_script(backend_reference: dict) -> str:
     reference_json = json.dumps(backend_reference)
-    cached_model_asset_urls_json = json.dumps(load_real_model_asset_urls(ROOT))
     return f"""
 (() => {{
   const reference = {reference_json};
   const byPosition = (segments, index) => Array.isArray(segments) ? segments[index] || {{}} : {{}};
   window.transformersJs = true;
-  window.__xololinguaCachedModelAssetUrls = {cached_model_asset_urls_json};
   window.XOLOLINGUA_CLIENT_TRANSCRIBER = {{
     async transcribeAudio(request, onProgress = () => {{}}) {{
       const inputSegments = Array.isArray(request?.segments) ? request.segments : [];
@@ -643,263 +650,130 @@ def create_backend_reference_init_script(backend_reference: dict) -> str:
 """
 
 
-def real_model_asset_version(root: Path = ROOT) -> str:
-    manifest_module = root / "frontend" / "model_asset_manifest.js"
-    try:
-        text = manifest_module.read_text(encoding="utf-8")
-    except OSError:
-        return "browser-model-assets-v1"
-    match = re.search(r'version:\s*"(?P<version>[^"]+)"', text)
-    return match.group("version") if match else "browser-model-assets-v1"
-
-
-def load_real_model_asset_records(root: Path = ROOT) -> list[dict]:
-    records: list[dict] = []
-    seen: set[str] = set()
-    for manifest_path in REAL_MODEL_ASSET_MANIFEST_PATHS:
-        path = root / manifest_path
-        if not path.is_file():
-            continue
-        records.append({
-            "url": manifest_path,
-            "bytes": path.stat().st_size,
-            "sourceManifest": manifest_path,
-        })
-        seen.add(manifest_path)
-        try:
-            manifest = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        for asset in manifest.get("assets") or []:
-            if not isinstance(asset, dict) or asset.get("required") is False:
-                continue
-            url = asset.get("url")
-            if not isinstance(url, str) or not url or url in seen:
-                continue
-            records.append({
-                "url": url,
-                "bytes": asset.get("bytes", 0),
-                "sourceManifest": manifest_path,
-            })
-            seen.add(url)
-    return records
-
-
-def load_real_model_asset_urls(root: Path = ROOT) -> list[str]:
-    version = real_model_asset_version(root)
-    return [f"{record['url']}?v={version}" for record in load_real_model_asset_records(root)]
-
-
-def log_step(message: str) -> None:
-    print(f"[browser-e2e] {message}", flush=True)
-
-
-def preflight_real_browser_model_assets(root: Path = ROOT, args: argparse.Namespace | None = None) -> dict:
-    missing_local_assets = [
-        asset_path
-        for asset_path in REAL_MODEL_ASSET_MANIFEST_PATHS
-        if not (root / asset_path).is_file()
+def dynamic_model_ids(source: str, target: str) -> list[str]:
+    return [
+        DYNAMIC_TRANSCRIPTION_MODEL_ID,
+        f"Xenova/opus-mt-{source.lower()}-{target.lower()}",
     ]
-    asset_records = load_real_model_asset_records(root)
-    cached_count = len(asset_records)
-    missing_count = len(missing_local_assets)
-    total_missing_bytes = 0
-    if missing_local_assets:
-        return {
-            "status": "skip",
-            "runtime": "chromium",
-            "bootstrapStatus": "not-run",
-            "cachedCount": cached_count,
-            "missingCount": missing_count,
-            "missingLocalAssets": missing_local_assets,
-            "totalMissingBytes": total_missing_bytes,
-            "warmup": {"asr": "not-run", "translation": "not-run"},
-            "inference": {"asr": "not-run", "translation": "not-run"},
-            "coverage": "not-run",
-            "comparison": "not-run",
-            "reason": "local model asset manifests are absent",
-            "action": (
-                "Cache or provide local model manifests before rerunning: "
-                + ", ".join(missing_local_assets)
-            ),
-        }
 
-    manifest_issues = validate_local_real_model_manifests(root)
-    if manifest_issues:
-        action = "Replace remote URLs with relative packaged asset paths and include sha256/bytes before rerunning."
-        if any("mismatch" in issue for issue in manifest_issues):
-            action = "Regenerate local model manifests from the packaged assets so bytes and sha256 match before rerunning."
-        return {
-            "status": "skip",
-            "runtime": "chromium",
-            "bootstrapStatus": "not-run",
-            "cachedCount": cached_count,
-            "missingCount": 0,
-            "missingLocalAssets": [],
-            "totalMissingBytes": 0,
-            "warmup": {"asr": "not-run", "translation": "not-run"},
-            "inference": {"asr": "not-run", "translation": "not-run"},
-            "coverage": "not-run",
-            "comparison": "not-run",
-            "reason": "; ".join(manifest_issues[:3]),
-            "action": action,
-        }
 
+def match_dynamic_model_id(url: str, model_ids: Iterable[str]) -> str | None:
+    decoded_url = urllib.parse.unquote(url)
+    if "huggingface.co/" not in decoded_url:
+        return None
+    for model_id in model_ids:
+        if f"huggingface.co/{model_id}/" in decoded_url:
+            return model_id
+    return None
+
+
+def validate_dynamic_model_network(
+    model_ids: Iterable[str],
+    downloaded_model_ids: Iterable[str],
+    failed_requests: Iterable[dict],
+    local_model_urls: Iterable[str],
+) -> None:
+    expected = set(model_ids)
+    downloaded = set(downloaded_model_ids)
+    missing = sorted(expected - downloaded)
+    if missing:
+        raise AssertionError(
+            "Expected on-demand Hugging Face downloads for: " + ", ".join(missing)
+        )
+    failures = list(failed_requests)
+    if failures:
+        formatted = ", ".join(
+            f"{failure.get('status', 'network')} {failure.get('url', '')}"
+            for failure in failures[:5]
+        )
+        raise AssertionError(f"Dynamic model downloads failed: {formatted}")
+    local_urls = list(local_model_urls)
+    if local_urls:
+        raise AssertionError(
+            "Legacy local model URLs were requested: " + ", ".join(local_urls[:5])
+        )
+
+
+def inspect_dynamic_model_cache_in_page(page, model_ids: list[str]) -> dict:
+    return page.evaluate(
+        """
+        async (modelIds) => {
+          if (!('caches' in window)) {
+            return {
+              cacheAvailable: false,
+              cacheNames: [],
+              matchingEntries: [],
+              cachePurged: false,
+            };
+          }
+          const cacheNames = await caches.keys();
+          const matchingEntries = [];
+          for (const cacheName of cacheNames) {
+            const cache = await caches.open(cacheName);
+            const requests = await cache.keys();
+            for (const request of requests) {
+              const decodedUrl = decodeURIComponent(request.url);
+              const modelId = modelIds.find((candidate) => decodedUrl.includes(candidate));
+              if (modelId) {
+                matchingEntries.push({ cacheName, modelId, url: request.url });
+              }
+            }
+          }
+          return {
+            cacheAvailable: true,
+            cacheNames,
+            matchingEntries,
+            cachePurged: matchingEntries.length === 0,
+          };
+        }
+        """,
+        model_ids,
+    )
+
+
+def inspect_chromium_http_cache(profile_dir: Path) -> dict:
+    cache_dir = profile_dir / "Default" / "Cache"
+    files = [path for path in cache_dir.rglob("*") if path.is_file()] if cache_dir.is_dir() else []
     return {
-        "status": "ready",
-        "runtime": "chromium",
-        "bootstrapStatus": "pending",
-        "cachedCount": cached_count,
-        "missingCount": 0,
-        "missingLocalAssets": [],
-        "totalMissingBytes": 0,
-        "warmup": {"asr": "pending", "translation": "pending"},
-        "inference": {"asr": "pending", "translation": "pending"},
-        "coverage": "pending",
-        "comparison": "pending",
-        "reason": "local model asset manifests are present",
-        "action": "run browser bootstrap and real worker inference",
+        "path": str(cache_dir),
+        "files": len(files),
+        "bytes": sum(path.stat().st_size for path in files),
     }
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def validate_local_real_model_manifests(root: Path) -> list[str]:
-    issues: list[str] = []
-    for manifest_path in REAL_MODEL_ASSET_MANIFEST_PATHS:
-        path = root / manifest_path
-        try:
-            manifest = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            issues.append(f"{manifest_path} is not readable JSON: {exc}")
-            continue
-        assets = manifest.get("assets")
-        if not isinstance(assets, list) or not assets:
-            issues.append(f"{manifest_path} must list packaged assets")
-            continue
-        for index, asset in enumerate(assets):
-            url = asset.get("url") if isinstance(asset, dict) else None
-            sha256 = asset.get("sha256") if isinstance(asset, dict) else None
-            size_bytes = asset.get("bytes") if isinstance(asset, dict) else None
-            asset_path: Path | None = None
-            if not isinstance(url, str) or not url:
-                issues.append(f"{manifest_path}.assets[{index}].url is required")
-            elif re.match(r"https?://", url) or url.startswith("//"):
-                issues.append(f"{manifest_path} contains remote asset URLs: {url}")
-            elif not (root / url).is_file():
-                issues.append(f"{manifest_path}.assets[{index}] packaged file is missing: {url}")
-            else:
-                asset_path = root / url
-            if not sha256:
-                issues.append(f"{manifest_path}.assets[{index}].sha256 is required")
-            if not isinstance(size_bytes, int) or size_bytes <= 0:
-                issues.append(f"{manifest_path}.assets[{index}].bytes must be a positive integer")
-            if asset_path is not None:
-                actual_size = asset_path.stat().st_size
-                if isinstance(size_bytes, int) and size_bytes > 0 and actual_size != size_bytes:
-                    issues.append(
-                        f"{manifest_path}.assets[{index}] bytes mismatch for {url}: "
-                        f"manifest={size_bytes}, actual={actual_size}"
-                    )
-                if sha256:
-                    actual_sha256 = sha256_file(asset_path)
-                    if actual_sha256 != sha256:
-                        issues.append(
-                            f"{manifest_path}.assets[{index}] sha256 mismatch for {url}: "
-                            f"manifest={sha256}, actual={actual_sha256}"
-                        )
-    return issues
 
 
 def format_real_model_diagnostics(report: dict) -> str:
     warmup = report.get("warmup") or {}
     inference = report.get("inference") or {}
-    missing_assets = report.get("missingLocalAssets") or []
-    missing_label = ",".join(missing_assets[:2]) if missing_assets else "none"
-    if len(missing_assets) > 2:
-        missing_label += f",+{len(missing_assets) - 2}"
+    model_ids = report.get("modelIds") or []
     parts = [
         f"status={report.get('status', 'unknown')}",
         f"runtime={report.get('runtime', 'chromium')}",
-        f"bootstrap={report.get('bootstrapStatus', 'unknown')}",
-        f"cached={report.get('cachedCount', 0)}",
-        f"missing={report.get('missingCount', 0)}",
-        f"missingAssets={missing_label}",
+        f"models={','.join(model_ids) if model_ids else 'none'}",
+        f"downloads={report.get('downloadedRequests', 0)}",
+        f"downloadFailures={report.get('failedRequests', 0)}",
+        f"cachePurged={str(bool(report.get('cachePurged'))).lower()}",
+        f"remainingCacheEntries={report.get('remainingCacheEntries', 0)}",
+        f"uiLifecycle={report.get('uiLifecycle', 'unknown')}",
+        f"uiProgress={report.get('uiProgress', 'unknown')}",
+        f"executionDevice={report.get('executionDevice', 'unknown')}",
+        f"httpCacheBytes={report.get('httpCacheBytes', 0)}",
         f"warmup=asr:{warmup.get('asr', 'unknown')},translation:{warmup.get('translation', 'unknown')}",
         f"inference=asr:{inference.get('asr', 'unknown')},translation:{inference.get('translation', 'unknown')}",
+        f"performance={report.get('performance', 'not-reported')}",
         f"coverage={report.get('coverage', 'unknown')}",
         f"comparison={report.get('comparison', 'unknown')}",
         f"reason={report.get('reason', '')}",
         f"action={report.get('action', '')}",
     ]
-    return "Browser real-model diagnostics: " + "; ".join(str(part).replace("\n", " ") for part in parts)
+    return "Browser real-model diagnostics: " + "; ".join(str(part).replace("\\n", " ") for part in parts)
 
 
 def emit_real_model_diagnostics(report: dict) -> None:
     print(format_real_model_diagnostics(report), flush=True)
 
 
-def inspect_model_asset_cache_in_page(page, urls: list[str] | None = None) -> dict:
-    cache_urls = urls if urls is not None else load_real_model_asset_urls(ROOT)
-    return page.evaluate(
-        """
-        async ({ cacheName, urls }) => {
-          if (!('caches' in window)) {
-            return { bootstrapStatus: 'unavailable', cachedUrls: [], missingUrls: urls, reason: 'Cache API unavailable' };
-          }
-          const cache = await caches.open(cacheName);
-          const cachedUrls = [];
-          const missingUrls = [];
-          for (const url of urls) {
-            if (await cache.match(url)) cachedUrls.push(url);
-            else missingUrls.push(url);
-          }
-          return {
-            bootstrapStatus: missingUrls.length === 0 ? 'offline-ready' : 'bootstrap-required',
-            cachedUrls,
-            missingUrls,
-            reason: missingUrls.length === 0 ? 'all tracked model assets are cached' : 'tracked model assets are missing from Cache API'
-          };
-        }
-        """,
-        {
-            "cacheName": "xololingua-model-assets-browser-model-assets-v1",
-            "urls": cache_urls,
-        },
-    )
-
-
-def bootstrap_model_assets_in_page(page, expect, urls: list[str] | None = None) -> dict:
-    cache_urls = urls if urls is not None else load_real_model_asset_urls(ROOT)
-    button = page.locator("#modelBootstrapButton")
-    if button.count() == 0:
-        return {"bootstrapStatus": "unavailable", "reason": "model bootstrap button not found"}
-    expect(button).to_be_enabled(timeout=30_000)
-    expect(page.locator("#modelBootstrapStatus")).to_contain_text("model", timeout=30_000)
-    page.wait_for_timeout(1_000)
-    page.evaluate("document.querySelector('#modelBootstrapButton')?.click()")
-    deadline = time.time() + 900
-    cache_report = inspect_model_asset_cache_in_page(page, cache_urls)
-    while cache_report.get("missingUrls") and time.time() < deadline:
-        page.wait_for_timeout(1_000)
-        cache_report = inspect_model_asset_cache_in_page(page, cache_urls)
-    if cache_report.get("missingUrls"):
-        raise AssertionError(
-            "Timed out waiting for browser model Cache API bootstrap: "
-            f"cached={len(cache_report.get('cachedUrls') or [])}; "
-            f"missing={len(cache_report.get('missingUrls') or [])}"
-        )
-    status_text = page.locator("#modelBootstrapStatus").inner_text(timeout=5_000)
-    return {
-        **cache_report,
-        "statusText": status_text,
-    }
+def log_step(message: str) -> None:
+    print(f"[browser-e2e] {message}", flush=True)
 
 
 def run_browser_workflow(args: argparse.Namespace) -> Path | None:
@@ -912,10 +786,24 @@ def run_browser_workflow(args: argparse.Namespace) -> Path | None:
     args.download_dir.mkdir(parents=True, exist_ok=True)
     backend_reference = run_backend_reference(args) if (args.inject_backend_reference_browser_ml or args.compare_backend_srt) else None
     backend_reference_path = write_backend_reference_artifact(args, backend_reference) if backend_reference else None
+    model_ids = dynamic_model_ids(args.source, args.target) if args.real_browser_models else []
+    downloaded_model_ids: set[str] = set()
+    model_request_urls: list[str] = []
+    failed_model_requests: list[dict] = []
+    local_model_urls: list[str] = []
+    real_model_report: dict | None = None
+    frontend_origin = urllib.parse.urlparse(args.frontend_url)
+    user_data_dir: Path | None = None
 
     with sync_playwright() as p:
         log_step("Launching Chromium")
         browser = None
+        chromium_args = [
+            "--enable-unsafe-webgpu",
+            "--ignore-gpu-blocklist",
+            "--enable-features=Vulkan",
+        ] if args.require_webgpu else []
+        browser_headless = not args.headed and not args.require_webgpu
         if args.real_browser_models:
             user_data_dir = args.download_dir / "chromium-real-model-profile"
             if user_data_dir.exists():
@@ -923,13 +811,15 @@ def run_browser_workflow(args: argparse.Namespace) -> Path | None:
             user_data_dir.mkdir(parents=True, exist_ok=True)
             context = p.chromium.launch_persistent_context(
                 user_data_dir=str(user_data_dir),
-                headless=not args.headed,
+                headless=browser_headless,
                 slow_mo=args.slow_mo_ms,
                 accept_downloads=True,
                 service_workers="block",
+                args=chromium_args,
+                **({"channel": "chrome"} if args.require_webgpu else {}),
             )
         else:
-            browser = p.chromium.launch(headless=not args.headed, slow_mo=args.slow_mo_ms)
+            browser = p.chromium.launch(headless=browser_headless, slow_mo=args.slow_mo_ms, args=chromium_args)
             context = browser.new_context(accept_downloads=True, service_workers="block")
         if args.inject_backend_reference_browser_ml:
             if not backend_reference:
@@ -937,6 +827,35 @@ def run_browser_workflow(args: argparse.Namespace) -> Path | None:
             context.add_init_script(create_backend_reference_init_script(backend_reference))
         page = context.new_page()
         page.set_default_timeout(30_000)
+
+        def capture_model_request(request) -> None:
+            if not args.real_browser_models:
+                return
+            parsed = urllib.parse.urlparse(request.url)
+            if parsed.netloc == frontend_origin.netloc and parsed.path.startswith("/models/"):
+                local_model_urls.append(request.url)
+            model_id = match_dynamic_model_id(request.url, model_ids)
+            if model_id:
+                downloaded_model_ids.add(model_id)
+                model_request_urls.append(request.url)
+
+        def capture_model_response(response) -> None:
+            model_id = match_dynamic_model_id(response.url, model_ids)
+            if model_id and response.status >= 400:
+                failed_model_requests.append({
+                    "modelId": model_id,
+                    "status": response.status,
+                    "url": response.url,
+                })
+
+        def capture_model_request_failure(request) -> None:
+            model_id = match_dynamic_model_id(request.url, model_ids)
+            if model_id:
+                failed_model_requests.append({
+                    "modelId": model_id,
+                    "status": "network-error",
+                    "url": request.url,
+                })
 
         def capture_transcribe_request(request) -> None:
             if not request.url.endswith("/api/transcribe-audio"):
@@ -951,31 +870,42 @@ def run_browser_workflow(args: argparse.Namespace) -> Path | None:
                 transcribe_segments.extend(segment for segment in segments if isinstance(segment, dict))
 
         page.on("request", capture_transcribe_request)
+        context.on("request", capture_model_request)
+        context.on("response", capture_model_response)
+        context.on("requestfailed", capture_model_request_failure)
 
         try:
             log_step(f"Opening frontend {args.frontend_url}")
             page.goto(args.frontend_url, wait_until="domcontentloaded")
-            if args.bootstrap_model_assets:
-                log_step("Inspecting/bootstrapping browser model asset cache")
-                cache_urls = load_real_model_asset_urls(ROOT)
-                bootstrap_report = bootstrap_model_assets_in_page(page, expect, cache_urls)
-                emit_real_model_diagnostics({
-                    "status": "running" if bootstrap_report.get("bootstrapStatus") == "offline-ready" else "skip",
-                    "runtime": "chromium",
-                    "bootstrapStatus": bootstrap_report.get("bootstrapStatus", "unknown"),
-                    "cachedCount": len(bootstrap_report.get("cachedUrls") or []),
-                    "missingCount": len(bootstrap_report.get("missingUrls") or []),
-                    "missingLocalAssets": bootstrap_report.get("missingUrls") or [],
-                    "warmup": {"asr": "pending", "translation": "pending"},
-                    "inference": {"asr": "pending", "translation": "pending"},
-                    "coverage": "pending",
-                    "comparison": "pending" if args.compare_backend_srt else "not-requested",
-                    "reason": bootstrap_report.get("reason", bootstrap_report.get("statusText", "")),
-                    "action": "continuing to real browser worker workflow" if bootstrap_report.get("bootstrapStatus") == "offline-ready" else "bootstrap tracked model assets and rerun",
-                })
-                if bootstrap_report.get("bootstrapStatus") != "offline-ready":
-                    return None
-                page.reload(wait_until="domcontentloaded")
+            if args.require_webgpu:
+                webgpu_report = page.evaluate(
+                    """
+                    async () => {
+                      const adapter = await navigator.gpu?.requestAdapter({ powerPreference: 'high-performance' });
+                      return adapter ? {
+                        available: true,
+                        vendor: adapter.info?.vendor || '',
+                        architecture: adapter.info?.architecture || '',
+                      } : { available: false };
+                    }
+                    """
+                )
+                if not webgpu_report.get("available"):
+                    raise AssertionError("Chrome did not expose a WebGPU adapter to the frontend.")
+                adapter_identity = " ".join([
+                    str(webgpu_report.get("vendor", "")),
+                    str(webgpu_report.get("architecture", "")),
+                ]).strip().lower()
+                if "swiftshader" in adapter_identity or adapter_identity.startswith("google"):
+                    raise AssertionError(
+                        "Chrome exposed a software WebGPU adapter instead of the hardware GPU: "
+                        + adapter_identity
+                    )
+                log_step(
+                    "WebGPU adapter: "
+                    f"{webgpu_report.get('vendor', 'unknown')} "
+                    f"{webgpu_report.get('architecture', '')}".strip()
+                )
 
             log_step(f"Uploading video {args.video}")
             page.locator("#fileInput").set_input_files(str(args.video))
@@ -1021,6 +951,23 @@ def run_browser_workflow(args: argparse.Namespace) -> Path | None:
                 return destination
 
             log_step("Clicking Generate subtitles")
+            if args.real_browser_models:
+                page.evaluate(
+                    """
+                    () => {
+                      const speech = document.querySelector('#subtitleTranscriptionProgressText');
+                      const model = document.querySelector('#modelDeliveryProgressText');
+                      window.__xololinguaProgressTrace = { speech: [], model: [] };
+                      const capture = () => {
+                        window.__xololinguaProgressTrace.speech.push(speech?.textContent || '');
+                        window.__xololinguaProgressTrace.model.push(model?.textContent || '');
+                      };
+                      new MutationObserver(capture).observe(speech, { childList: true, subtree: true, characterData: true });
+                      new MutationObserver(capture).observe(model, { childList: true, subtree: true, characterData: true });
+                      capture();
+                    }
+                    """
+                )
             page.locator("#generateButton").click()
             download_link = page.locator("#downloadLink")
             expect(download_link).to_be_visible(timeout=args.subtitle_timeout_ms)
@@ -1034,6 +981,80 @@ def run_browser_workflow(args: argparse.Namespace) -> Path | None:
                 assert_browser_transcription_runtime(final_pipeline_status)
             if args.require_browser_translation:
                 assert_browser_translation_runtime(final_pipeline_status)
+
+            if args.real_browser_models:
+                validate_dynamic_model_network(
+                    model_ids,
+                    downloaded_model_ids,
+                    failed_model_requests,
+                    local_model_urls,
+                )
+                cache_report = inspect_dynamic_model_cache_in_page(page, model_ids)
+                if not cache_report.get("cacheAvailable"):
+                    raise AssertionError("Cache API is unavailable; dynamic model purge cannot be verified.")
+                if not cache_report.get("cachePurged"):
+                    remaining = cache_report.get("matchingEntries") or []
+                    raise AssertionError(
+                        "Dynamic model cache was not purged after subtitle generation: "
+                        + ", ".join(entry.get("url", "") for entry in remaining[:5])
+                    )
+                model_delivery_status = page.locator("#modelDeliveryStatus").inner_text()
+                model_delivery_progress = page.locator("#modelDeliveryProgressText").inner_text()
+                if "purge confirmed" not in model_delivery_status.lower():
+                    raise AssertionError(
+                        "Model delivery UI did not confirm the verified cache purge: "
+                        + model_delivery_status
+                    )
+                if model_delivery_progress.strip().lower() != "purged":
+                    raise AssertionError(
+                        "Model delivery UI did not reach the purged state: "
+                        + model_delivery_progress
+                    )
+                if args.require_webgpu and "webgpu" not in model_delivery_status.lower():
+                    raise AssertionError(
+                        "Browser model stages did not report WebGPU inference: "
+                        + model_delivery_status
+                    )
+                if args.require_webgpu and "wasm cpu" in model_delivery_status.lower():
+                    raise AssertionError(
+                        "At least one browser model stage fell back to WASM CPU: "
+                        + model_delivery_status
+                    )
+                progress_trace = page.evaluate("() => window.__xololinguaProgressTrace")
+                speech_progress = [
+                    int(value.removesuffix("%"))
+                    for value in progress_trace.get("speech", [])
+                    if value.removesuffix("%").isdigit()
+                ]
+                if not any(0 < value < 100 for value in speech_progress):
+                    raise AssertionError(
+                        "Speech-to-text UI never exposed intermediate progress: "
+                        + ", ".join(progress_trace.get("speech", []))
+                    )
+                if not any("assets" in value for value in progress_trace.get("model", [])):
+                    raise AssertionError(
+                        "Model delivery UI never exposed aggregate asset progress: "
+                        + ", ".join(progress_trace.get("model", []))
+                    )
+                real_model_report = {
+                    "status": "pass",
+                    "runtime": "chromium",
+                    "modelIds": model_ids,
+                    "downloadedRequests": len(model_request_urls),
+                    "failedRequests": len(failed_model_requests),
+                    "cachePurged": True,
+                    "remainingCacheEntries": 0,
+                    "uiLifecycle": "purged",
+                    "uiProgress": "pass",
+                    "executionDevice": "webgpu" if args.require_webgpu else "auto",
+                    "warmup": {"asr": "pass", "translation": "pass"},
+                    "inference": {"asr": "pass", "translation": "pass"},
+                    "performance": model_delivery_status,
+                    "coverage": "pass",
+                    "comparison": "pass" if args.compare_backend_srt else "not-requested",
+                    "reason": "on-demand browser model lifecycle completed",
+                    "action": "none",
+                }
 
             log_step("Capturing SRT download")
             with page.expect_download(timeout=60_000) as download_info:
@@ -1052,6 +1073,15 @@ def run_browser_workflow(args: argparse.Namespace) -> Path | None:
     if destination is None:
         return destination
 
+    if real_model_report and user_data_dir:
+        http_cache = inspect_chromium_http_cache(user_data_dir)
+        real_model_report["httpCacheBytes"] = http_cache["bytes"]
+        if http_cache["bytes"] > args.max_http_cache_bytes:
+            raise AssertionError(
+                "Chromium retained an unexpectedly large HTTP cache after model purge: "
+                f"{http_cache['bytes']} bytes > {args.max_http_cache_bytes} bytes at {http_cache['path']}"
+            )
+
     if transcribe_segments:
         segment_diagnostics = {
             "count": len(transcribe_segments),
@@ -1068,40 +1098,22 @@ def run_browser_workflow(args: argparse.Namespace) -> Path | None:
         if backend_reference_path is None:
             raise AssertionError("Backend reference artifact is required for SRT comparison.")
         compare_srt_outputs(destination, backend_reference_path, args)
+    if real_model_report:
+        emit_real_model_diagnostics(real_model_report)
     return destination
 
 
 def main(argv: Iterable[str] | None = None) -> int:
     args = parse_args(argv)
-    if args.real_browser_models:
-        preflight = preflight_real_browser_model_assets(ROOT, args)
-        if preflight["status"] == "skip":
-            emit_real_model_diagnostics(preflight)
-            return 0
     processes: list[ManagedProcess] = []
     try:
         processes = maybe_start_servers(args)
         downloaded = run_browser_workflow(args)
         if downloaded is None:
-            print(f"Browser E2E segmentation/bootstrap guards succeeded for target={args.target}")
+            print(f"Browser E2E segmentation guards succeeded for target={args.target}")
         else:
             print(f"Browser E2E succeeded for target={args.target}: {downloaded}")
             print(f"Downloaded SRT size: {downloaded.stat().st_size} bytes")
-            if args.real_browser_models:
-                emit_real_model_diagnostics({
-                    "status": "pass",
-                    "runtime": "chromium",
-                    "bootstrapStatus": "offline-ready" if args.bootstrap_model_assets else "not-requested",
-                    "cachedCount": len(load_real_model_asset_urls(ROOT)),
-                    "missingCount": 0,
-                    "missingLocalAssets": [],
-                    "warmup": {"asr": "pass", "translation": "pass"},
-                    "inference": {"asr": "pass", "translation": "pass"},
-                    "coverage": "pass",
-                    "comparison": "pass" if args.compare_backend_srt else "not-requested",
-                    "reason": "real browser worker path completed",
-                    "action": "none",
-                })
         return 0
     finally:
         if not args.keep_servers:

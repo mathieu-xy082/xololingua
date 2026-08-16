@@ -17,11 +17,27 @@ export function mapClientMlProgress(event, defaultStage) {
     return event;
   }
 
+  const normalizedProgress = normalizeProgressValue(progress);
+  const message = event.message || describeMlProgress(event, normalizedProgress);
   return {
     ...event,
     stage: event.stage || defaultStage,
-    progress: normalizeProgressValue(progress),
+    progress: normalizedProgress,
+    ...(message ? { message } : {}),
   };
+}
+
+function describeMlProgress(event, progress) {
+  if (event.stage !== "loading-model") return undefined;
+  const file = typeof event.file === "string"
+    ? event.file
+    : typeof event.name === "string"
+      ? event.name
+      : "";
+  const shortFile = file.split("/").filter(Boolean).at(-1) || "model assets";
+  if (event.status === "done") return `Downloaded ${shortFile}; preparing browser model...`;
+  if (file) return `Downloading ${shortFile} — ${progress}%...`;
+  return undefined;
 }
 
 function calculateLoadedProgress(event) {

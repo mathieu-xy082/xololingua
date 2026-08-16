@@ -3,54 +3,68 @@ import { createAppClientAdapters, createAppHybridPipelineRouter } from "./fronte
 import { createClientAudioExtractor } from "./frontend/client_audio_extractor.js";
 import { createClientTranscriber } from "./frontend/client_transcriber.js";
 import { createClientTranslator } from "./frontend/client_translator.js";
-import { bootstrapBrowserModelAssets } from "./frontend/model_asset_bootstrap.js";
-import { BROWSER_MODEL_ASSET_MANIFEST } from "./frontend/model_asset_manifest.js";
-import {
-  collectClientPipelineCapabilities,
-  collectClientPipelineCapabilitiesWithModelAssetBootstrap,
-} from "./frontend/client_pipeline_capabilities.js";
+import { BROWSER_ML_CONFIG } from "./frontend/browser_ml_config.js";
+import { resolveTranscriptionModel, resolveTranslationModel } from "./frontend/dynamic_model_resolver.js";
+import { collectClientPipelineCapabilities } from "./frontend/client_pipeline_capabilities.js";
 import { formatSrt, formatSrtTime } from "./frontend/client_srt_formatter.js";
 import { createClientVadSegmenter } from "./frontend/client_vad_segmenter.js";
 import { createAppFfmpegWasmAudioExtractor } from "./frontend/ffmpeg_wasm_runtime.js";
 import { formatPipelineStageRuntime, formatPipelineStageSummary } from "./frontend/pipeline_stage_status.js";
 import { createVadWebRuntimeSegmenter } from "./frontend/vad_web_runtime.js";
+import {
+  beginModelDelivery,
+  createModelDeliveryTracker,
+  describeModelDelivery,
+  failModelDelivery,
+  finishModelDelivery,
+  updateModelDelivery,
+} from "./frontend/model_delivery_status.js";
 
 const MAX_DURATION_SECONDS = 2.5 * 60 * 60;
 const SEGMENT_SECONDS = 12;
 const LOCAL_SERVICE_URL = "http://127.0.0.1:8765";
-const APP_ASSET_VERSION = "2026-07-15-1";
+globalThis.__xololinguaDynamicModels = true;
+const APP_ASSET_VERSION = "2026-08-16-8";
 const backendClient = createBackendClient({ baseUrl: LOCAL_SERVICE_URL });
-let clientPipelineCapabilities = globalThis.__xololinguaCachedModelAssetUrls?.length > 0
-  ? collectClientPipelineCapabilities()
-  : await collectClientPipelineCapabilitiesWithModelAssetBootstrap()
-    .catch(() => collectClientPipelineCapabilities());
+const clientPipelineCapabilities = collectClientPipelineCapabilities();
 const appClientAdapters = createAppClientAdapters({
   clientAudioExtractor: globalThis.XOLOLINGUA_CLIENT_AUDIO_EXTRACTOR || createClientAudioExtractor({
     ffmpegWasmExtractor: createAppFfmpegWasmAudioExtractor(),
   }),
   clientVadSegmenter: globalThis.XOLOLINGUA_CLIENT_VAD_SEGMENTER || createClientVadSegmenter({
-    vadWebSegmenter: createVadWebRuntimeSegmenter({ vadProfile: "backend-compatible" }),
+    vadWebSegmenter: createVadWebRuntimeSegmenter({
+      vadProfile: "backend-compatible",
+      workerUrl: "frontend/vad_worker.js",
+    }),
   }),
   clientTranscriber: globalThis.XOLOLINGUA_CLIENT_TRANSCRIBER || createClientTranscriber({
     workerUrl: "frontend/transcription_worker.js",
-    modelId: BROWSER_MODEL_ASSET_MANIFEST.models.transcription.modelId,
-    warmupTimeoutMs: BROWSER_MODEL_ASSET_MANIFEST.models.transcription.warmup.timeoutMs,
-    warmupSampleSeconds: BROWSER_MODEL_ASSET_MANIFEST.models.transcription.warmup.sampleSeconds,
-    maxDurationSeconds: BROWSER_MODEL_ASSET_MANIFEST.models.transcription.limits.maxAudioSeconds,
-    maxAudioBytes: BROWSER_MODEL_ASSET_MANIFEST.models.transcription.limits.maxAudioBytes,
-    maxSegments: BROWSER_MODEL_ASSET_MANIFEST.models.translation.limits.maxSegments,
-    maxWorkerResponseMs: BROWSER_MODEL_ASSET_MANIFEST.timeouts.asrInferencePerSegmentMs,
+    modelId: BROWSER_ML_CONFIG.transcription.defaultModelId,
+    modelResolver: resolveTranscriptionModel,
+    remoteModels: true,
+    purgeAfterUse: true,
+    devicePreference: BROWSER_ML_CONFIG.devicePreference,
+    warmupTimeoutMs: BROWSER_ML_CONFIG.modelDownloadTimeoutMs,
+    warmupSampleSeconds: BROWSER_ML_CONFIG.transcription.warmupSampleSeconds,
+    maxDurationSeconds: BROWSER_ML_CONFIG.transcription.maxAudioSeconds,
+    maxAudioBytes: BROWSER_ML_CONFIG.transcription.maxAudioBytes,
+    maxSegments: BROWSER_ML_CONFIG.transcription.maxSegments,
+    maxWorkerResponseMs: BROWSER_ML_CONFIG.transcription.inferenceTimeoutMs,
   }),
   clientTranslator: globalThis.XOLOLINGUA_CLIENT_TRANSLATOR || createClientTranslator({
     workerUrl: "frontend/translation_worker.js",
-    modelId: BROWSER_MODEL_ASSET_MANIFEST.models.translation.modelId,
-    warmupTimeoutMs: BROWSER_MODEL_ASSET_MANIFEST.models.translation.warmup.timeoutMs,
-    warmupSampleText: BROWSER_MODEL_ASSET_MANIFEST.models.translation.warmup.sampleText,
-    maxSegments: BROWSER_MODEL_ASSET_MANIFEST.models.translation.limits.maxSegments,
+    modelId: BROWSER_ML_CONFIG.translation.defaultModelId,
+    modelResolver: resolveTranslationModel,
+    remoteModels: true,
+    purgeAfterUse: true,
+    devicePreference: BROWSER_ML_CONFIG.devicePreference,
+    warmupTimeoutMs: BROWSER_ML_CONFIG.modelDownloadTimeoutMs,
+    warmupSampleText: BROWSER_ML_CONFIG.translation.warmupSampleText,
+    maxSegments: BROWSER_ML_CONFIG.translation.maxSegments,
     maxBatchSize: Math.max(1, Math.floor(
-      BROWSER_MODEL_ASSET_MANIFEST.models.translation.limits.maxCharactersPerBatch / 400,
+      BROWSER_ML_CONFIG.translation.maxCharactersPerBatch / 400,
     )),
-    maxWorkerResponseMs: BROWSER_MODEL_ASSET_MANIFEST.timeouts.translationInferencePerBatchMs,
+    maxWorkerResponseMs: BROWSER_ML_CONFIG.translation.inferenceTimeoutMs,
   }),
 });
 const hybridPipelineRouter = createAppHybridPipelineRouter({
@@ -102,6 +116,7 @@ const state = {
   subtitleNotice: "",
   subtitleTranscriptionProgress: 0,
   subtitleTranslationProgress: 0,
+  modelDelivery: createModelDeliveryTracker(),
   busyStep: ""
 };
 
@@ -148,17 +163,14 @@ const els = {
   pipelineBrowserStages: document.querySelector("#pipelineBrowserStages"),
   pipelineFallbackStages: document.querySelector("#pipelineFallbackStages"),
   pipelineFallbackEndpoints: document.querySelector("#pipelineFallbackEndpoints"),
-  modelBootstrapPanel: document.querySelector("#modelBootstrapPanel"),
-  modelBootstrapStatus: document.querySelector("#modelBootstrapStatus"),
-  modelBootstrapProgressText: document.querySelector("#modelBootstrapProgressText"),
-  modelBootstrapProgressBar: document.querySelector("#modelBootstrapProgressBar"),
-  modelBootstrapButton: document.querySelector("#modelBootstrapButton")
+  modelDeliveryPanel: document.querySelector("#modelDeliveryPanel"),
+  modelDeliveryStatus: document.querySelector("#modelDeliveryStatus"),
+  modelDeliveryProgressText: document.querySelector("#modelDeliveryProgressText"),
+  modelDeliveryProgressBar: document.querySelector("#modelDeliveryProgressBar")
 };
 
 let deferredInstallPrompt = null;
 let _pairsFetched = false;
-const modelBootstrapButton = els.modelBootstrapButton;
-
 populateLanguages();
 bindEvents();
 bindInstallPrompt();
@@ -197,75 +209,19 @@ function renderPipelineCapabilitySummary() {
   els.pipelineFallbackEndpoints.replaceChildren(
     ...summary.serverFallbackEndpoints.map((fallback) => {
       const item = document.createElement("li");
-      const stageRow = summary.stageRows.find((row) => row.stage === fallback.stage);
-      const bootstrapDetail = stageRow?.modelAssetBootstrapLabel
-        ? ` — ${stageRow.modelAssetBootstrapLabel}`
-        : "";
-      item.textContent = `${fallback.label}: ${fallback.endpoints.join(", ")}${bootstrapDetail}`;
+      item.textContent = `${fallback.label}: ${fallback.endpoints.join(", ")}`;
       return item;
     }),
   );
-  renderModelBootstrapPanel(clientPipelineCapabilities.modelAssetBootstrap);
+  renderModelDeliveryPanel();
 }
 
-function renderModelBootstrapPanel(modelAssetBootstrap, progressEvent) {
-  if (!els.modelBootstrapPanel) return;
-  const status = modelAssetBootstrap?.status || "unavailable";
-  const totalBytes = modelAssetBootstrap?.totalRequiredBytes || progressEvent?.totalBytes || 0;
-  const missingBytes = modelAssetBootstrap?.totalMissingBytes ?? progressEvent?.remainingBytes ?? totalBytes;
-  const completedBytes = Math.max(0, totalBytes - missingBytes);
-  const progress = Number.isFinite(progressEvent?.progress)
-    ? progressEvent.progress
-    : totalBytes > 0
-      ? Math.round((completedBytes / totalBytes) * 100)
-      : status === "offline-ready" ? 100 : 0;
-  els.modelBootstrapProgressText.textContent = `${progress}%`;
-  els.modelBootstrapProgressBar.style.width = `${Math.max(0, Math.min(100, progress))}%`;
-
-  if (status === "offline-ready") {
-    els.modelBootstrapStatus.textContent = "Browser model assets are cached. ASR and translation can run offline in browser.";
-    els.modelBootstrapButton.textContent = "Model assets cached";
-    els.modelBootstrapButton.disabled = true;
-    return;
-  }
-
-  const missingAssets = modelAssetBootstrap?.missingModelAssets || [];
-  const retryLabel = progressEvent?.status === "failed" ? "Retry model asset cache" : "Cache model assets";
-  els.modelBootstrapStatus.textContent = progressEvent?.status === "downloading"
-    ? `Caching ${progressEvent.assetName || "model asset"}... ${formatBytes(progressEvent.remainingBytes)} remaining.`
-    : missingAssets.length > 0
-      ? `${missingAssets.length} browser model asset(s) missing (${formatBytes(missingBytes)}). Python fallback stays active until cached.`
-      : "Browser model assets need cache verification before ML stages run offline.";
-  els.modelBootstrapButton.textContent = retryLabel;
-  els.modelBootstrapButton.disabled = state.busyStep === "modelBootstrap";
-}
-
-async function bootstrapModelAssets() {
-  if (state.busyStep === "modelBootstrap") return;
-  state.busyStep = "modelBootstrap";
-  let finalProgressEvent;
-  renderModelBootstrapPanel(clientPipelineCapabilities.modelAssetBootstrap, { progress: 0, remainingBytes: clientPipelineCapabilities.modelAssetBootstrap?.totalMissingBytes || 0 });
-  try {
-    const result = await bootstrapBrowserModelAssets({
-      manifest: BROWSER_MODEL_ASSET_MANIFEST,
-      onProgress: (event) => renderModelBootstrapPanel(clientPipelineCapabilities.modelAssetBootstrap, event),
-    });
-    clientPipelineCapabilities = await collectClientPipelineCapabilitiesWithModelAssetBootstrap()
-      .catch(() => ({ ...clientPipelineCapabilities, modelAssetBootstrap: result.report }));
-    if (result.status !== "offline-ready") {
-      finalProgressEvent = { status: "failed", progress: 0, remainingBytes: result.report.totalMissingBytes };
-    }
-  } catch (error) {
-    finalProgressEvent = { status: "failed", progress: 0, error: error.message, remainingBytes: clientPipelineCapabilities.modelAssetBootstrap?.totalMissingBytes || 0 };
-    els.modelBootstrapStatus.textContent = `Model asset bootstrap failed: ${error.message}. Python fallback remains active; retry when assets are available.`;
-    els.modelBootstrapButton.textContent = "Retry model asset cache";
-  } finally {
-    state.busyStep = "";
-    renderPipelineCapabilitySummary();
-    if (finalProgressEvent) {
-      renderModelBootstrapPanel(clientPipelineCapabilities.modelAssetBootstrap, finalProgressEvent);
-    }
-  }
+function renderModelDeliveryPanel() {
+  if (!els.modelDeliveryPanel) return;
+  const delivery = describeModelDelivery(state.modelDelivery);
+  els.modelDeliveryStatus.textContent = delivery.status;
+  els.modelDeliveryProgressText.textContent = delivery.progressText;
+  els.modelDeliveryProgressBar.style.width = `${delivery.progress}%`;
 }
 
 async function fetchTranslationPairs() {
@@ -358,7 +314,6 @@ function bindEvents() {
   els.toggleSegmentsButton.addEventListener("click", toggleSegmentDetails);
   els.generateButton.addEventListener("click", generateSubtitles);
   els.cancelGenerateButton.addEventListener("click", cancelSubtitleGeneration);
-  modelBootstrapButton.addEventListener("click", bootstrapModelAssets);
 }
 
 function loadVideoFile(file) {
@@ -468,14 +423,6 @@ async function segmentAudio() {
 
   els.segmentationStatus.textContent = `Audio extracted: ${formatBytes(state.extractedAudio.audioSizeBytes)} WAV. Segmenting speech audio...`;
   try {
-    if (!state.extractedAudio.audioId && state.extractedAudio.audioBlob) {
-      els.segmentationStatus.textContent = "Registering browser-extracted audio for Python fallback stages...";
-      const registeredAudio = await backendClient.registerAudio(state.extractedAudio, (progress) => {
-        const scaledProgress = 35 + Math.round(progress * 0.15);
-        setProgress("segmentation", scaledProgress);
-      });
-      state.extractedAudio = { ...state.extractedAudio, ...registeredAudio };
-    }
     const segmentation = await hybridPipelineRouter.runVadSegmentation(state.extractedAudio, (progress) => {
       const scaledProgress = 50 + Math.round(progress * 0.5);
       setProgress("segmentation", scaledProgress);
@@ -500,6 +447,8 @@ async function generateSubtitles() {
   state.subtitleNotice = "";
   els.subtitleStatus.textContent = "Starting subtitle generation job...";
   setSubtitleProgress(0, 0);
+  const transcriptionModel = resolveTranscriptionModel({ sourceLanguage: state.sourceLanguage });
+  state.modelDelivery = beginModelDelivery(state.modelDelivery, transcriptionModel);
   render();
 
   try {
@@ -511,14 +460,27 @@ async function generateSubtitles() {
         segments: state.segments,
       },
       (job) => {
+        state.modelDelivery = updateModelDelivery(state.modelDelivery, job);
+        renderModelDeliveryPanel();
         els.subtitleStatus.textContent = job.message || job.stage;
         syncSubtitleProgress(job);
       },
     );
+    state.modelDelivery = finishModelDelivery(state.modelDelivery, {
+      stageResult: transcription,
+      modelId: transcriptionModel.modelId,
+    });
+    setSubtitleProgress(100, 0);
     state.segments = transcription.payload.segments;
     renderSegmentReview();
     els.subtitleStatus.textContent = `Subtitle generation: ${formatPipelineStageRuntime({ stage: "transcription", ...transcription })}. Translating subtitles...`;
 
+    const translationModel = resolveTranslationModel({
+      sourceLanguage: state.sourceLanguage,
+      targetLanguage: state.targetLanguage,
+    });
+    state.modelDelivery = beginModelDelivery(state.modelDelivery, translationModel);
+    renderModelDeliveryPanel();
     const translation = await hybridPipelineRouter.runTranslation(
       {
         extractedAudio: state.extractedAudio,
@@ -531,10 +493,16 @@ async function generateSubtitles() {
         },
       },
       (job) => {
+        state.modelDelivery = updateModelDelivery(state.modelDelivery, job);
+        renderModelDeliveryPanel();
         els.subtitleStatus.textContent = job.message || job.stage;
         syncSubtitleProgress(job);
       },
     );
+    state.modelDelivery = finishModelDelivery(state.modelDelivery, {
+      stageResult: translation,
+      modelId: translationModel.modelId,
+    });
     state.segments = translation.payload.segments;
     state.pipelineStageReports = [...state.pipelineStageReports, { stage: "transcription", ...transcription }, { stage: "translation", ...translation }];
     renderSegmentReview();
@@ -564,7 +532,8 @@ async function generateSubtitles() {
     setSubtitleProgress(100, 100);
     render();
   } catch (error) {
-    state.subtitleNotice = error.message;
+    state.modelDelivery = failModelDelivery(state.modelDelivery, error);
+    state.subtitleNotice = error.cancelled ? "Subtitle generation cancelled." : error.message;
     state.busyStep = "";
     state.subtitleJobId = "";
     state.subtitleCancelRequested = false;
@@ -574,16 +543,21 @@ async function generateSubtitles() {
 }
 
 async function cancelSubtitleGeneration() {
-  if (state.busyStep !== "subtitle" || !state.subtitleJobId || state.subtitleCancelRequested) return;
+  if (state.busyStep !== "subtitle" || state.subtitleCancelRequested) return;
 
   const jobId = state.subtitleJobId;
   state.subtitleCancelRequested = true;
   els.subtitleStatus.textContent = "Cancelling subtitle generation...";
+  appClientAdapters.cancel?.();
   render();
 
   try {
-    const job = await cancelSubtitleJobAdapter(jobId);
-    state.subtitleNotice = job.message || "Subtitle generation cancelled.";
+    if (jobId) {
+      const job = await cancelSubtitleJobAdapter(jobId);
+      state.subtitleNotice = job.message || "Subtitle generation cancelled.";
+    } else {
+      state.subtitleNotice = "Subtitle generation cancelled.";
+    }
   } catch (error) {
     state.subtitleNotice = error.message;
   } finally {
@@ -693,11 +667,10 @@ function render() {
   els.targetLanguageSelect.value = state.targetLanguage;
 
   [...els.targetLanguageSelect.options].forEach((option) => {
-    const pairsLoaded = supportedLanguagePairs.size > 0;
     option.disabled = Boolean(
       sourceLanguage &&
       option.value &&
-      (option.value === sourceLanguage.code || (pairsLoaded && !isSupportedPair(sourceLanguage.code, option.value)))
+      (option.value === sourceLanguage.code || !isSupportedPair(sourceLanguage.code, option.value))
     );
   });
 
@@ -707,8 +680,8 @@ function render() {
     els.targetStatus.textContent = "Select one of the first supported target languages.";
   } else if (targetLanguage.code === sourceLanguage.code) {
     els.targetStatus.textContent = "Target language must differ from source.";
-  } else if (supportedLanguagePairs.size > 0 && !isSupportedPair(sourceLanguage.code, targetLanguage.code)) {
-    els.targetStatus.textContent = "This language couple is not in the first supported scope.";
+  } else if (!isSupportedPair(sourceLanguage.code, targetLanguage.code)) {
+    els.targetStatus.textContent = "No browser translation route is available for this language pair.";
   } else {
     els.targetStatus.textContent = `Target selected: ${targetLanguage.name}.`;
   }
@@ -716,9 +689,10 @@ function render() {
   els.segmentButton.disabled = !canSegment() || state.busyStep === "segmentation";
   els.generateButton.disabled = !canGenerate() || state.busyStep === "subtitle";
   els.cancelGenerateButton.hidden = state.busyStep !== "subtitle";
-  els.cancelGenerateButton.disabled = state.subtitleCancelRequested || !state.subtitleJobId;
+  els.cancelGenerateButton.disabled = state.subtitleCancelRequested;
   renderSegmentReview();
   renderSubtitleStatus();
+  renderModelDeliveryPanel();
 }
 
 function canSegment() {
@@ -783,6 +757,7 @@ function resetSubtitle() {
   state.subtitleNotice = "";
   state.subtitleTranscriptionProgress = 0;
   state.subtitleTranslationProgress = 0;
+  state.modelDelivery = createModelDeliveryTracker();
   els.subtitleStatus.textContent = "Run segmentation first.";
   els.downloadLink.hidden = true;
   els.downloadLink.removeAttribute("href");
@@ -791,10 +766,11 @@ function resetSubtitle() {
 }
 
 function cancelActiveSubtitleJobSilently() {
-  if (state.busyStep !== "subtitle" || !state.subtitleJobId || state.subtitleCancelRequested) return false;
+  if (state.busyStep !== "subtitle" || state.subtitleCancelRequested) return false;
 
   state.subtitleCancelRequested = true;
-  cancelSubtitleJobAdapter(state.subtitleJobId).catch(() => {});
+  appClientAdapters.cancel?.();
+  if (state.subtitleJobId) cancelSubtitleJobAdapter(state.subtitleJobId).catch(() => {});
   return true;
 }
 
@@ -844,7 +820,30 @@ function setSubtitleProgress(transcription, translation) {
 function syncSubtitleProgress(job) {
   const rawProgress = clampProgress(job.progress || 0);
 
+  if (
+    state.modelDelivery.current?.stage === "transcription"
+    && (job.stage === "loading-model" || job.stage === "asr-warmup")
+  ) {
+    const preparation = Math.max(1, Math.min(10, Math.round(state.modelDelivery.current.progress / 10)));
+    setSubtitleProgress(preparation, 0);
+    return;
+  }
+
+  if (
+    state.modelDelivery.current?.stage === "translation"
+    && (job.stage === "loading-model" || job.stage === "translation-warmup")
+  ) {
+    const preparation = Math.max(1, Math.min(10, Math.round(state.modelDelivery.current.progress / 10)));
+    setSubtitleProgress(100, preparation);
+    return;
+  }
+
   if (job.stage === "transcribing") {
+    if (typeof job.transcriptionProgress === "number") {
+      const transcription = 10 + Math.round(clampProgress(job.transcriptionProgress) * 0.9);
+      setSubtitleProgress(transcription, 0);
+      return;
+    }
     const transcription = Math.round((rawProgress / 55) * 100);
     setSubtitleProgress(transcription, 0);
     return;
@@ -1017,7 +1016,11 @@ function getLanguage(code) {
 }
 
 function isSupportedPair(sourceCode, targetCode) {
-  return supportedLanguagePairs.has(`${sourceCode}:${targetCode}`);
+  try {
+    return resolveTranslationModel({ sourceLanguage: sourceCode, targetLanguage: targetCode }).browserAvailable !== false;
+  } catch {
+    return false;
+  }
 }
 
 function makeSubtitleFileName(videoName, languageCode) {

@@ -1,6 +1,7 @@
 const DEFAULT_VAD_MODEL_URL = "/node_modules/@ricky0123/vad-web/dist/silero_vad_legacy.onnx";
 const DEFAULT_ORT_WASM_BASE_PATH = "/node_modules/onnxruntime-web/dist/";
 const DEFAULT_VAD_MODEL = "silero-vad-legacy";
+const DEFAULT_VAD_WORKER_URL = "frontend/vad_worker.js";
 const DEFAULT_FRAME_DURATION_MS = 96;
 const DEFAULT_MAX_SEGMENT_SECONDS = 12;
 const DEFAULT_MIN_SEGMENT_SECONDS = 0.4;
@@ -97,6 +98,8 @@ export function createVadWebRuntimeSegmenter({
   maxSegmentSeconds = DEFAULT_MAX_SEGMENT_SECONDS,
   minSegmentSeconds = DEFAULT_MIN_SEGMENT_SECONDS,
   vadProfile = DEFAULT_VAD_PROFILE.name,
+  workerUrl = DEFAULT_VAD_WORKER_URL,
+  workerFactory,
 } = {}) {
   const resolvedVadProfile = resolveVadWebProfile(vadProfile);
   return async function segmentWithVadWeb(audio, onProgress = () => {}) {
@@ -113,36 +116,56 @@ export function createVadWebRuntimeSegmenter({
       throw new Error("Browser VAD runtime requires an audioBlob or Blob input from browser audio extraction.");
     }
 
+    const createWorker = resolveVadWorkerFactory(environment, workerFactory);
     onProgress(0);
-    const decoded = await environment.vad.utils.audioFileToArray(audioBlob);
-    const pcm = decoded?.audio;
-    const sourceSampleRate = decoded?.sampleRate ?? audio?.sampleRate ?? audio?.sampleRateHz;
-    if (!(pcm instanceof Float32Array)) {
-      throw new Error("Browser VAD runtime audio decoder must return a Float32Array at decoded.audio.");
-    }
-    if (typeof sourceSampleRate !== "number" || sourceSampleRate <= 0) {
-      throw new Error("Browser VAD runtime audio decoder must return a positive numeric sampleRate.");
+    let rawResult;
+    if (createWorker) {
+      const audioBuffer = await audioBlob.arrayBuffer();
+      onProgress(15);
+      rawResult = await runVadInWorker({
+          createWorker,
+          workerUrl,
+          audioBuffer,
+          modelURL,
+          ortWasmBasePath,
+          vadOptions: resolvedVadProfile.options,
+          onProgress,
+        });
+    } else {
+      const decoded = await environment.vad.utils.audioFileToArray(audioBlob);
+      const pcm = decoded?.audio;
+      const sourceSampleRate = decoded?.sampleRate ?? audio?.sampleRate ?? audio?.sampleRateHz;
+      if (!(pcm instanceof Float32Array)) {
+        throw new Error("Browser VAD runtime audio decoder must return a Float32Array at decoded.audio.");
+      }
+      if (typeof sourceSampleRate !== "number" || sourceSampleRate <= 0) {
+        throw new Error("Browser VAD runtime audio decoder must return a positive numeric sampleRate.");
+      }
+
+      onProgress(15);
+      rawResult = await runVadOnMainThread({
+          environment,
+          pcm,
+          sampleRate: sourceSampleRate,
+          modelURL,
+          ortWasmBasePath,
+          vadOptions: resolvedVadProfile.options,
+          onProgress,
+        });
+      rawResult.pcmSampleCount = pcm.length;
+      rawResult.sourceSampleRate = sourceSampleRate;
     }
 
-    onProgress(15);
-    const vad = await environment.vad.NonRealTimeVAD.new({
-      modelURL,
-      ...resolvedVadProfile.options,
-      ortConfig: (ort) => {
-        configureOrtWasmPaths({ ort }, ortWasmBasePath);
-      },
-    });
-    if (typeof vad?.run !== "function") {
-      throw new Error("vad-web NonRealTimeVAD adapter must expose a run(pcm, sampleRate) method.");
+    const pcmSampleCount = rawResult.pcmSampleCount;
+    const sourceSampleRate = rawResult.sourceSampleRate;
+    if (!Number.isFinite(pcmSampleCount) || pcmSampleCount < 0) {
+      throw new Error("Browser VAD runtime must report a valid PCM sample count.");
     }
-
-    onProgress(35);
-    const audioDurationSeconds = pcm.length / sourceSampleRate;
-    const segments = [];
-    let rawSegmentCount = 0;
-    for await (const segment of vad.run(pcm, sourceSampleRate)) {
-      rawSegmentCount += 1;
-      segments.push({
+    if (!Number.isFinite(sourceSampleRate) || sourceSampleRate <= 0) {
+      throw new Error("Browser VAD runtime must report a positive source sample rate.");
+    }
+    const audioDurationSeconds = pcmSampleCount / sourceSampleRate;
+    const segments = rawResult.segments.map((segment) => ({
         start: normalizeVadTimestamp(segment.start, {
           audioDurationSeconds,
           sampleRate: sourceSampleRate,
@@ -151,8 +174,7 @@ export function createVadWebRuntimeSegmenter({
           audioDurationSeconds,
           sampleRate: sourceSampleRate,
         }),
-      });
-    }
+      }));
 
     const boundedSegments = splitLongSegments(segments, maxSegmentSeconds, minSegmentSeconds);
 
@@ -162,8 +184,8 @@ export function createVadWebRuntimeSegmenter({
       diagnostics: {
         audioFileName: audio?.audioFileName ?? audioBlob?.name ?? null,
         model,
-        pcmSampleCount: pcm.length,
-        rawSegmentCount,
+        pcmSampleCount,
+        rawSegmentCount: rawResult.rawSegmentCount,
         boundedSegmentCount: boundedSegments.length,
         sourceSampleRate,
         strategy: "vad-web",
@@ -175,6 +197,89 @@ export function createVadWebRuntimeSegmenter({
       frameDurationMs,
     };
   };
+}
+
+function resolveVadWorkerFactory(environment, workerFactory) {
+  if (typeof workerFactory === "function") return workerFactory;
+  if (typeof environment?.Worker === "function") {
+    return (url) => new environment.Worker(url);
+  }
+  return null;
+}
+
+async function runVadOnMainThread({
+  environment,
+  pcm,
+  sampleRate,
+  modelURL,
+  ortWasmBasePath,
+  vadOptions,
+  onProgress,
+}) {
+  const vad = await environment.vad.NonRealTimeVAD.new({
+    modelURL,
+    ...vadOptions,
+    ortConfig: (ort) => {
+      configureOrtWasmPaths({ ort }, ortWasmBasePath);
+    },
+  });
+  if (typeof vad?.run !== "function") {
+    throw new Error("vad-web NonRealTimeVAD adapter must expose a run(pcm, sampleRate) method.");
+  }
+
+  onProgress(35);
+  const segments = [];
+  for await (const segment of vad.run(pcm, sampleRate)) {
+    segments.push(segment);
+  }
+  return { segments, rawSegmentCount: segments.length };
+}
+
+async function runVadInWorker({
+  createWorker,
+  workerUrl,
+  audioBuffer,
+  modelURL,
+  ortWasmBasePath,
+  vadOptions,
+  onProgress,
+}) {
+  const worker = createWorker(workerUrl);
+  if (!worker || typeof worker.postMessage !== "function") {
+    throw new Error("Browser VAD worker factory must return a Web Worker.");
+  }
+  if (!(audioBuffer instanceof ArrayBuffer)) {
+    throw new Error("Browser VAD worker requires an audio ArrayBuffer.");
+  }
+
+  try {
+    return await new Promise((resolve, reject) => {
+      worker.onmessage = (event) => {
+        const message = event?.data || {};
+        if (message.type === "progress") {
+          onProgress(message.progress);
+        } else if (message.type === "result") {
+          resolve(message.result);
+        } else if (message.type === "error") {
+          reject(new Error(message.error || "Browser VAD worker failed."));
+        }
+      };
+      worker.onerror = (event) => {
+        reject(new Error(event?.message || "Browser VAD worker failed."));
+      };
+      worker.postMessage({
+        type: "segment",
+        request: {
+          audioBuffer,
+          modelURL,
+          ortWasmBasePath,
+          vadOptions,
+        },
+      }, [audioBuffer]);
+    });
+  } finally {
+    worker.terminate?.();
+  }
 }
 
 function normalizeVadTimestamp(value, { audioDurationSeconds, sampleRate } = {}) {
@@ -236,5 +341,6 @@ export {
   DEFAULT_VAD_MODEL,
   DEFAULT_VAD_MODEL_URL,
   DEFAULT_VAD_PROFILE,
+  DEFAULT_VAD_WORKER_URL,
   VAD_WEB_PROFILES,
 };

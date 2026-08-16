@@ -41,6 +41,7 @@ class BrowserE2EScriptTests(unittest.TestCase):
             if isinstance(node, ast.FunctionDef)
         }
         self.assertIn("main", functions)
+        self.assertIn("log_step", functions)
 
     def test_pdm_script_runs_browser_e2e_validator(self):
         pyproject = PYPROJECT.read_text(encoding="utf-8")
@@ -184,17 +185,13 @@ class BrowserE2EScriptTests(unittest.TestCase):
                 "VAD / segmentation: Python fallback via POST /api/segment-audio."
             )
 
-    def test_backend_reference_injection_marks_deterministic_model_assets_cached(self):
+    def test_backend_reference_injection_only_installs_deterministic_adapters(self):
         module = self.load_module()
 
         script = module.create_backend_reference_init_script({"translatedSegments": []})
 
-        self.assertIn("window.__xololinguaCachedModelAssetUrls", script)
-        self.assertIn(f"{module.REAL_MODEL_ASSET_MANIFEST_PATHS[0]}?v=browser-model-assets-v1", script)
-        self.assertIn("models/Xenova/whisper-base/added_tokens.json?v=browser-model-assets-v1", script)
-        self.assertIn("models/translation/opus-mt-fr-en/manifest.json?v=browser-model-assets-v1", script)
-        self.assertIn("models/Xenova/opus-mt-fr-en/config.json?v=browser-model-assets-v1", script)
-        self.assertNotIn("models/translation/nllb-fr-en/manifest.json", script)
+        self.assertNotIn("__xololinguaCachedModelAssetUrls", script)
+        self.assertNotIn("models/Xenova", script)
         self.assertIn("XOLOLINGUA_CLIENT_TRANSCRIBER", script)
         self.assertIn("XOLOLINGUA_CLIENT_TRANSLATOR", script)
 
@@ -206,7 +203,9 @@ class BrowserE2EScriptTests(unittest.TestCase):
         command = match.group("command")
         self.assertIn("python scripts/browser_e2e_validate.py", command)
         self.assertIn("--real-browser-models", command)
-        self.assertIn("--bootstrap-model-assets", command)
+        self.assertNotIn("--bootstrap-model-assets", command)
+        self.assertIn("--source fr", command)
+        self.assertIn("--target ru", command)
         self.assertIn("--require-browser-transcription", command)
         self.assertIn("--require-browser-translation", command)
         self.assertIn("--compare-backend-srt", command)
@@ -218,138 +217,122 @@ class BrowserE2EScriptTests(unittest.TestCase):
         with self.assertRaises(SystemExit):
             module.parse_args(["--real-browser-models", "--inject-backend-reference-browser-ml"])
 
-    def test_real_browser_models_preflight_reports_missing_local_assets_as_actionable_skip(self):
+    def test_webgpu_gate_requires_real_browser_models(self):
+        module = self.load_module()
+
+        with self.assertRaises(SystemExit):
+            module.parse_args(["--require-webgpu"])
+        args = module.parse_args(["--real-browser-models", "--require-webgpu"])
+        self.assertTrue(args.require_webgpu)
+
+    def test_dynamic_model_ids_are_derived_from_source_and_target(self):
+        module = self.load_module()
+
+        self.assertEqual(
+            module.dynamic_model_ids("FR", "RU"),
+            ["Xenova/whisper-base", "Xenova/opus-mt-fr-ru"],
+        )
+
+    def test_dynamic_model_request_matching_accepts_hugging_face_urls(self):
+        module = self.load_module()
+        model_ids = module.dynamic_model_ids("fr", "ru")
+
+        self.assertEqual(
+            module.match_dynamic_model_id(
+                "https://huggingface.co/Xenova/opus-mt-fr-ru/resolve/main/onnx/model_quantized.onnx",
+                model_ids,
+            ),
+            "Xenova/opus-mt-fr-ru",
+        )
+        self.assertIsNone(
+            module.match_dynamic_model_id("http://127.0.0.1:4173/models/Xenova/opus-mt-fr-ru/config.json", model_ids)
+        )
+
+    def test_dynamic_model_network_requires_each_model_without_failures_or_local_urls(self):
+        module = self.load_module()
+        model_ids = module.dynamic_model_ids("fr", "ru")
+
+        module.validate_dynamic_model_network(model_ids, model_ids, [], [])
+        with self.assertRaisesRegex(AssertionError, "opus-mt-fr-ru"):
+            module.validate_dynamic_model_network(model_ids, [model_ids[0]], [], [])
+        with self.assertRaisesRegex(AssertionError, "downloads failed"):
+            module.validate_dynamic_model_network(
+                model_ids,
+                model_ids,
+                [{"status": 404, "url": "https://huggingface.co/Xenova/whisper-base/missing"}],
+                [],
+            )
+        with self.assertRaisesRegex(AssertionError, "Legacy local model URLs"):
+            module.validate_dynamic_model_network(
+                model_ids,
+                model_ids,
+                [],
+                ["http://127.0.0.1:4173/models/Xenova/whisper-base/config.json"],
+            )
+
+    def test_dynamic_model_cache_inspection_delegates_expected_model_ids(self):
+        module = self.load_module()
+        model_ids = module.dynamic_model_ids("fr", "ru")
+
+        page = mock.Mock()
+        page.evaluate.return_value = {
+            "cacheAvailable": True,
+            "matchingEntries": [],
+            "cachePurged": True,
+        }
+
+        report = module.inspect_dynamic_model_cache_in_page(page, model_ids)
+
+        self.assertTrue(report["cachePurged"])
+        self.assertEqual(page.evaluate.call_args.args[1], model_ids)
+
+    def test_chromium_http_cache_inspection_reports_retained_bytes(self):
         module = self.load_module()
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            args = argparse.Namespace(frontend_url="http://127.0.0.1:4173")
+            profile = Path(directory)
+            cache = profile / "Default" / "Cache" / "Cache_Data"
+            cache.mkdir(parents=True)
+            (cache / "entry-a").write_bytes(b"a" * 7)
+            (cache / "entry-b").write_bytes(b"b" * 11)
 
-            report = module.preflight_real_browser_model_assets(root, args)
+            report = module.inspect_chromium_http_cache(profile)
 
-        self.assertEqual(report["status"], "skip")
-        self.assertEqual(report["missingCount"], 2)
-        self.assertIn(module.REAL_MODEL_ASSET_MANIFEST_PATHS[0], report["missingLocalAssets"])
-        self.assertIn("models/translation/opus-mt-fr-en/manifest.json", report["missingLocalAssets"])
-        self.assertIn("Cache or provide", report["action"])
+        self.assertEqual(report["files"], 2)
+        self.assertEqual(report["bytes"], 18)
 
-    def test_real_browser_models_preflight_rejects_remote_asset_urls_inside_local_manifests(self):
-        module = self.load_module()
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            for manifest_path in module.REAL_MODEL_ASSET_MANIFEST_PATHS:
-                local_manifest = root / manifest_path
-                local_manifest.parent.mkdir(parents=True, exist_ok=True)
-                local_manifest.write_text(
-                    '{"assets":[{"url":"https://huggingface.co/Xenova/model.onnx","sha256":"abc123","bytes":42}]}',
-                    encoding="utf-8",
-                )
-            args = argparse.Namespace(frontend_url="http://127.0.0.1:4173")
-
-            report = module.preflight_real_browser_model_assets(root, args)
-
-        self.assertEqual(report["status"], "skip")
-        self.assertEqual(report["missingCount"], 0)
-        self.assertIn("remote asset URLs", report["reason"])
-        self.assertRegex(report["action"], r"Replace remote URLs with relative packaged asset paths")
-
-    def test_real_browser_models_preflight_rejects_local_manifests_without_checksums(self):
-        module = self.load_module()
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            for manifest_path in module.REAL_MODEL_ASSET_MANIFEST_PATHS:
-                local_manifest = root / manifest_path
-                local_manifest.parent.mkdir(parents=True, exist_ok=True)
-                local_manifest.write_text(
-                    '{"assets":[{"url":"weights/model.onnx","bytes":42}]}',
-                    encoding="utf-8",
-                )
-            args = argparse.Namespace(frontend_url="http://127.0.0.1:4173")
-
-            report = module.preflight_real_browser_model_assets(root, args)
-
-        self.assertEqual(report["status"], "skip")
-        self.assertIn("sha256 is required", report["reason"])
-        self.assertRegex(report["action"], r"include sha256/bytes")
-
-    def test_real_browser_models_preflight_rejects_assets_with_mismatched_bytes_or_sha256(self):
-        module = self.load_module()
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            for index, manifest_path in enumerate(module.REAL_MODEL_ASSET_MANIFEST_PATHS):
-                local_manifest = root / manifest_path
-                local_manifest.parent.mkdir(parents=True, exist_ok=True)
-                asset_url = f"models/Xenova/example-{index}/weights.onnx"
-                asset_file = root / asset_url
-                asset_file.parent.mkdir(parents=True, exist_ok=True)
-                asset_file.write_text("actual asset bytes", encoding="utf-8")
-                local_manifest.write_text(
-                    '{"assets":[{"url":"' + asset_url + '","sha256":"not-the-digest","bytes":1}]}',
-                    encoding="utf-8",
-                )
-            args = argparse.Namespace(frontend_url="http://127.0.0.1:4173")
-
-            report = module.preflight_real_browser_model_assets(root, args)
-
-        self.assertEqual(report["status"], "skip")
-        self.assertIn("bytes mismatch", report["reason"])
-        self.assertIn("sha256 mismatch", report["reason"])
-        self.assertRegex(report["action"], r"Regenerate local model manifests")
-
-    def test_real_browser_models_preflight_loads_all_packaged_asset_urls_from_local_manifests(self):
-        module = self.load_module()
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            app_manifest = root / "frontend" / "model_asset_manifest.js"
-            app_manifest.parent.mkdir(parents=True, exist_ok=True)
-            app_manifest.write_text('export const BROWSER_MODEL_ASSET_MANIFEST = Object.freeze({ version: "test-assets-v2" });', encoding="utf-8")
-            for manifest_path in module.REAL_MODEL_ASSET_MANIFEST_PATHS:
-                local_manifest = root / manifest_path
-                local_manifest.parent.mkdir(parents=True, exist_ok=True)
-                asset_url = "models/Xenova/example/weights.onnx" if "asr" in manifest_path else "models/Xenova/example/tokenizer.json"
-                asset_file = root / asset_url
-                asset_file.parent.mkdir(parents=True, exist_ok=True)
-                asset_file.write_text("asset", encoding="utf-8")
-                local_manifest.write_text(
-                    '{"assets":[{"url":"' + asset_url + '","sha256":"d59386e0ae435e292fbe0ebcdb954b75ed5fb3922091277cb19f798fc5d50718","bytes":5}]}',
-                    encoding="utf-8",
-                )
-
-            urls = module.load_real_model_asset_urls(root)
-            report = module.preflight_real_browser_model_assets(root, argparse.Namespace(frontend_url="http://127.0.0.1:4173"))
-
-        self.assertEqual(report["status"], "ready")
-        self.assertEqual(report["cachedCount"], 4)
-        self.assertTrue(all(url.endswith("?v=test-assets-v2") for url in urls))
-        self.assertIn("models/Xenova/example/weights.onnx?v=test-assets-v2", urls)
-        self.assertIn("models/Xenova/example/tokenizer.json?v=test-assets-v2", urls)
-
-    def test_compact_real_model_diagnostics_are_one_line_and_include_skip_reason(self):
+    def test_compact_real_model_diagnostics_are_one_line_and_include_lifecycle_result(self):
         module = self.load_module()
         diagnostic = module.format_real_model_diagnostics({
-            "status": "skip",
+            "status": "pass",
             "runtime": "chromium",
-            "bootstrapStatus": "not-run",
-            "cachedCount": 0,
-            "missingCount": 2,
-            "missingLocalAssets": [
-                module.REAL_MODEL_ASSET_MANIFEST_PATHS[0],
-                module.REAL_MODEL_ASSET_MANIFEST_PATHS[1],
-            ],
-            "warmup": {"asr": "not-run", "translation": "not-run"},
-            "inference": {"asr": "not-run", "translation": "not-run"},
-            "coverage": "not-run",
-            "comparison": "not-run",
-            "reason": "local model asset manifests are absent",
-            "action": "Cache or provide local model manifests before rerunning.",
+            "modelIds": ["Xenova/whisper-base", "Xenova/opus-mt-fr-ru"],
+            "downloadedRequests": 23,
+            "failedRequests": 0,
+            "cachePurged": True,
+            "remainingCacheEntries": 0,
+            "uiLifecycle": "purged",
+            "uiProgress": "pass",
+            "executionDevice": "webgpu",
+            "httpCacheBytes": 12_345,
+            "warmup": {"asr": "pass", "translation": "pass"},
+            "inference": {"asr": "pass", "translation": "pass"},
+            "coverage": "pass",
+            "comparison": "pass",
+            "reason": "on-demand browser model lifecycle completed",
+            "action": "none",
         })
 
         self.assertNotIn("\n", diagnostic)
         self.assertLess(len(diagnostic), 700)
-        self.assertIn("status=skip", diagnostic)
-        self.assertIn("bootstrap=not-run", diagnostic)
-        self.assertIn("missing=2", diagnostic)
-        self.assertIn("reason=local model asset manifests are absent", diagnostic)
-        self.assertIn("action=Cache or provide local model manifests before rerunning.", diagnostic)
+        self.assertIn("status=pass", diagnostic)
+        self.assertIn("models=Xenova/whisper-base,Xenova/opus-mt-fr-ru", diagnostic)
+        self.assertIn("downloads=23", diagnostic)
+        self.assertIn("cachePurged=true", diagnostic)
+        self.assertIn("remainingCacheEntries=0", diagnostic)
+        self.assertIn("uiLifecycle=purged", diagnostic)
+        self.assertIn("uiProgress=pass", diagnostic)
+        self.assertIn("executionDevice=webgpu", diagnostic)
+        self.assertIn("httpCacheBytes=12345", diagnostic)
 
 
 if __name__ == "__main__":
