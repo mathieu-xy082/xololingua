@@ -25,6 +25,7 @@ export function createClientTranscriber({
   devicePreference,
   warmupTimeoutMs,
   warmupSampleSeconds = 1,
+  transcriptionMode,
   maxDurationSeconds,
   maxAudioBytes,
   maxSegments,
@@ -138,6 +139,7 @@ export function createClientTranscriber({
         remoteModels: model.remoteModels,
         purgeAfterUse: model.purgeAfterUse,
         device: model.device,
+        transcriptionMode,
       });
       const activeWarmupMetadata = warmupMetadata || {};
       let result;
@@ -207,6 +209,7 @@ async function prepareTranscriptionWorkerRequest({
   remoteModels = false,
   purgeAfterUse = false,
   device,
+  transcriptionMode,
 }) {
   const audio = await prepareTranscriptionAudio(request.audio, environment);
   return {
@@ -216,6 +219,7 @@ async function prepareTranscriptionWorkerRequest({
     ...(remoteModels ? { remoteModels: true } : {}),
     ...(purgeAfterUse ? { purgeAfterUse: true } : {}),
     ...(device ? { device } : {}),
+    ...(transcriptionMode ? { transcriptionMode } : {}),
   };
 }
 

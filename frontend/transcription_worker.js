@@ -1,5 +1,6 @@
 import { env, ModelRegistry, pipeline } from "../node_modules/@huggingface/transformers/dist/transformers.min.js";
 import { createRuntimeMetadata, loadPipelineWithDeviceFallback } from "./browser_inference_device.js";
+import { alignTimestampedTranscriptToVad } from "./transcription_alignment.js";
 
 const DEFAULT_MODEL_ID = "Xenova/whisper-base";
 const DEFAULT_SAMPLE_RATE = 16_000;
@@ -95,9 +96,10 @@ async function transcribeAudio(request = {}) {
   const sourceLanguage = normalizeLanguageCode(request.sourceLanguage);
   const vadSegments = Array.isArray(request.segments) ? request.segments : [];
   const sampleRate = Number(request.audio?.sampleRate || request.audio?.sampleRateHz || DEFAULT_SAMPLE_RATE);
-  const transcription = audioInput instanceof Float32Array && vadSegments.length > 0
+  const transcriptionMode = normalizeTranscriptionMode(request.transcriptionMode);
+  const transcription = transcriptionMode === "vad-segments" && audioInput instanceof Float32Array && vadSegments.length > 0
     ? await transcribeVadSegments({ recognizer, audioInput, sampleRate, segments: vadSegments, sourceLanguage })
-    : await transcribeWholeAudio({ recognizer, audioInput, request, sourceLanguage });
+    : await transcribeWholeAudio({ recognizer, audioInput, request, sourceLanguage, vadSegments });
 
   const result = {
     strategy: "whisper-transformers.js",
@@ -105,6 +107,7 @@ async function transcribeAudio(request = {}) {
     segments: transcription.segments.filter((segment) => segment.text || segment.end > segment.start),
     metadata: {
       ...createRuntimeMetadata(recognizerRuntime),
+      transcriptionMode,
       timings: {
         ...transcription.timings,
         inputPreparationMs,
@@ -194,14 +197,30 @@ async function transcribeVadSegments({ recognizer, audioInput, sampleRate, segme
   };
 }
 
-async function transcribeWholeAudio({ recognizer, audioInput, request, sourceLanguage }) {
+async function transcribeWholeAudio({ recognizer, audioInput, request, sourceLanguage, vadSegments = [] }) {
   const transcriptionStartedAt = nowMs();
   const audioSeconds = audioInput instanceof Float32Array
     ? audioInput.length / Number(request.audio?.sampleRate || request.audio?.sampleRateHz || DEFAULT_SAMPLE_RATE)
     : Number(request.audio?.durationSeconds || 0);
-  reportTranscriptionProgress(1, "Transcribing speech audio...");
+  reportTranscriptionProgress(1, "Transcribing complete audio with Whisper long-form windows...");
   const inferenceStartedAt = nowMs();
-  const output = await recognizer(audioInput, createWhisperOptions({ sourceLanguage, returnTimestamps: true }));
+  const stopHeartbeat = startLongFormTranscriptionHeartbeat(audioSeconds);
+  let output;
+  let timestampMode = "word";
+  try {
+    try {
+      output = await recognizer(audioInput, createWhisperOptions({ sourceLanguage, returnTimestamps: "word" }));
+    } catch (wordTimestampError) {
+      timestampMode = "segment";
+      reportTranscriptionProgress(
+        1,
+        `Word timestamps are unavailable; retrying long-form ASR with segment timestamps (${wordTimestampError?.message || String(wordTimestampError)}).`,
+      );
+      output = await recognizer(audioInput, createWhisperOptions({ sourceLanguage, returnTimestamps: true }));
+    }
+  } finally {
+    stopHeartbeat();
+  }
   const inferenceMs = elapsedMs(inferenceStartedAt);
   const realtimeFactor = calculateRealtimeFactor(inferenceMs, audioSeconds);
   reportTranscriptionProgress(
@@ -211,14 +230,18 @@ async function transcribeWholeAudio({ recognizer, audioInput, request, sourceLan
   );
   const chunks = Array.isArray(output?.chunks) ? output.chunks : [];
   if (chunks.length > 0) {
+    const alignment = alignTimestampedTranscriptToVad({
+      chunks,
+      vadSegments,
+      audioDurationSeconds: audioSeconds,
+    });
     return {
-      segments: chunks.map((chunk, index) => ({
-        index: index + 1,
-        start: Array.isArray(chunk.timestamp) ? Number(chunk.timestamp[0] || 0) : 0,
-        end: Array.isArray(chunk.timestamp) ? Number(chunk.timestamp[1] || chunk.timestamp[0] || 0) : 0,
-        text: String(chunk.text || "").trim(),
-      })),
-      timings: createWholeAudioTimings({ audioSeconds, inferenceMs, transcriptionStartedAt }),
+      segments: alignment.segments,
+      timings: {
+        ...createWholeAudioTimings({ audioSeconds, inferenceMs, transcriptionStartedAt }),
+        timestampMode,
+        alignment: alignment.diagnostics,
+      },
     };
   }
   return {
@@ -230,6 +253,19 @@ async function transcribeWholeAudio({ recognizer, audioInput, request, sourceLan
     }],
     timings: createWholeAudioTimings({ audioSeconds, inferenceMs, transcriptionStartedAt }),
   };
+}
+
+function startLongFormTranscriptionHeartbeat(audioSeconds) {
+  const startedAt = nowMs();
+  const expectedWindowCount = calculateWhisperWindowCount(audioSeconds);
+  const timer = setInterval(() => {
+    reportTranscriptionProgress(
+      1,
+      `Whisper long-form ASR is still processing approximately ${expectedWindowCount} internal windows — ${formatSeconds(elapsedMs(startedAt))} elapsed.`,
+      { expectedWindowCount, elapsedMs: elapsedMs(startedAt) },
+    );
+  }, 5_000);
+  return () => clearInterval(timer);
 }
 
 function reportTranscriptionProgress(progress, message, details = {}) {
@@ -247,14 +283,19 @@ function reportTranscriptionProgress(progress, message, details = {}) {
 
 function createWholeAudioTimings({ audioSeconds, inferenceMs, transcriptionStartedAt }) {
   return {
-    mode: "whole-audio",
+    mode: "long-form",
     segmentCount: 1,
+    windowCount: calculateWhisperWindowCount(audioSeconds),
     audioSeconds: roundMetric(audioSeconds),
     preparationMs: 0,
     inferenceMs,
     transcriptionWallMs: elapsedMs(transcriptionStartedAt),
     realtimeFactor: calculateRealtimeFactor(inferenceMs, audioSeconds),
   };
+}
+
+function calculateWhisperWindowCount(audioSeconds) {
+  return Math.max(1, Math.ceil(Math.max(0, Number(audioSeconds) - 10) / 20));
 }
 
 function nowMs() {
@@ -400,6 +441,10 @@ function createWhisperOptions({ sourceLanguage, returnTimestamps = true } = {}) 
     ...(language && language !== "auto" ? { language } : {}),
     task: "transcribe",
   };
+}
+
+function normalizeTranscriptionMode(mode) {
+  return mode === "vad-segments" ? "vad-segments" : "long-form";
 }
 
 function normalizeLanguageCode(language) {

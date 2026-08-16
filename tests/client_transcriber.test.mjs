@@ -34,15 +34,34 @@ test("detectClientTranscriptionCapabilities treats a module worker as the local 
   });
 });
 
-test("transcription worker preserves VAD windows instead of replacing them with Whisper chunks", () => {
+test("transcription worker supports long-form ASR aligned back onto VAD windows", () => {
   const workerSource = readFileSync(new URL("../frontend/transcription_worker.js", import.meta.url), "utf-8");
 
   assert.match(workerSource, /transcribeVadSegments/);
-  assert.match(workerSource, /slicePcmForSegment/);
-  assert.match(workerSource, /segments\.map\(async|for \(const .*segments/);
-  assert.match(workerSource, /start:\s*Number\(segment\.start/);
-  assert.match(workerSource, /end:\s*Number\(segment\.end/);
-  assert.doesNotMatch(workerSource, /chunks\.length > 0\s*\?\s*chunks\.map/);
+  assert.match(workerSource, /normalizeTranscriptionMode/);
+  assert.match(workerSource, /returnTimestamps:\s*"word"/);
+  assert.match(workerSource, /alignTimestampedTranscriptToVad/);
+  assert.match(workerSource, /transcriptionMode === "vad-segments"/);
+});
+
+test("client transcriber forwards its configured long-form mode to the worker", async () => {
+  const calls = [];
+  const transcriber = createClientTranscriber({
+    environment: {},
+    transcriptionMode: "long-form",
+    transformerWorker: async (request) => {
+      calls.push(request);
+      return { segments: [] };
+    },
+  });
+
+  await transcriber.transcribeAudio({
+    audio: { pcm: new Float32Array([0]), sampleRate: 16000 },
+    segments: [{ start: 0, end: 1 }],
+    sourceLanguage: "fr",
+  });
+
+  assert.equal(calls[0].transcriptionMode, "long-form");
 });
 
 test("client transcriber delegates PCM audio to an injected transformers.js worker", async () => {

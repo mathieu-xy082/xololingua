@@ -210,6 +210,36 @@ test("model delivery status exposes completed translation performance timings", 
   });
 });
 
+test("model delivery status exposes long-form window and VAD alignment metrics", () => {
+  let tracker = beginModelDelivery(createModelDeliveryTracker(), {
+    stage: "transcription",
+    modelId: "Xenova/whisper-base",
+  });
+  tracker = finishModelDelivery(tracker, {
+    modelId: "Xenova/whisper-base",
+    stageResult: {
+      stage: "transcription",
+      runtime: "browser",
+      metadata: {
+        executionDevice: "webgpu",
+        executionDeviceLabel: "WebGPU (NVIDIA Lovelace)",
+        cachePurged: true,
+        filesDeleted: 7,
+        timings: {
+          mode: "long-form",
+          inferenceMs: 120000,
+          audioSeconds: 960,
+          realtimeFactor: 0.125,
+          windowCount: 48,
+          alignment: { alignedChunkCount: 650, inputChunkCount: 652 },
+        },
+      },
+    },
+  });
+
+  assert.match(describeModelDelivery(tracker).status, /long-form 48 windows, 650\/652 timestamped chunks aligned/);
+});
+
 test("model delivery status exposes an unconfirmed purge", () => {
   let tracker = beginModelDelivery(createModelDeliveryTracker(), {
     stage: "transcription",

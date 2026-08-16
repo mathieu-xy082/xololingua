@@ -3,11 +3,12 @@ export const BROWSER_ML_CONFIG = Object.freeze({
   devicePreference: "auto",
   transcription: Object.freeze({
     defaultModelId: "Xenova/whisper-base",
+    mode: "long-form",
     warmupSampleSeconds: 1,
-    maxAudioSeconds: 900,
+    maxAudioSeconds: 1_800,
     maxAudioBytes: 250 * 1024 * 1024,
     maxSegments: 300,
-    inferenceTimeoutMs: 300_000,
+    inferenceTimeoutMs: 1_800_000,
   }),
   translation: Object.freeze({
     defaultModelId: "Xenova/opus-mt-fr-en",

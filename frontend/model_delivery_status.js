@@ -176,7 +176,15 @@ function formatTranscriptionPerformance(completed) {
     : timings.audioSeconds > 0
       ? (timings.inferenceMs / 1000) / timings.audioSeconds
       : 0;
-  return ` ASR: ${formatSeconds(timings.inferenceMs)} inference for ${timings.audioSeconds.toFixed(1)}s audio (${realtimeFactor.toFixed(2)}× realtime)${warmupMs > 0 ? `; warmup ${formatSeconds(warmupMs)}` : ""}.`;
+  const longForm = timings.mode === "long-form" && Number.isFinite(timings.windowCount)
+    ? `; long-form ${timings.windowCount} windows${formatAlignmentSummary(timings.alignment)}`
+    : "";
+  return ` ASR: ${formatSeconds(timings.inferenceMs)} inference for ${timings.audioSeconds.toFixed(1)}s audio (${realtimeFactor.toFixed(2)}× realtime)${longForm}${warmupMs > 0 ? `; warmup ${formatSeconds(warmupMs)}` : ""}.`;
+}
+
+function formatAlignmentSummary(alignment) {
+  if (!Number.isFinite(alignment?.inputChunkCount) || !Number.isFinite(alignment?.alignedChunkCount)) return "";
+  return `, ${alignment.alignedChunkCount}/${alignment.inputChunkCount} timestamped chunks aligned`;
 }
 
 function formatTranslationPerformance(completed) {
