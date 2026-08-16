@@ -35,8 +35,17 @@ export function createClientTranslator({
   maxBatchSize,
   maxWorkerResponseMs,
 } = {}) {
+  let activeWorkerSession;
+  const cancel = () => {
+    if (!activeWorkerSession) return;
+    const error = new Error("Browser translation cancelled.");
+    error.cancelled = true;
+    activeWorkerSession.close(error);
+  };
+
   return {
     capabilities: detectClientTranslationCapabilities(environment),
+    cancel,
 
     async translateSegments(request, onProgress = () => {}) {
       const model = resolveModelRequest({ request, modelId, modelResolver, remoteModels, purgeAfterUse, devicePreference });
@@ -62,6 +71,7 @@ export function createClientTranslator({
             busyMessage: "Browser translation worker is already processing a request.",
           })
         : null;
+      activeWorkerSession = workerSession;
       const sessionTranslate = createTranslationWorkerClient({ workerSession, maxWorkerResponseMs });
       const browserTranslate = localTranslate || sessionTranslate;
       const translate = typeof browserTranslate === "function"
@@ -144,6 +154,7 @@ export function createClientTranslator({
         };
       } finally {
         workerSession?.close();
+        if (activeWorkerSession === workerSession) activeWorkerSession = undefined;
       }
     },
   };

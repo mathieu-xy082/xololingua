@@ -533,7 +533,7 @@ async function generateSubtitles() {
     render();
   } catch (error) {
     state.modelDelivery = failModelDelivery(state.modelDelivery, error);
-    state.subtitleNotice = error.message;
+    state.subtitleNotice = error.cancelled ? "Subtitle generation cancelled." : error.message;
     state.busyStep = "";
     state.subtitleJobId = "";
     state.subtitleCancelRequested = false;
@@ -543,16 +543,21 @@ async function generateSubtitles() {
 }
 
 async function cancelSubtitleGeneration() {
-  if (state.busyStep !== "subtitle" || !state.subtitleJobId || state.subtitleCancelRequested) return;
+  if (state.busyStep !== "subtitle" || state.subtitleCancelRequested) return;
 
   const jobId = state.subtitleJobId;
   state.subtitleCancelRequested = true;
   els.subtitleStatus.textContent = "Cancelling subtitle generation...";
+  appClientAdapters.cancel?.();
   render();
 
   try {
-    const job = await cancelSubtitleJobAdapter(jobId);
-    state.subtitleNotice = job.message || "Subtitle generation cancelled.";
+    if (jobId) {
+      const job = await cancelSubtitleJobAdapter(jobId);
+      state.subtitleNotice = job.message || "Subtitle generation cancelled.";
+    } else {
+      state.subtitleNotice = "Subtitle generation cancelled.";
+    }
   } catch (error) {
     state.subtitleNotice = error.message;
   } finally {
@@ -685,7 +690,7 @@ function render() {
   els.segmentButton.disabled = !canSegment() || state.busyStep === "segmentation";
   els.generateButton.disabled = !canGenerate() || state.busyStep === "subtitle";
   els.cancelGenerateButton.hidden = state.busyStep !== "subtitle";
-  els.cancelGenerateButton.disabled = state.subtitleCancelRequested || !state.subtitleJobId;
+  els.cancelGenerateButton.disabled = state.subtitleCancelRequested;
   renderSegmentReview();
   renderSubtitleStatus();
   renderModelDeliveryPanel();
@@ -762,10 +767,11 @@ function resetSubtitle() {
 }
 
 function cancelActiveSubtitleJobSilently() {
-  if (state.busyStep !== "subtitle" || !state.subtitleJobId || state.subtitleCancelRequested) return false;
+  if (state.busyStep !== "subtitle" || state.subtitleCancelRequested) return false;
 
   state.subtitleCancelRequested = true;
-  cancelSubtitleJobAdapter(state.subtitleJobId).catch(() => {});
+  appClientAdapters.cancel?.();
+  if (state.subtitleJobId) cancelSubtitleJobAdapter(state.subtitleJobId).catch(() => {});
   return true;
 }
 

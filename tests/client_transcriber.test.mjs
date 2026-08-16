@@ -329,6 +329,40 @@ test("client transcriber fails fast when ASR warmup times out", async () => {
   assert.equal(workerInstances[0].terminated, true);
 });
 
+test("client transcriber cancellation terminates an active browser worker", async () => {
+  const workerInstances = [];
+  class StalledWorker {
+    constructor() {
+      this.terminated = false;
+      workerInstances.push(this);
+    }
+
+    postMessage() {}
+
+    terminate() {
+      this.terminated = true;
+    }
+  }
+  const transcriber = createClientTranscriber({
+    environment: { Worker: StalledWorker },
+    workerUrl: "/frontend/transcription_worker.js",
+    modelId: "Xenova/whisper-base",
+    warmupTimeoutMs: 60_000,
+  });
+  const pending = transcriber.transcribeAudio({
+    audio: { audioId: "audio-123", durationSeconds: 3 },
+    segments: [],
+    sourceLanguage: "fr",
+  });
+
+  await new Promise((resolve) => queueMicrotask(resolve));
+  transcriber.cancel();
+
+  await assert.rejects(pending, /Browser transcription cancelled/);
+  assert.equal(workerInstances.length, 1);
+  assert.equal(workerInstances[0].terminated, true);
+});
+
 test("client transcriber rejects a stalled configured Web Worker with an explicit timeout", async () => {
   const workerInstances = [];
   class StalledWorker {

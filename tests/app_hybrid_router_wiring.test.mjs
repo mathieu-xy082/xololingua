@@ -10,6 +10,19 @@ test("app.js passes global browser ML stage adapters into the hybrid router", as
   assert.match(appSource, /clientAudioExtractor:\s*globalThis\.XOLOLINGUA_CLIENT_AUDIO_EXTRACTOR/);
   assert.match(appSource, /clientTranscriber:\s*globalThis\.XOLOLINGUA_CLIENT_TRANSCRIBER/);
   assert.match(appSource, /clientTranslator:\s*globalThis\.XOLOLINGUA_CLIENT_TRANSLATOR/);
+  assert.match(appSource, /cancelGenerateButton\.disabled = state\.subtitleCancelRequested/);
+});
+
+test("app client adapters expose cancellation for browser ML stages", () => {
+  const calls = [];
+  const adapters = createAppClientAdapters({
+    clientTranscriber: { cancel: () => calls.push("transcription") },
+    clientTranslator: { cancel: () => calls.push("translation") },
+  });
+
+  adapters.cancel();
+
+  assert.deepEqual(calls, ["transcription", "translation"]);
 });
 
 test("app client adapters expose browser audio extraction for the global E2E guard", async () => {

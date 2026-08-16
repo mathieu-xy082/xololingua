@@ -130,6 +130,40 @@ test("client translator runs local translation through a configured Web Worker b
   });
 });
 
+test("client translator cancellation terminates an active browser worker", async () => {
+  const workerInstances = [];
+  class StalledWorker {
+    constructor() {
+      this.terminated = false;
+      workerInstances.push(this);
+    }
+
+    postMessage() {}
+
+    terminate() {
+      this.terminated = true;
+    }
+  }
+  const translator = createClientTranslator({
+    environment: { Worker: StalledWorker },
+    workerUrl: "/frontend/translation_worker.js",
+    modelId: "Xenova/opus-mt-fr-en",
+    warmupTimeoutMs: 60_000,
+  });
+  const pending = translator.translateSegments({
+    segments: [{ index: 1, start: 0, end: 1, text: "Bonjour" }],
+    sourceLanguage: "fr",
+    targetLanguage: "en",
+  });
+
+  await new Promise((resolve) => queueMicrotask(resolve));
+  translator.cancel();
+
+  await assert.rejects(pending, /Browser translation cancelled/);
+  assert.equal(workerInstances.length, 1);
+  assert.equal(workerInstances[0].terminated, true);
+});
+
 test("client translator reuses one local worker for warmup and all translation batches", async () => {
   const workerInstances = [];
   class WarmupWorker {

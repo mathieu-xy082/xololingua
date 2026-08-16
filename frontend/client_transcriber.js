@@ -47,8 +47,8 @@ export function createClientTranscriber({
     return workerSession;
   };
 
-  const closeWorkerSession = () => {
-    workerSession?.close();
+  const closeWorkerSession = (error) => {
+    workerSession?.close(error);
     workerSession = undefined;
     warmupPromise = undefined;
     warmupMetadata = undefined;
@@ -87,8 +87,16 @@ export function createClientTranscriber({
     return warmupPromise;
   };
 
+  const cancel = () => {
+    if (!workerSession) return;
+    const error = new Error("Browser transcription cancelled.");
+    error.cancelled = true;
+    closeWorkerSession(error);
+  };
+
   return {
     capabilities: detectClientTranscriptionCapabilities(environment),
+    cancel,
 
     async transcribeAudio(request, onProgress = () => {}) {
       if (

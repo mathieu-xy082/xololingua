@@ -348,7 +348,7 @@ async function runStage({
   try {
     payload = await adapter(input, onProgress);
   } catch (error) {
-    if (!useBrowser || typeof serverAdapters[stageName] !== "function") {
+    if (error?.cancelled || !useBrowser || typeof serverAdapters[stageName] !== "function") {
       throw error;
     }
     browserFailureReason = error instanceof Error ? error.message : String(error);

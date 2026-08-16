@@ -19,6 +19,12 @@ export function createAppClientAdapters({
   if (typeof clientTranslator?.translateSegments === "function") {
     adapters.translation = (request, onProgress) => clientTranslator.translateSegments(request, onProgress);
   }
+  const cancelers = [clientTranscriber, clientTranslator]
+    .filter((client) => typeof client?.cancel === "function")
+    .map((client) => client.cancel.bind(client));
+  if (cancelers.length > 0) {
+    adapters.cancel = () => cancelers.forEach((cancel) => cancel());
+  }
   return adapters;
 }
 
