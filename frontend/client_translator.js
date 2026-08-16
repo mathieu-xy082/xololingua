@@ -1,4 +1,5 @@
 import { mapClientMlProgress } from "./client_ml_progress.js";
+import { createWorkerRequestSession } from "./worker_request_session.js";
 
 export function detectClientTranslationCapabilities(environment = globalThis) {
   const dynamicModels = Boolean(environment?.__xololinguaDynamicModels);
@@ -51,11 +52,22 @@ export function createClientTranslator({
 
       const localTranslate = typeof localTranslatorWorker === "function"
         ? localTranslatorWorker
-        : createTranslationWorkerClient({ environment, workerUrl, maxWorkerResponseMs });
-      const translate = typeof localTranslate === "function"
-        ? localTranslate
+        : null;
+      const workerSession = typeof localTranslatorWorker !== "function"
+        ? createWorkerRequestSession({
+            environment,
+            workerUrl,
+            defaultFailureMessage: "Browser translation worker failed.",
+            closedMessage: "Browser translation worker session is closed.",
+            busyMessage: "Browser translation worker is already processing a request.",
+          })
+        : null;
+      const sessionTranslate = createTranslationWorkerClient({ workerSession, maxWorkerResponseMs });
+      const browserTranslate = localTranslate || sessionTranslate;
+      const translate = typeof browserTranslate === "function"
+        ? browserTranslate
         : cloudTranslator;
-      const strategy = typeof localTranslate === "function"
+      const strategy = typeof browserTranslate === "function"
         ? model.remoteModels ? "remote-transformers.js" : "local-transformers.js"
         : "cloud-provider";
 
@@ -63,73 +75,76 @@ export function createClientTranslator({
         throw new Error("Browser translation requires transformers.js or a configured cloud translation provider.");
       }
 
-      const warmupMetadata = typeof localTranslate === "function" && localTranslatorWorker !== localTranslate
-        ? await warmupLocalTranslatorWorker({
-            environment,
-            workerUrl,
-            modelId: model.modelId,
-            warmupTimeoutMs,
-            warmupSampleText,
-            sourceLanguage: request.sourceLanguage,
-            targetLanguage: request.targetLanguage,
-            remoteModels: model.remoteModels,
-            purgeOnError: model.purgeAfterUse,
-            device: model.device,
-          }, (event) => onProgress(mapClientMlProgress(event, "translation-warmup")))
-        : null;
+      try {
+        const warmupMetadata = workerSession
+          ? await warmupLocalTranslatorWorker({
+              workerSession,
+              modelId: model.modelId,
+              warmupTimeoutMs,
+              warmupSampleText,
+              sourceLanguage: request.sourceLanguage,
+              targetLanguage: request.targetLanguage,
+              remoteModels: model.remoteModels,
+              purgeOnError: model.purgeAfterUse,
+              device: model.device,
+            }, (event) => onProgress(mapClientMlProgress(event, "translation-warmup")))
+          : null;
 
-      const batches = createSegmentBatches(
-        request.segments,
-        model.purgeAfterUse ? undefined : maxBatchSize,
-      );
-      const translatedSegments = [];
-      let workerMetadata = null;
-      for (const [batchIndex, batch] of batches.entries()) {
-        const translateRequest = createTranslatorWorkerRequest({
-          request,
-          modelId: model.modelId,
-          segments: batch,
-          remoteModels: model.remoteModels,
-          purgeAfterUse: model.purgeAfterUse && batchIndex === batches.length - 1,
-          device: model.device,
-        });
-        const result = await translate(
-          translateRequest,
-          (event) => onProgress(mapBatchProgress(
-            mapClientMlProgress(event, "translating"),
-            batchIndex,
-            batches.length,
-          )),
+        const batches = createSegmentBatches(
+          request.segments,
+          model.purgeAfterUse ? undefined : maxBatchSize,
         );
-        translatedSegments.push(...(result.segments || []));
-        if (result.metadata) {
-          workerMetadata = { ...(workerMetadata || {}), ...result.metadata };
+        const translatedSegments = [];
+        let workerMetadata = null;
+        for (const [batchIndex, batch] of batches.entries()) {
+          const translateRequest = createTranslatorWorkerRequest({
+            request,
+            modelId: model.modelId,
+            segments: batch,
+            remoteModels: model.remoteModels,
+            purgeAfterUse: model.purgeAfterUse && batchIndex === batches.length - 1,
+            device: model.device,
+          });
+          const result = await translate(
+            translateRequest,
+            (event) => onProgress(mapBatchProgress(
+              mapClientMlProgress(event, "translating"),
+              batchIndex,
+              batches.length,
+            )),
+          );
+          translatedSegments.push(...(result.segments || []));
+          if (result.metadata) {
+            workerMetadata = { ...(workerMetadata || {}), ...result.metadata };
+          }
         }
-      }
-      const translatedByIndex = new Map(
-        translatedSegments.map((segment) => [segment.index, segment]),
-      );
+        const translatedByIndex = new Map(
+          translatedSegments.map((segment) => [segment.index, segment]),
+        );
 
-      return {
-        strategy,
-        ...((model.remoteModels || model.purgeAfterUse || warmupMetadata) ? { metadata: {
-          ...(model.remoteModels || model.purgeAfterUse ? { modelId: model.modelId } : {}),
-          ...(model.remoteModels ? { remoteModels: true } : {}),
-          ...(model.purgeAfterUse ? { purgeAfterUse: true } : {}),
-          ...(model.device ? { devicePreference: model.device } : {}),
-          ...(warmupMetadata ? { warmup: warmupMetadata } : {}),
-          ...(workerMetadata || {}),
-        } } : {}),
-        segments: request.segments.map((segment) => {
-          const translated = translatedByIndex.get(segment.index) || {};
-          return {
-            index: segment.index,
-            start: segment.start,
-            end: segment.end,
-            text: translated.text || "",
-          };
-        }),
-      };
+        return {
+          strategy,
+          ...((model.remoteModels || model.purgeAfterUse || warmupMetadata) ? { metadata: {
+            ...(model.remoteModels || model.purgeAfterUse ? { modelId: model.modelId } : {}),
+            ...(model.remoteModels ? { remoteModels: true } : {}),
+            ...(model.purgeAfterUse ? { purgeAfterUse: true } : {}),
+            ...(model.device ? { devicePreference: model.device } : {}),
+            ...(warmupMetadata ? { warmup: warmupMetadata } : {}),
+            ...(workerMetadata || {}),
+          } } : {}),
+          segments: request.segments.map((segment) => {
+            const translated = translatedByIndex.get(segment.index) || {};
+            return {
+              index: segment.index,
+              start: segment.start,
+              end: segment.end,
+              text: translated.text || "",
+            };
+          }),
+        };
+      } finally {
+        workerSession?.close();
+      }
     },
   };
 }
@@ -186,20 +201,21 @@ function mapBatchProgress(event, batchIndex, batchCount) {
   };
 }
 
-function createTranslationWorkerClient({ environment, workerUrl, maxWorkerResponseMs }) {
-  return createWorkerRequestClient({
-    environment,
-    workerUrl,
+function createTranslationWorkerClient({ workerSession, maxWorkerResponseMs }) {
+  if (!workerSession) return undefined;
+  return (request, onProgress = () => {}) => workerSession.request({
     requestType: "translate",
     resultType: "result",
+    request,
+    onProgress,
     timeoutMs: maxWorkerResponseMs,
     timeoutMessage: `Browser translation worker did not respond within ${maxWorkerResponseMs}ms.`,
+    failureMessage: "Browser translation worker failed.",
   });
 }
 
 function warmupLocalTranslatorWorker({
-  environment,
-  workerUrl,
+  workerSession,
   modelId,
   warmupTimeoutMs,
   warmupSampleText,
@@ -212,90 +228,22 @@ function warmupLocalTranslatorWorker({
   if (!Number.isFinite(warmupTimeoutMs) || warmupTimeoutMs <= 0) {
     return null;
   }
-  const warmup = createWorkerRequestClient({
-    environment,
-    workerUrl,
+  if (!workerSession) return null;
+  return workerSession.request({
     requestType: "warmup",
     resultType: "warmup-complete",
+    request: {
+      ...(modelId ? { modelId } : {}),
+      ...(warmupSampleText ? { sampleText: warmupSampleText } : {}),
+      sourceLanguage,
+      targetLanguage,
+      ...(remoteModels ? { remoteModels: true } : {}),
+      ...(purgeOnError ? { purgeOnError: true } : {}),
+      ...(device ? { device } : {}),
+    },
+    onProgress,
     timeoutMs: warmupTimeoutMs,
     timeoutMessage: `Browser translation warmup worker did not respond within ${warmupTimeoutMs}ms.`,
-  });
-  if (typeof warmup !== "function") {
-    return null;
-  }
-  return warmup({
-    ...(modelId ? { modelId } : {}),
-    ...(warmupSampleText ? { sampleText: warmupSampleText } : {}),
-    sourceLanguage,
-    targetLanguage,
-    ...(remoteModels ? { remoteModels: true } : {}),
-    ...(purgeOnError ? { purgeOnError: true } : {}),
-    ...(device ? { device } : {}),
-  }, onProgress);
-}
-
-function createWorkerRequestClient({
-  environment,
-  workerUrl,
-  requestType,
-  resultType,
-  timeoutMs,
-  timeoutMessage,
-}) {
-  if (!workerUrl || typeof environment?.Worker !== "function") {
-    return undefined;
-  }
-
-  return (request, onProgress = () => {}) => new Promise((resolve, reject) => {
-    const worker = new environment.Worker(workerUrl, { type: "module" });
-    let timer = 0;
-    let settled = false;
-    const cleanup = () => {
-      if (timer) {
-        clearTimeout(timer);
-        timer = 0;
-      }
-      if (typeof worker.terminate === "function") {
-        worker.terminate();
-      }
-    };
-    const fail = (error) => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      reject(error);
-    };
-    const finish = (result) => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      resolve(result || {});
-    };
-
-    if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
-      timer = setTimeout(() => {
-        fail(new Error(timeoutMessage));
-      }, timeoutMs);
-    }
-
-    worker.onerror = (event) => {
-      fail(new Error(event?.message || "Browser translation worker failed."));
-    };
-    worker.onmessage = (event) => {
-      const message = event?.data || {};
-      if (message.type === "progress") {
-        onProgress(message.event);
-        return;
-      }
-      if (message.type === "error") {
-        fail(new Error(message.error || "Browser translation worker failed."));
-        return;
-      }
-      if (message.type === resultType) {
-        finish(message.result || message.metadata || {});
-      }
-    };
-
-    worker.postMessage({ type: requestType, request });
+    failureMessage: "Browser translation warmup failed.",
   });
 }

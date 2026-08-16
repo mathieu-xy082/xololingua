@@ -182,6 +182,34 @@ test("model delivery status exposes live and completed ASR performance timings",
   });
 });
 
+test("model delivery status exposes completed translation performance timings", () => {
+  let tracker = beginModelDelivery(createModelDeliveryTracker(), {
+    stage: "translation",
+    modelId: "Xenova/opus-mt-fr-ru",
+  });
+  tracker = finishModelDelivery(tracker, {
+    modelId: "Xenova/opus-mt-fr-ru",
+    stageResult: {
+      stage: "translation",
+      runtime: "browser",
+      metadata: {
+        cachePurged: true,
+        filesDeleted: 6,
+        executionDevice: "webgpu",
+        executionDeviceLabel: "WebGPU (NVIDIA Lovelace)",
+        timings: { inferenceMs: 2400, segmentCount: 2 },
+        warmup: { timings: { warmupTotalMs: 8100 } },
+      },
+    },
+  });
+
+  assert.deepEqual(describeModelDelivery(tracker), {
+    status: "Browser models used successfully with WebGPU (NVIDIA Lovelace); transient cache purge confirmed (6 cached files deleted). Translation: 2.4s inference for 2 segments; warmup 8.1s.",
+    progress: 100,
+    progressText: "purged",
+  });
+});
+
 test("model delivery status exposes an unconfirmed purge", () => {
   let tracker = beginModelDelivery(createModelDeliveryTracker(), {
     stage: "transcription",

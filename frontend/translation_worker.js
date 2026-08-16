@@ -55,28 +55,46 @@ async function warmupTranslator({
   purgeOnError = false,
   device = "auto",
 } = {}) {
+  const warmupStartedAt = nowMs();
   configureModelSource(remoteModels);
   self.postMessage({ type: "progress", event: { stage: "translation-warmup", progress: 5, message: "Loading translation model..." } });
   let translator;
+  let modelLoadMs = 0;
+  let warmupInferenceMs = 0;
   try {
+    const modelLoadStartedAt = nowMs();
     translator = await getTranslator(modelId, device);
+    modelLoadMs = elapsedMs(modelLoadStartedAt);
     self.postMessage({ type: "progress", event: { stage: "translation-warmup", progress: 70, message: "Running translation warmup sample..." } });
+    const inferenceStartedAt = nowMs();
     await translator(sampleText || DEFAULT_SAMPLE_TEXT, createTranslationOptions({ sourceLanguage, targetLanguage }));
+    warmupInferenceMs = elapsedMs(inferenceStartedAt);
   } catch (error) {
     if (purgeOnError) await releaseTranslator(modelId, true);
     throw error;
   }
-  self.postMessage({ type: "progress", event: { stage: "translation-warmup", progress: 100, message: "Translation model warmup complete." } });
+  const warmupTotalMs = elapsedMs(warmupStartedAt);
+  self.postMessage({
+    type: "progress",
+    event: {
+      stage: "translation-warmup",
+      progress: 100,
+      message: `Translation warmup complete in ${formatSeconds(warmupTotalMs)} (model ${formatSeconds(modelLoadMs)}, inference ${formatSeconds(warmupInferenceMs)}).`,
+      timings: { modelLoadMs, warmupInferenceMs, warmupTotalMs },
+    },
+  });
   return {
     modelId,
     warmed: true,
     sampleText: sampleText || DEFAULT_SAMPLE_TEXT,
     localModelPath: env.localModelPath,
+    timings: { modelLoadMs, warmupInferenceMs, warmupTotalMs },
     ...createRuntimeMetadata(translatorRuntime),
   };
 }
 
 async function translateSegments(request = {}) {
+  const requestStartedAt = nowMs();
   const modelId = request.modelId || DEFAULT_MODEL_ID;
   configureModelSource(request.remoteModels);
   const translator = await getTranslator(modelId, request.device || "auto");
@@ -85,6 +103,9 @@ async function translateSegments(request = {}) {
   const options = createTranslationOptions({ sourceLanguage, targetLanguage });
   const segments = Array.isArray(request.segments) ? request.segments : [];
   const translatedSegments = [];
+  const segmentTimings = [];
+  let totalInferenceMs = 0;
+  let characterCount = 0;
 
   for (const [offset, segment] of segments.entries()) {
     const text = String(segment?.text || "").trim();
@@ -101,23 +122,83 @@ async function translateSegments(request = {}) {
         message: `Translating segment ${offset + 1}/${segments.length}...`,
       },
     });
+    const inferenceStartedAt = nowMs();
     const output = await translator(text, options);
+    const inferenceMs = elapsedMs(inferenceStartedAt);
+    totalInferenceMs += inferenceMs;
+    characterCount += text.length;
+    segmentTimings.push({
+      index: segment?.index ?? offset + 1,
+      characterCount: text.length,
+      inferenceMs,
+    });
     translatedSegments.push({
       index: segment?.index ?? offset + 1,
       text: extractTranslatedText(output),
     });
+    self.postMessage({
+      type: "progress",
+      event: {
+        stage: "translating",
+        progress: Math.round(((offset + 1) / Math.max(1, segments.length)) * 100),
+        translationProgress: Math.round(((offset + 1) / Math.max(1, segments.length)) * 100),
+        message: `Translated segment ${offset + 1}/${segments.length} in ${formatSeconds(inferenceMs)}.`,
+        segmentInferenceMs: inferenceMs,
+        totalInferenceMs: roundMetric(totalInferenceMs),
+      },
+    });
   }
 
-  self.postMessage({ type: "progress", event: { stage: "translating", progress: 100, translationProgress: 100, message: "Translation batch complete." } });
+  self.postMessage({ type: "progress", event: { stage: "translating", progress: 100, translationProgress: 100, message: `Translation batch complete in ${formatSeconds(totalInferenceMs)}.` } });
   const result = {
     strategy: "opus-mt-transformers.js",
     languagePair: { source: sourceLanguage, target: targetLanguage },
     segments: translatedSegments,
+    metadata: {
+      ...createRuntimeMetadata(translatorRuntime),
+      timings: {
+        segmentCount: segments.length,
+        characterCount,
+        inferenceMs: roundMetric(totalInferenceMs),
+        translationWallMs: elapsedMs(requestStartedAt),
+        segments: segmentTimings,
+      },
+    },
   };
   if (request.purgeAfterUse) {
-    result.metadata = await releaseTranslator(modelId, true);
+    const cleanupStartedAt = nowMs();
+    const releaseMetadata = await releaseTranslator(modelId, true);
+    result.metadata = {
+      ...result.metadata,
+      ...releaseMetadata,
+      timings: {
+        ...result.metadata.timings,
+        cleanupMs: elapsedMs(cleanupStartedAt),
+        requestTotalMs: elapsedMs(requestStartedAt),
+      },
+    };
+  } else {
+    result.metadata.timings.requestTotalMs = elapsedMs(requestStartedAt);
   }
   return result;
+}
+
+function nowMs() {
+  return typeof performance !== "undefined" && typeof performance.now === "function"
+    ? performance.now()
+    : Date.now();
+}
+
+function elapsedMs(startedAt) {
+  return roundMetric(Math.max(0, nowMs() - startedAt));
+}
+
+function roundMetric(value) {
+  return Math.round(Number(value || 0) * 10) / 10;
+}
+
+function formatSeconds(milliseconds) {
+  return `${(milliseconds / 1000).toFixed(1)}s`;
 }
 
 async function getTranslator(modelId, devicePreference = "auto") {

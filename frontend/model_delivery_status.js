@@ -157,7 +157,7 @@ export function describeModelDelivery(tracker) {
 
   const deletedFiles = completed.reduce((total, entry) => total + entry.filesDeleted, 0);
   const runtimeLabels = [...new Set(completed.map((entry) => entry.executionDeviceLabel).filter(Boolean))];
-  const performanceSummary = formatTranscriptionPerformance(completed);
+  const performanceSummary = `${formatTranscriptionPerformance(completed)}${formatTranslationPerformance(completed)}`;
   return {
     status: `Browser models used successfully with ${runtimeLabels.join(" / ")}; transient cache purge confirmed (${deletedFiles} cached files deleted).${performanceSummary}`,
     progress: 100,
@@ -176,6 +176,14 @@ function formatTranscriptionPerformance(completed) {
       ? (timings.inferenceMs / 1000) / timings.audioSeconds
       : 0;
   return ` ASR: ${formatSeconds(timings.inferenceMs)} inference for ${timings.audioSeconds.toFixed(1)}s audio (${realtimeFactor.toFixed(2)}× realtime)${warmupMs > 0 ? `; warmup ${formatSeconds(warmupMs)}` : ""}.`;
+}
+
+function formatTranslationPerformance(completed) {
+  const translation = completed.find((entry) => entry.stage === "translation");
+  const timings = translation?.timings;
+  if (!Number.isFinite(timings?.inferenceMs) || !Number.isFinite(timings?.segmentCount)) return "";
+  const warmupMs = Number(translation?.warmupTimings?.warmupTotalMs || 0);
+  return ` Translation: ${formatSeconds(timings.inferenceMs)} inference for ${timings.segmentCount} segments${warmupMs > 0 ? `; warmup ${formatSeconds(warmupMs)}` : ""}.`;
 }
 
 function formatSeconds(milliseconds) {

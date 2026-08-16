@@ -1,4 +1,5 @@
 import { mapClientMlProgress } from "./client_ml_progress.js";
+import { createWorkerRequestSession } from "./worker_request_session.js";
 
 export function detectClientTranscriptionCapabilities(environment = globalThis) {
   const dynamicModels = Boolean(environment?.__xololinguaDynamicModels);
@@ -35,7 +36,13 @@ export function createClientTranscriber({
 
   const getWorkerSession = () => {
     if (!workerSession && workerUrl && typeof environment?.Worker === "function") {
-      workerSession = createWorkerRequestSession({ environment, workerUrl });
+      workerSession = createWorkerRequestSession({
+        environment,
+        workerUrl,
+        defaultFailureMessage: "Browser transcription worker failed.",
+        closedMessage: "Browser transcription worker session is closed.",
+        busyMessage: "Browser transcription worker is already processing a request.",
+      });
     }
     return workerSession;
   };
@@ -66,7 +73,7 @@ export function createClientTranscriber({
           ...(model.device ? { device: model.device } : {}),
         },
         onProgress,
-        maxWorkerResponseMs: warmupTimeoutMs,
+        timeoutMs: warmupTimeoutMs,
         timeoutMessage: `Browser transcription warmup timed out after ${warmupTimeoutMs}ms.`,
         failureMessage: "Browser transcription warmup failed.",
       }).then((metadata) => {
@@ -177,7 +184,7 @@ function createPersistentTranscriptionWorkerClient({ session, maxWorkerResponseM
     resultType: "result",
     request,
     onProgress,
-    maxWorkerResponseMs,
+    timeoutMs: maxWorkerResponseMs,
     timeoutMessage: `Browser transcription worker timed out after ${maxWorkerResponseMs}ms.`,
     failureMessage: "Browser transcription worker failed.",
   });
@@ -237,71 +244,4 @@ async function prepareTranscriptionAudio(audio, environment) {
       await audioContext.close();
     }
   }
-}
-
-function createWorkerRequestSession({ environment, workerUrl }) {
-  const worker = new environment.Worker(workerUrl, { type: "module" });
-  let activeRequest;
-  let closed = false;
-
-  const clearActiveRequest = () => {
-    if (activeRequest?.timeoutId) clearTimeout(activeRequest.timeoutId);
-    activeRequest = undefined;
-  };
-
-  const close = (error) => {
-    if (closed) return;
-    closed = true;
-    if (activeRequest) {
-      const { reject } = activeRequest;
-      clearActiveRequest();
-      if (error) reject(error);
-    }
-    if (typeof worker.terminate === "function") worker.terminate();
-  };
-
-  worker.onerror = (event) => {
-    const failureMessage = activeRequest?.failureMessage || "Browser transcription worker failed.";
-    close(new Error(event?.message || failureMessage));
-  };
-  worker.onmessage = (event) => {
-    if (!activeRequest) return;
-    const message = event?.data || {};
-    if (message.type === "progress") {
-      activeRequest.onProgress(message.event);
-      return;
-    }
-    if (message.type === "error") {
-      close(new Error(message.error || activeRequest.failureMessage));
-      return;
-    }
-    if (message.type === activeRequest.resultType) {
-      const { resolve } = activeRequest;
-      clearActiveRequest();
-      resolve(message.result || message.metadata || {});
-    }
-  };
-
-  return {
-    request({
-      requestType,
-      resultType,
-      request,
-      onProgress = () => {},
-      maxWorkerResponseMs,
-      timeoutMessage,
-      failureMessage,
-    }) {
-      if (closed) return Promise.reject(new Error("Browser transcription worker session is closed."));
-      if (activeRequest) return Promise.reject(new Error("Browser transcription worker is already processing a request."));
-      return new Promise((resolve, reject) => {
-        activeRequest = { resultType, onProgress, failureMessage, resolve, reject, timeoutId: undefined };
-        if (Number.isFinite(maxWorkerResponseMs) && maxWorkerResponseMs > 0) {
-          activeRequest.timeoutId = setTimeout(() => close(new Error(timeoutMessage)), maxWorkerResponseMs);
-        }
-        worker.postMessage({ type: requestType, request });
-      });
-    },
-    close,
-  };
 }

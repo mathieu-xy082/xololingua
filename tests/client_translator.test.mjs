@@ -130,7 +130,7 @@ test("client translator runs local translation through a configured Web Worker b
   });
 });
 
-test("client translator warms the local translation worker before translating batches and reports warmup metadata", async () => {
+test("client translator reuses one local worker for warmup and all translation batches", async () => {
   const workerInstances = [];
   class WarmupWorker {
     constructor(url, options) {
@@ -183,8 +183,8 @@ test("client translator warms the local translation worker before translating ba
     (event) => progress.push(event),
   );
 
-  assert.equal(workerInstances.length, 3);
-  assert.deepEqual(workerInstances.map((worker) => worker.messages[0].type), ["warmup", "translate", "translate"]);
+  assert.equal(workerInstances.length, 1);
+  assert.deepEqual(workerInstances[0].messages.map((message) => message.type), ["warmup", "translate", "translate"]);
   assert.deepEqual(workerInstances[0].messages[0], {
     type: "warmup",
     request: {
@@ -194,7 +194,7 @@ test("client translator warms the local translation worker before translating ba
       targetLanguage: "en",
     },
   });
-  assert.deepEqual(workerInstances[1].messages[0].request, {
+  assert.deepEqual(workerInstances[0].messages[1].request, {
     modelId: "Xenova/nllb-200-distilled-600M",
     segments: [segments[0]],
     sourceLanguage: "fr",
@@ -211,7 +211,7 @@ test("client translator warms the local translation worker before translating ba
     ],
   });
   assert.deepEqual(progress[0], { stage: "translation-warmup", progress: 20 });
-  assert.ok(workerInstances.every((worker) => worker.terminated));
+  assert.equal(workerInstances[0].terminated, true);
 });
 
 test("client translator fails fast when translation warmup times out", async () => {

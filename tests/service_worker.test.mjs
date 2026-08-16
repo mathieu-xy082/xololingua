@@ -21,6 +21,8 @@ const clientPipelineCapabilitiesSource = await readFile(
   new URL("../frontend/client_pipeline_capabilities.js", import.meta.url),
   "utf8",
 );
+const clientTranscriberSource = await readFile(new URL("../frontend/client_transcriber.js", import.meta.url), "utf8");
+const clientTranslatorSource = await readFile(new URL("../frontend/client_translator.js", import.meta.url), "utf8");
 const transcriptionWorkerSource = await readFile(new URL("../frontend/transcription_worker.js", import.meta.url), "utf8");
 const translationWorkerSource = await readFile(new URL("../frontend/translation_worker.js", import.meta.url), "utf8");
 
@@ -50,6 +52,8 @@ test("service worker precaches the full frontend module graph used by offline as
     ...clientPipelineCapabilitiesSource.matchAll(/import\s+[^;]+from\s+["']\.\/(client_[^"']+\.js)["']/g),
     ...transcriptionWorkerSource.matchAll(/import\s+[^;]+from\s+["']\.\/(browser_inference_device\.js)["']/g),
     ...translationWorkerSource.matchAll(/import\s+[^;]+from\s+["']\.\/(browser_inference_device\.js)["']/g),
+    ...clientTranscriberSource.matchAll(/import\s+[^;]+from\s+["']\.\/(worker_request_session\.js)["']/g),
+    ...clientTranslatorSource.matchAll(/import\s+[^;]+from\s+["']\.\/(worker_request_session\.js)["']/g),
     ...appSource.matchAll(/workerUrl:\s*["'](frontend\/[^"']+\.js)["']/g),
   ]
     .map((match) => match[1].startsWith("frontend/") ? match[1] : `frontend/${match[1]}`));
