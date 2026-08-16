@@ -34,6 +34,16 @@ self.onmessage = async (event) => {
       return;
     }
 
+    if (message.type === "dispose") {
+      const request = message.request || {};
+      const metadata = await releaseRecognizer(
+        request.modelId || recognizerModelId || DEFAULT_MODEL_ID,
+        request.purgeCache !== false,
+      );
+      self.postMessage({ type: "dispose-complete", metadata });
+      return;
+    }
+
     throw new Error(`Unsupported transcription worker message type: ${message.type || "unknown"}.`);
   } catch (error) {
     if (message.request?.purgeAfterUse || message.request?.purgeOnError) {

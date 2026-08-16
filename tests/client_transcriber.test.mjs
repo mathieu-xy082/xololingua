@@ -45,6 +45,14 @@ test("transcription worker preserves VAD windows instead of replacing them with 
   assert.doesNotMatch(workerSource, /chunks\.length > 0\s*\?\s*chunks\.map/);
 });
 
+test("transcription worker exposes an explicit model disposal protocol", () => {
+  const workerSource = readFileSync(new URL("../frontend/transcription_worker.js", import.meta.url), "utf-8");
+
+  assert.match(workerSource, /message\.type === "dispose"/);
+  assert.match(workerSource, /type:\s*"dispose-complete"/);
+  assert.match(workerSource, /request\.purgeCache !== false/);
+});
+
 test("client transcriber delegates PCM audio to an injected transformers.js worker", async () => {
   const calls = [];
   const transformerWorker = async (request, onProgress) => {
