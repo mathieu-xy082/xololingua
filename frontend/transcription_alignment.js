@@ -6,7 +6,8 @@ export function alignTimestampedTranscriptToVad({
   audioDurationSeconds = 0,
   toleranceSeconds = DEFAULT_ALIGNMENT_TOLERANCE_SECONDS,
 } = {}) {
-  const normalizedChunks = normalizeWhisperChunks(chunks, audioDurationSeconds);
+  const normalized = normalizeWhisperChunks(chunks, audioDurationSeconds);
+  const normalizedChunks = normalized.chunks;
   const normalizedVad = normalizeVadSegments(vadSegments);
 
   if (normalizedVad.length === 0) {
@@ -18,6 +19,7 @@ export function alignTimestampedTranscriptToVad({
         alignedChunkCount: 0,
         unmatchedChunkCount: normalizedChunks.length,
         outputSegmentCount: normalizedChunks.length,
+        discardedOutOfBoundsChunkCount: normalized.discardedOutOfBoundsChunkCount,
       }),
     };
   }
@@ -53,25 +55,34 @@ export function alignTimestampedTranscriptToVad({
       alignedChunkCount,
       unmatchedChunkCount: unmatchedChunks.length,
       outputSegmentCount: segments.length,
+      discardedOutOfBoundsChunkCount: normalized.discardedOutOfBoundsChunkCount,
     }),
   };
 }
 
 function normalizeWhisperChunks(chunks, audioDurationSeconds) {
   const source = Array.isArray(chunks) ? chunks : [];
-  return source.flatMap((chunk, offset) => {
+  const duration = finitePositive(audioDurationSeconds);
+  let discardedOutOfBoundsChunkCount = 0;
+  const normalized = source.flatMap((chunk, offset) => {
     const text = String(chunk?.text || "").trim();
     if (!text) return [];
 
     const timestamp = Array.isArray(chunk?.timestamp) ? chunk.timestamp : [];
     const start = finiteNonNegative(timestamp[0], finiteNonNegative(chunk?.start, 0));
+    if (duration !== null && start >= duration) {
+      discardedOutOfBoundsChunkCount += 1;
+      return [];
+    }
     const nextTimestamp = source[offset + 1]?.timestamp;
     const inferredEnd = Array.isArray(nextTimestamp)
       ? finiteNonNegative(nextTimestamp[0], start)
       : finiteNonNegative(audioDurationSeconds, start);
-    const end = Math.max(start, finiteNonNegative(timestamp[1], finiteNonNegative(chunk?.end, inferredEnd)));
+    const rawEnd = Math.max(start, finiteNonNegative(timestamp[1], finiteNonNegative(chunk?.end, inferredEnd)));
+    const end = duration === null ? rawEnd : Math.min(duration, rawEnd);
     return [{ start, end, text }];
   });
+  return { chunks: normalized, discardedOutOfBoundsChunkCount };
 }
 
 function normalizeVadSegments(segments) {
@@ -148,12 +159,18 @@ function finiteNonNegative(value, fallback) {
   return Number.isFinite(number) && number >= 0 ? number : fallback;
 }
 
+function finitePositive(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : null;
+}
+
 function createAlignmentDiagnostics({
   chunks,
   vadSegments,
   alignedChunkCount,
   unmatchedChunkCount,
   outputSegmentCount,
+  discardedOutOfBoundsChunkCount = 0,
 }) {
   return {
     inputChunkCount: chunks.length,
@@ -161,6 +178,7 @@ function createAlignmentDiagnostics({
     alignedChunkCount,
     unmatchedChunkCount,
     outputSegmentCount,
+    discardedOutOfBoundsChunkCount,
   };
 }
 

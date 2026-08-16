@@ -42,6 +42,7 @@ test("transcription worker supports long-form ASR aligned back onto VAD windows"
   assert.match(workerSource, /returnTimestamps:\s*"word"/);
   assert.match(workerSource, /alignTimestampedTranscriptToVad/);
   assert.match(workerSource, /transcriptionMode === "vad-segments"/);
+  assert.match(workerSource, /max_new_tokens:\s*calculateWhisperTokenBudget\(audioSeconds\)/);
 });
 
 test("transcription worker exposes an explicit model disposal protocol", () => {

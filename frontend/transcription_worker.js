@@ -1,6 +1,7 @@
 import { env, ModelRegistry, pipeline } from "../node_modules/@huggingface/transformers/dist/transformers.min.js";
 import { createRuntimeMetadata, loadPipelineWithDeviceFallback } from "./browser_inference_device.js";
 import { alignTimestampedTranscriptToVad } from "./transcription_alignment.js";
+import { calculateWhisperTokenBudget } from "./transcription_generation.js";
 
 const DEFAULT_MODEL_ID = "Xenova/whisper-base";
 const DEFAULT_SAMPLE_RATE = 16_000;
@@ -73,7 +74,7 @@ async function warmupRecognizer({ modelId = DEFAULT_MODEL_ID, sampleSeconds = 1,
   self.postMessage({ type: "progress", event: { stage: "asr-warmup", progress: 70, message: "Running ASR warmup sample..." } });
   const sampleLength = Math.max(1, Math.round(DEFAULT_SAMPLE_RATE * Math.max(0.1, sampleSeconds)));
   const inferenceStartedAt = nowMs();
-  await recognizer(new Float32Array(sampleLength), createWhisperOptions({ sourceLanguage }));
+  await recognizer(new Float32Array(sampleLength), createWhisperOptions({ sourceLanguage, audioSeconds: sampleSeconds }));
   const warmupInferenceMs = elapsedMs(inferenceStartedAt);
   const warmupTotalMs = elapsedMs(warmupStartedAt);
   self.postMessage({
@@ -156,7 +157,11 @@ async function transcribeVadSegments({ recognizer, audioInput, sampleRate, segme
     const preparationMs = elapsedMs(preparationStartedAt);
     const audioSeconds = pcmSlice.length / sampleRate;
     const inferenceStartedAt = nowMs();
-    const output = await recognizer(pcmSlice, createWhisperOptions({ sourceLanguage, returnTimestamps: false }));
+    const output = await recognizer(pcmSlice, createWhisperOptions({
+      sourceLanguage,
+      returnTimestamps: false,
+      audioSeconds,
+    }));
     const inferenceMs = elapsedMs(inferenceStartedAt);
     const realtimeFactor = calculateRealtimeFactor(inferenceMs, audioSeconds);
     totalPreparationMs += preparationMs;
@@ -219,14 +224,22 @@ async function transcribeWholeAudio({ recognizer, audioInput, request, sourceLan
   let timestampMode = "word";
   try {
     try {
-      output = await recognizer(audioInput, createWhisperOptions({ sourceLanguage, returnTimestamps: "word" }));
+      output = await recognizer(audioInput, createWhisperOptions({
+        sourceLanguage,
+        returnTimestamps: "word",
+        audioSeconds: Math.min(30, audioSeconds),
+      }));
     } catch (wordTimestampError) {
       timestampMode = "segment";
       reportTranscriptionProgress(
         1,
         `Word timestamps are unavailable; retrying long-form ASR with segment timestamps (${wordTimestampError?.message || String(wordTimestampError)}).`,
       );
-      output = await recognizer(audioInput, createWhisperOptions({ sourceLanguage, returnTimestamps: true }));
+      output = await recognizer(audioInput, createWhisperOptions({
+        sourceLanguage,
+        returnTimestamps: true,
+        audioSeconds: Math.min(30, audioSeconds),
+      }));
     }
   } finally {
     stopHeartbeat();
@@ -442,12 +455,13 @@ async function resolveAudioInput(request) {
   throw new Error("Browser ASR requires browser audio PCM, Blob, or URL; server audioId alone cannot be transcribed in the browser.");
 }
 
-function createWhisperOptions({ sourceLanguage, returnTimestamps = true } = {}) {
+function createWhisperOptions({ sourceLanguage, returnTimestamps = true, audioSeconds = 30 } = {}) {
   const language = normalizeLanguageCode(sourceLanguage);
   return {
     chunk_length_s: 30,
     stride_length_s: 5,
     return_timestamps: returnTimestamps,
+    max_new_tokens: calculateWhisperTokenBudget(audioSeconds),
     ...(language && language !== "auto" ? { language } : {}),
     task: "transcribe",
   };

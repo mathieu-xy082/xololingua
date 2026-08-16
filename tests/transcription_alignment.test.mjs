@@ -28,6 +28,7 @@ test("alignTimestampedTranscriptToVad groups timestamped words inside VAD segmen
     alignedChunkCount: 4,
     unmatchedChunkCount: 0,
     outputSegmentCount: 2,
+    discardedOutOfBoundsChunkCount: 0,
   });
 });
 
@@ -86,4 +87,19 @@ test("alignTimestampedTranscriptToVad falls back to Whisper timestamps without V
     { index: 1, start: 0, end: 0.5, text: "Premier" },
     { index: 2, start: 1, end: 2, text: "second" },
   ]);
+});
+
+test("alignTimestampedTranscriptToVad clamps or discards timestamps outside the audio", () => {
+  const result = alignTimestampedTranscriptToVad({
+    chunks: [
+      { text: "conservé", timestamp: [9.5, 12] },
+      { text: "halluciné", timestamp: [12, 13] },
+    ],
+    audioDurationSeconds: 10,
+  });
+
+  assert.deepEqual(result.segments, [
+    { index: 1, start: 9.5, end: 10, text: "conservé" },
+  ]);
+  assert.equal(result.diagnostics.discardedOutOfBoundsChunkCount, 1);
 });
