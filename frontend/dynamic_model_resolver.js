@@ -11,7 +11,7 @@ export const TRANSIENT_MODEL_POLICY = Object.freeze({
 // use the bounded English pivot below when both legs are available.
 const DIRECT_TRANSLATION_MODEL_PAIRS = new Set([
   "fr-en", "fr-de", "fr-ru",
-  "en-fr", "en-de", "en-es", "en-ru", "en-zh", "en-it", "en-ja", "en-pl", "en-fi", "en-nl", "en-tr", "en-cs",
+  "en-fr", "en-de", "en-es", "en-ru", "en-zh", "en-it", "en-ja", "en-pl", "en-fi", "en-nl", "en-tr", "en-cs", "en-hi", "en-ar", "en-uk",
   "zh-en", "de-en", "es-en", "ru-en", "it-en", "ja-en", "ko-en", "ar-en", "nl-en", "pl-en", "fi-en", "tr-en",
   "it-fr",
 ]);

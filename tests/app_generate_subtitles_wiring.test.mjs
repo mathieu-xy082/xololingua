@@ -104,3 +104,9 @@ test("app no longer waits for static browser model bootstrap", () => {
   assert.doesNotMatch(appSource, /collectClientPipelineCapabilitiesWithModelAssetBootstrap/);
   assert.doesNotMatch(appSource, /modelAssetBootstrap/);
 });
+
+test("app gates target languages by browser model routes instead of backend pair discovery", () => {
+  assert.match(appSource, /resolveTranslationModel\(\{ sourceLanguage: sourceCode, targetLanguage: targetCode \}\)/);
+  assert.match(appSource, /No browser translation route is available for this language pair/);
+  assert.doesNotMatch(appSource, /pairsLoaded && !isSupportedPair/);
+});

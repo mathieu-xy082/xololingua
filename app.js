@@ -24,7 +24,7 @@ const MAX_DURATION_SECONDS = 2.5 * 60 * 60;
 const SEGMENT_SECONDS = 12;
 const LOCAL_SERVICE_URL = "http://127.0.0.1:8765";
 globalThis.__xololinguaDynamicModels = true;
-const APP_ASSET_VERSION = "2026-08-16-7";
+const APP_ASSET_VERSION = "2026-08-16-8";
 const backendClient = createBackendClient({ baseUrl: LOCAL_SERVICE_URL });
 const clientPipelineCapabilities = collectClientPipelineCapabilities();
 const appClientAdapters = createAppClientAdapters({
@@ -667,11 +667,10 @@ function render() {
   els.targetLanguageSelect.value = state.targetLanguage;
 
   [...els.targetLanguageSelect.options].forEach((option) => {
-    const pairsLoaded = supportedLanguagePairs.size > 0;
     option.disabled = Boolean(
       sourceLanguage &&
       option.value &&
-      (option.value === sourceLanguage.code || (pairsLoaded && !isSupportedPair(sourceLanguage.code, option.value)))
+      (option.value === sourceLanguage.code || !isSupportedPair(sourceLanguage.code, option.value))
     );
   });
 
@@ -681,8 +680,8 @@ function render() {
     els.targetStatus.textContent = "Select one of the first supported target languages.";
   } else if (targetLanguage.code === sourceLanguage.code) {
     els.targetStatus.textContent = "Target language must differ from source.";
-  } else if (supportedLanguagePairs.size > 0 && !isSupportedPair(sourceLanguage.code, targetLanguage.code)) {
-    els.targetStatus.textContent = "This language couple is not in the first supported scope.";
+  } else if (!isSupportedPair(sourceLanguage.code, targetLanguage.code)) {
+    els.targetStatus.textContent = "No browser translation route is available for this language pair.";
   } else {
     els.targetStatus.textContent = `Target selected: ${targetLanguage.name}.`;
   }
@@ -1017,7 +1016,11 @@ function getLanguage(code) {
 }
 
 function isSupportedPair(sourceCode, targetCode) {
-  return supportedLanguagePairs.has(`${sourceCode}:${targetCode}`);
+  try {
+    return resolveTranslationModel({ sourceLanguage: sourceCode, targetLanguage: targetCode }).browserAvailable !== false;
+  } catch {
+    return false;
+  }
 }
 
 function makeSubtitleFileName(videoName, languageCode) {
