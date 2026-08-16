@@ -51,6 +51,7 @@ test("transcription worker exposes an explicit model disposal protocol", () => {
   assert.match(workerSource, /message\.type === "dispose"/);
   assert.match(workerSource, /type:\s*"dispose-complete"/);
   assert.match(workerSource, /request\.purgeCache !== false/);
+  assert.match(workerSource, /request\.dtype \|\| recognizerDtype \|\| "q4"/);
 });
 
 test("client transcriber forwards its configured long-form mode to the worker", async () => {

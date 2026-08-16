@@ -19,6 +19,7 @@ env.fetch = (input, init = {}) => transformersFetch(input, withTransientRemoteCa
 let recognizerPromise;
 let recognizerModelId;
 let recognizerDevicePreference;
+let recognizerDtype;
 let recognizerRuntime;
 
 self.onmessage = async (event) => {
@@ -41,6 +42,7 @@ self.onmessage = async (event) => {
       const metadata = await releaseRecognizer(
         request.modelId || recognizerModelId || DEFAULT_MODEL_ID,
         request.purgeCache !== false,
+        request.dtype || recognizerDtype || "q4",
       );
       self.postMessage({ type: "dispose-complete", metadata });
       return;
@@ -49,7 +51,7 @@ self.onmessage = async (event) => {
     throw new Error(`Unsupported transcription worker message type: ${message.type || "unknown"}.`);
   } catch (error) {
     if (message.request?.purgeAfterUse || message.request?.purgeOnError) {
-      await releaseRecognizer(message.request.modelId || DEFAULT_MODEL_ID, true);
+      await releaseRecognizer(message.request.modelId || DEFAULT_MODEL_ID, true, message.request.dtype || recognizerDtype || "q4");
     }
     self.postMessage({
       type: "error",
@@ -58,7 +60,7 @@ self.onmessage = async (event) => {
   }
 };
 
-async function warmupRecognizer({ modelId = DEFAULT_MODEL_ID, sampleSeconds = 1, sourceLanguage = "auto", remoteModels = false, device = "auto" } = {}) {
+async function warmupRecognizer({ modelId = DEFAULT_MODEL_ID, sampleSeconds = 1, sourceLanguage = "auto", remoteModels = false, device = "auto", dtype = "q4" } = {}) {
   const warmupStartedAt = nowMs();
   configureModelSource(remoteModels);
   self.postMessage({ type: "progress", event: { stage: "asr-warmup", progress: 5, message: "Loading ASR model..." } });
@@ -66,7 +68,7 @@ async function warmupRecognizer({ modelId = DEFAULT_MODEL_ID, sampleSeconds = 1,
   const stopModelHeartbeat = startModelPreparationHeartbeat("Whisper");
   let recognizer;
   try {
-    recognizer = await getRecognizer(modelId, device);
+    recognizer = await getRecognizer(modelId, device, dtype);
   } finally {
     stopModelHeartbeat();
   }
@@ -90,6 +92,7 @@ async function warmupRecognizer({ modelId = DEFAULT_MODEL_ID, sampleSeconds = 1,
     modelId,
     warmed: true,
     sampleSeconds,
+    dtype,
     localModelPath: env.localModelPath,
     timings: { modelLoadMs, warmupInferenceMs, warmupTotalMs },
     ...createRuntimeMetadata(recognizerRuntime),
@@ -100,7 +103,8 @@ async function transcribeAudio(request = {}) {
   const requestStartedAt = nowMs();
   const modelId = request.modelId || DEFAULT_MODEL_ID;
   configureModelSource(request.remoteModels);
-  const recognizer = await getRecognizer(modelId, request.device || "auto");
+  const dtype = request.dtype || "q4";
+  const recognizer = await getRecognizer(modelId, request.device || "auto", dtype);
   const inputStartedAt = nowMs();
   const audioInput = await resolveAudioInput(request);
   const inputPreparationMs = elapsedMs(inputStartedAt);
@@ -119,6 +123,7 @@ async function transcribeAudio(request = {}) {
     metadata: {
       ...createRuntimeMetadata(recognizerRuntime),
       transcriptionMode,
+      dtype,
       timings: {
         ...transcription.timings,
         inputPreparationMs,
@@ -127,7 +132,7 @@ async function transcribeAudio(request = {}) {
   };
   if (request.purgeAfterUse) {
     const cleanupStartedAt = nowMs();
-    const releaseMetadata = await releaseRecognizer(modelId, true);
+    const releaseMetadata = await releaseRecognizer(modelId, true, dtype);
     result.metadata = {
       ...result.metadata,
       ...releaseMetadata,
@@ -373,15 +378,16 @@ function extractWhisperText(output) {
   return String(output?.text || "").trim();
 }
 
-async function getRecognizer(modelId, devicePreference = "auto") {
-  if (!recognizerPromise || recognizerModelId !== modelId || recognizerDevicePreference !== devicePreference) {
+async function getRecognizer(modelId, devicePreference = "auto", dtype = "q4") {
+  if (!recognizerPromise || recognizerModelId !== modelId || recognizerDevicePreference !== devicePreference || recognizerDtype !== dtype) {
     recognizerModelId = modelId;
     recognizerDevicePreference = devicePreference;
+    recognizerDtype = dtype;
     recognizerPromise = loadPipelineWithDeviceFallback({
       createPipeline: pipeline,
       task: "automatic-speech-recognition",
       modelId,
-      dtype: "q4",
+      dtype,
       devicePreference,
       environment: self,
       pipelineOptions: {
@@ -408,7 +414,7 @@ function withTransientRemoteCache(input, init) {
   return url.startsWith(env.remoteHost) ? { ...init, cache: "no-store" } : init;
 }
 
-async function releaseRecognizer(modelId, purgeCache) {
+async function releaseRecognizer(modelId, purgeCache, dtype = recognizerDtype || "q4") {
   const pending = recognizerPromise;
   let recognizer = null;
   try {
@@ -422,12 +428,13 @@ async function releaseRecognizer(modelId, purgeCache) {
   recognizerPromise = undefined;
   recognizerModelId = undefined;
   recognizerDevicePreference = undefined;
+  recognizerDtype = undefined;
   const runtimeMetadata = createRuntimeMetadata(recognizerRuntime);
   recognizerRuntime = undefined;
   if (purgeCache && typeof ModelRegistry?.clear_pipeline_cache === "function") {
     let report;
     try {
-      report = await ModelRegistry.clear_pipeline_cache("automatic-speech-recognition", modelId, { dtype: "q4" });
+      report = await ModelRegistry.clear_pipeline_cache("automatic-speech-recognition", modelId, { dtype });
     } catch (error) {
       return { ...runtimeMetadata, cachePurged: false, filesDeleted: 0, purgeError: error?.message || String(error) };
     }

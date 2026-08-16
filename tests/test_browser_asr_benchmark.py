@@ -30,6 +30,12 @@ class BrowserAsrBenchmarkTests(unittest.TestCase):
         module = load_module()
         self.assertEqual(module.parse_args([]).order, "vad-segments-first")
 
+    def test_dtype_and_single_mode_can_be_selected(self):
+        module = load_module()
+        args = module.parse_args(["--dtype", "fp16", "--mode", "long-form"])
+        self.assertEqual(args.dtype, "fp16")
+        self.assertEqual(args.mode, "long-form")
+
     def test_ffmpeg_extracts_continuous_mono_16khz_pcm(self):
         module = load_module()
         command = module.build_ffmpeg_command(Path("source.mp4"), Path("excerpt.wav"), 12.5, 120)

@@ -64,10 +64,12 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--duration-seconds", type=float, default=MINIMUM_DURATION_SECONDS)
     parser.add_argument("--source", default="fr", help="Whisper source language code.")
     parser.add_argument("--model-id", default=DEFAULT_MODEL_ID)
+    parser.add_argument("--dtype", choices=("q4", "q4f16", "q8", "fp16", "fp32"), default="q4")
     parser.add_argument("--frontend-url", default=DEFAULT_FRONTEND_URL)
     parser.add_argument("--no-start", action="store_true", help="Require the frontend server to already be reachable.")
     parser.add_argument("--headless", action="store_true", help="Use headless Chrome (hardware WebGPU may be unavailable).")
     parser.add_argument("--device", choices=("webgpu", "wasm", "auto"), default="webgpu")
+    parser.add_argument("--mode", choices=("both", *ASR_MODES), default="both")
     parser.add_argument(
         "--order",
         choices=("long-form-first", "vad-segments-first"),
@@ -224,7 +226,7 @@ def summarize_report(report: dict) -> dict:
 
 
 BROWSER_BENCHMARK = r"""
-async ({ audioUrl, sourceLanguage, modelId, device, modes, timeoutMs }) => {
+async ({ audioUrl, sourceLanguage, modelId, dtype, device, modes, timeoutMs }) => {
   const report = {
     ok: false,
     adapter: null,
@@ -328,6 +330,7 @@ async ({ audioUrl, sourceLanguage, modelId, device, modes, timeoutMs }) => {
       sourceLanguage,
       remoteModels: true,
       device,
+      dtype,
     }, "warmup-complete", timeoutMs);
     workerReachedTerminalState = true;
 
@@ -345,6 +348,7 @@ async ({ audioUrl, sourceLanguage, modelId, device, modes, timeoutMs }) => {
         modelId,
         remoteModels: true,
         device,
+        dtype,
         transcriptionMode: mode,
         purgeAfterUse: false,
         purgeOnError: false,
@@ -363,7 +367,7 @@ async ({ audioUrl, sourceLanguage, modelId, device, modes, timeoutMs }) => {
         try {
           report.cleanup.release = await send(
             "dispose",
-            { modelId, purgeCache: true },
+            { modelId, dtype, purgeCache: true },
             "dispose-complete",
             Math.min(timeoutMs, 120000),
           );
@@ -387,7 +391,7 @@ async ({ audioUrl, sourceLanguage, modelId, device, modes, timeoutMs }) => {
 
 def run_browser_benchmark(args: argparse.Namespace, wav_path: Path, profile_dir: Path) -> dict:
     sync_playwright = require_playwright()
-    modes = list(ASR_MODES)
+    modes = list(ASR_MODES) if args.mode == "both" else [args.mode]
     if args.order == "vad-segments-first":
         modes.reverse()
     chromium_args = [
@@ -435,6 +439,7 @@ def run_browser_benchmark(args: argparse.Namespace, wav_path: Path, profile_dir:
                     "audioUrl": f"{args.frontend_url.rstrip('/')}/__asr_benchmark_audio.wav",
                     "sourceLanguage": args.source,
                     "modelId": args.model_id,
+                    "dtype": args.dtype,
                     "device": args.device,
                     "modes": modes,
                     "timeoutMs": int(args.timeout_seconds * 1000),
@@ -479,6 +484,8 @@ def print_report(report: dict) -> None:
     )
     for mode in ASR_MODES:
         metrics = summary.get("modes", {}).get(mode, {})
+        if mode not in report.get("results", {}):
+            continue
         print(
             f"  {mode}: inference={float(metrics.get('inferenceMs') or 0) / 1000:.1f}s; "
             f"wall={float(metrics.get('wallMs') or 0) / 1000:.1f}s; "
@@ -521,6 +528,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         }
         report["configuration"] = {
             "modelId": args.model_id,
+            "dtype": args.dtype,
             "sourceLanguage": args.source,
             "device": args.device,
             "order": args.order,
@@ -539,7 +547,8 @@ def main(argv: Iterable[str] | None = None) -> int:
         if not cleanup.get("release", {}).get("cachePurged"):
             raise AssertionError(f"ASR model cache was not purged: {cleanup}")
         if args.device == "webgpu":
-            for mode in ASR_MODES:
+            measured_modes = ASR_MODES if args.mode == "both" else (args.mode,)
+            for mode in measured_modes:
                 execution_device = report["results"][mode].get("metadata", {}).get("executionDevice")
                 if execution_device != "webgpu":
                     raise AssertionError(f"{mode} used {execution_device!r} instead of WebGPU")
