@@ -104,6 +104,8 @@ export function finishModelDelivery(tracker, { stageResult, modelId } = {}) {
       executionDevice: metadata.executionDevice || "unknown",
       executionDeviceLabel: metadata.executionDeviceLabel || metadata.executionDevice || "unknown runtime",
       deviceFallbackReason: metadata.deviceFallbackReason || "",
+      translationRoute: Array.isArray(metadata.translationRoute) ? metadata.translationRoute : [],
+      pivotLanguage: metadata.pivotLanguage || "",
       timings: metadata.timings || {},
       warmupTimings: metadata.warmup?.timings || {},
     },
@@ -158,6 +160,10 @@ export function describeModelDelivery(tracker) {
 
   const deletedFiles = completed.reduce((total, entry) => total + entry.filesDeleted, 0);
   const runtimeLabels = [...new Set(completed.map((entry) => entry.executionDeviceLabel).filter(Boolean))];
+  const translationRoute = completed.find((entry) => entry.stage === "translation")?.translationRoute || [];
+  const routeSummary = translationRoute.length > 1
+    ? ` Translation route: ${[translationRoute[0].sourceLanguage, ...translationRoute.map((step) => step.targetLanguage)].join(" → ")}.`
+    : "";
   const fallbackReasons = [...new Set(completed
     .map((entry) => entry.deviceFallbackReason)
     .filter(Boolean))];
@@ -166,7 +172,7 @@ export function describeModelDelivery(tracker) {
     ? ` WebGPU fallback reason: ${fallbackReasons.join(" | ")}.`
     : "";
   return {
-    status: `Browser models used successfully with ${runtimeLabels.join(" / ")}; transient cache purge confirmed (${deletedFiles} cached files deleted).${fallbackSummary}${performanceSummary}`,
+    status: `Browser models used successfully with ${runtimeLabels.join(" / ")}; transient cache purge confirmed (${deletedFiles} cached files deleted).${routeSummary}${fallbackSummary}${performanceSummary}`,
     progress: 100,
     progressText: "purged",
   };

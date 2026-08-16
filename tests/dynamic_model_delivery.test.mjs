@@ -27,6 +27,16 @@ test("dynamic model resolver rejects unsafe or identical language pairs", () => 
   assert.throws(() => resolveTranslationModel({ sourceLanguage: "fr/../../", targetLanguage: "ru" }), /Unsupported language code/);
 });
 
+test("dynamic model resolver selects a bounded English pivot when no direct pair is registered", () => {
+  const result = resolveTranslationModel({ sourceLanguage: "fr", targetLanguage: "zh" });
+
+  assert.equal(result.pivotLanguage, "en");
+  assert.deepEqual(result.route.map((step) => step.modelId), [
+    "Xenova/opus-mt-fr-en",
+    "Xenova/opus-mt-en-zh",
+  ]);
+});
+
 test("dynamic ML capabilities are explicit and keep legacy local detection unchanged", () => {
   const dynamicEnvironment = { Worker() {}, __xololinguaDynamicModels: true };
   assert.equal(detectClientTranscriptionCapabilities(dynamicEnvironment).strategy, "remote-transformers.js");

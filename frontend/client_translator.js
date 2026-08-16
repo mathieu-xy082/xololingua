@@ -49,6 +49,9 @@ export function createClientTranslator({
 
     async translateSegments(request, onProgress = () => {}) {
       const model = resolveModelRequest({ request, modelId, modelResolver, remoteModels, purgeAfterUse, devicePreference });
+      if (model.browserAvailable === false) {
+        throw new Error(model.unavailableReason || `No browser translation model is available for ${request.sourceLanguage} → ${request.targetLanguage}.`);
+      }
 
       const segmentCount = request?.segments?.length || 0;
       if (
@@ -86,71 +89,95 @@ export function createClientTranslator({
       }
 
       try {
-        const warmupMetadata = workerSession
-          ? await warmupLocalTranslatorWorker({
-              workerSession,
-              modelId: model.modelId,
-              warmupTimeoutMs,
-              warmupSampleText,
-              sourceLanguage: request.sourceLanguage,
-              targetLanguage: request.targetLanguage,
-              remoteModels: model.remoteModels,
-              purgeOnError: model.purgeAfterUse,
-              device: model.device,
-            }, (event) => onProgress(mapClientMlProgress(event, "translation-warmup")))
-          : null;
-
-        const batches = createSegmentBatches(
-          request.segments,
-          model.purgeAfterUse ? undefined : maxBatchSize,
-        );
-        const translatedSegments = [];
+        const route = Array.isArray(model.route) && model.route.length > 0
+          ? model.route
+          : [{ sourceLanguage: request.sourceLanguage, targetLanguage: request.targetLanguage, modelId: model.modelId }];
+        const warmups = [];
+        let currentSegments = request.segments;
         let workerMetadata = null;
-        for (const [batchIndex, batch] of batches.entries()) {
-          const translateRequest = createTranslatorWorkerRequest({
-            request,
-            modelId: model.modelId,
-            segments: batch,
-            remoteModels: model.remoteModels,
-            purgeAfterUse: model.purgeAfterUse && batchIndex === batches.length - 1,
-            device: model.device,
-          });
-          const result = await translate(
-            translateRequest,
-            (event) => onProgress(mapBatchProgress(
-              mapClientMlProgress(event, "translating"),
-              batchIndex,
-              batches.length,
-            )),
+        for (const [routeIndex, routeStep] of route.entries()) {
+          const warmupMetadata = workerSession
+            ? await warmupLocalTranslatorWorker({
+                workerSession,
+                modelId: routeStep.modelId,
+                warmupTimeoutMs,
+                warmupSampleText,
+                sourceLanguage: routeStep.sourceLanguage,
+                targetLanguage: routeStep.targetLanguage,
+                remoteModels: model.remoteModels,
+                purgeOnError: model.purgeAfterUse,
+                device: model.device,
+              }, (event) => onProgress(mapRouteProgress(
+                mapClientMlProgress(event, "translation-warmup"), routeIndex, route.length,
+              )))
+            : null;
+          if (warmupMetadata) warmups.push(warmupMetadata);
+
+          const batches = createSegmentBatches(
+            currentSegments,
+            model.purgeAfterUse ? undefined : maxBatchSize,
           );
-          translatedSegments.push(...(result.segments || []));
-          if (result.metadata) {
-            workerMetadata = { ...(workerMetadata || {}), ...result.metadata };
+          const translatedSegments = [];
+          for (const [batchIndex, batch] of batches.entries()) {
+            const translateRequest = createTranslatorWorkerRequest({
+              request: {
+                ...request,
+                sourceLanguage: routeStep.sourceLanguage,
+                targetLanguage: routeStep.targetLanguage,
+              },
+              modelId: routeStep.modelId,
+              segments: batch,
+              remoteModels: model.remoteModels,
+              purgeAfterUse: model.purgeAfterUse,
+              device: model.device,
+            });
+            const result = await translate(
+              translateRequest,
+              (event) => onProgress(mapRouteProgress(
+                mapBatchProgress(
+                  mapClientMlProgress(event, "translating"),
+                  batchIndex,
+                  batches.length,
+                ), routeIndex, route.length,
+              )),
+            );
+            translatedSegments.push(...(result.segments || []));
+            if (result.metadata) {
+              workerMetadata = { ...(workerMetadata || {}), ...result.metadata };
+            }
           }
+          const translatedByIndex = new Map(translatedSegments.map((segment) => [segment.index, segment]));
+          currentSegments = currentSegments.map((segment) => ({
+            ...segment,
+            text: translatedByIndex.get(segment.index)?.text || "",
+          }));
         }
-        const translatedByIndex = new Map(
-          translatedSegments.map((segment) => [segment.index, segment]),
-        );
 
         return {
           strategy,
-          ...((model.remoteModels || model.purgeAfterUse || warmupMetadata) ? { metadata: {
+          ...((model.remoteModels || model.purgeAfterUse || warmups.length > 0 || model.route) ? { metadata: {
             ...(model.remoteModels || model.purgeAfterUse ? { modelId: model.modelId } : {}),
             ...(model.remoteModels ? { remoteModels: true } : {}),
             ...(model.purgeAfterUse ? { purgeAfterUse: true } : {}),
             ...(model.device ? { devicePreference: model.device } : {}),
-            ...(warmupMetadata ? { warmup: warmupMetadata } : {}),
+            ...(warmups.length > 0 ? { warmup: warmups[0] } : {}),
+            ...(model.route && warmups.length > 0 ? { warmups } : {}),
+            ...(model.route ? {
+              translationRoute: route.map((step) => ({
+                sourceLanguage: step.sourceLanguage,
+                targetLanguage: step.targetLanguage,
+                modelId: step.modelId,
+              })),
+              ...(model.pivotLanguage ? { pivotLanguage: model.pivotLanguage } : {}),
+            } : {}),
             ...(workerMetadata || {}),
           } } : {}),
-          segments: request.segments.map((segment) => {
-            const translated = translatedByIndex.get(segment.index) || {};
-            return {
-              index: segment.index,
-              start: segment.start,
-              end: segment.end,
-              text: translated.text || "",
-            };
-          }),
+          segments: currentSegments.map((segment) => ({
+            index: segment.index,
+            start: segment.start,
+            end: segment.end,
+            text: segment.text || "",
+          })),
         };
       } finally {
         workerSession?.close();
@@ -176,6 +203,12 @@ function resolveModelRequest({ request, modelId, modelResolver, remoteModels, pu
   const resolved = typeof modelResolver === "function" ? modelResolver(request || {}) : {};
   return {
     modelId: resolved?.modelId || modelId,
+    ...(Array.isArray(resolved?.route) ? { route: resolved.route } : {}),
+    ...(resolved?.pivotLanguage ? { pivotLanguage: resolved.pivotLanguage } : {}),
+    ...(resolved?.browserAvailable === false ? {
+      browserAvailable: false,
+      unavailableReason: resolved.unavailableReason,
+    } : {}),
     remoteModels: resolved?.remote ?? remoteModels,
     purgeAfterUse: resolved?.purgeAfterUse ?? purgeAfterUse,
     device: resolved?.device || resolved?.devicePreference || devicePreference,
@@ -209,6 +242,18 @@ function mapBatchProgress(event, batchIndex, batchCount) {
   return {
     ...event,
     progress: Math.round((batchIndex * batchWidth) + ((event.progress / 100) * batchWidth)),
+  };
+}
+
+function mapRouteProgress(event, routeIndex, routeCount) {
+  if (routeCount <= 1) return event;
+  const routeWidth = 100 / routeCount;
+  return {
+    ...event,
+    progress: Math.round((routeIndex * routeWidth) + ((event.progress / 100) * routeWidth)),
+    message: event.message
+      ? `[translation hop ${routeIndex + 1}/${routeCount}] ${event.message}`
+      : event.message,
   };
 }
 

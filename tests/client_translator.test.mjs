@@ -73,6 +73,51 @@ test("client translator delegates segment translation to an injected local trans
   });
 });
 
+test("client translator executes an English pivot while preserving segment timing and indexes", async () => {
+  const calls = [];
+  const translator = createClientTranslator({
+    environment: {},
+    localTranslatorWorker: async (request) => {
+      calls.push(request);
+      const prefix = request.targetLanguage === "en" ? "EN:" : "ZH:";
+      return {
+        segments: request.segments.map((segment) => ({ index: segment.index, text: `${prefix}${segment.text}` })),
+      };
+    },
+    modelResolver: (request) => {
+      if (request.sourceLanguage === "fr" && request.targetLanguage === "zh") {
+        return {
+          stage: "translation",
+          sourceLanguage: "fr",
+          targetLanguage: "zh",
+          modelId: "Xenova/opus-mt-fr-en",
+          route: [
+            { sourceLanguage: "fr", targetLanguage: "en", modelId: "Xenova/opus-mt-fr-en" },
+            { sourceLanguage: "en", targetLanguage: "zh", modelId: "Xenova/opus-mt-en-zh" },
+          ],
+          pivotLanguage: "en",
+          remote: true,
+          purgeAfterUse: true,
+          dtype: "q4",
+        };
+      }
+      throw new Error("Unexpected route request.");
+    },
+  });
+  const result = await translator.translateSegments({
+    sourceLanguage: "fr",
+    targetLanguage: "zh",
+    segments: [{ index: 7, start: 12.5, end: 14.75, text: "Bonjour" }],
+  });
+
+  assert.deepEqual(calls.map((request) => [request.modelId, request.sourceLanguage, request.targetLanguage]), [
+    ["Xenova/opus-mt-fr-en", "fr", "en"],
+    ["Xenova/opus-mt-en-zh", "en", "zh"],
+  ]);
+  assert.deepEqual(result.segments, [{ index: 7, start: 12.5, end: 14.75, text: "ZH:EN:Bonjour" }]);
+  assert.deepEqual(result.metadata.translationRoute.map((step) => step.targetLanguage), ["en", "zh"]);
+});
+
 test("client translator runs local translation through a configured Web Worker boundary", async () => {
   const workerInstances = [];
   class FakeWorker {

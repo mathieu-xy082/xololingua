@@ -144,6 +144,32 @@ test("model delivery status exposes the browser runtime fallback reason", () => 
   assert.match(describeModelDelivery(tracker).status, /WebGPU fallback reason: WebGPU pipeline initialization failed: unsupported operator\./);
 });
 
+test("model delivery status exposes a pivot translation route", () => {
+  let tracker = beginModelDelivery(createModelDeliveryTracker(), {
+    stage: "translation",
+    modelId: "Xenova/opus-mt-fr-en",
+  });
+  tracker = finishModelDelivery(tracker, {
+    modelId: "Xenova/opus-mt-fr-en",
+    stageResult: {
+      stage: "translation",
+      runtime: "browser",
+      metadata: {
+        cachePurged: true,
+        filesDeleted: 8,
+        executionDevice: "webgpu",
+        executionDeviceLabel: "WebGPU (NVIDIA Lovelace)",
+        translationRoute: [
+          { sourceLanguage: "fr", targetLanguage: "en" },
+          { sourceLanguage: "en", targetLanguage: "zh" },
+        ],
+      },
+    },
+  });
+
+  assert.match(describeModelDelivery(tracker).status, /Translation route: fr → en → zh\./);
+});
+
 test("model delivery status exposes the selected inference engine while work is running", () => {
   let tracker = beginModelDelivery(createModelDeliveryTracker(), {
     stage: "transcription",
