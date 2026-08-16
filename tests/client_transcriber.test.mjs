@@ -39,9 +39,9 @@ test("transcription worker preserves VAD windows instead of replacing them with 
 
   assert.match(workerSource, /transcribeVadSegments/);
   assert.match(workerSource, /slicePcmForSegment/);
-  assert.match(workerSource, /segments\.map\(async|for \(const .*segments/);
-  assert.match(workerSource, /start:\s*Number\(segment\.start/);
-  assert.match(workerSource, /end:\s*Number\(segment\.end/);
+  assert.match(workerSource, /segments\.map\(|Promise\.all\(/);
+  assert.match(workerSource, /start:\s*Number\((?:segment|item\.segment)\.start/);
+  assert.match(workerSource, /end:\s*Number\((?:segment|item\.segment)\.end/);
   assert.doesNotMatch(workerSource, /chunks\.length > 0\s*\?\s*chunks\.map/);
 });
 

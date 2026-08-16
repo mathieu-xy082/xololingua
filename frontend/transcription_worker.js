@@ -146,44 +146,53 @@ async function transcribeVadSegments({ recognizer, audioInput, sampleRate, segme
   let totalInferenceMs = 0;
   let totalPreparationMs = 0;
   let totalAudioSeconds = 0;
-  reportTranscriptionProgress(1, `Transcribing speech segment 1/${segments.length}...`);
-  for (const [offset, segment] of segments.entries()) {
-    const preparationStartedAt = nowMs();
-    const pcmSlice = slicePcmForSegment(audioInput, sampleRate, segment);
-    const preparationMs = elapsedMs(preparationStartedAt);
-    const audioSeconds = pcmSlice.length / sampleRate;
-    const inferenceStartedAt = nowMs();
-    const output = await recognizer(pcmSlice, createWhisperOptions({ sourceLanguage, returnTimestamps: false }));
-    const inferenceMs = elapsedMs(inferenceStartedAt);
-    const realtimeFactor = calculateRealtimeFactor(inferenceMs, audioSeconds);
-    totalPreparationMs += preparationMs;
-    totalInferenceMs += inferenceMs;
-    totalAudioSeconds += audioSeconds;
-    segmentTimings.push({
-      index: segment.index ?? offset + 1,
-      audioSeconds: roundMetric(audioSeconds),
-      preparationMs,
-      inferenceMs,
-      realtimeFactor,
-    });
-    transcribed.push({
-      index: segment.index ?? offset + 1,
-      start: Number(segment.start || 0),
-      end: Number(segment.end || segment.start || 0),
-      text: extractWhisperText(output),
-    });
-    const completed = offset + 1;
+  let batchSize = 4;
+  let offset = 0;
+  reportTranscriptionProgress(1, `Transcribing speech segments (batch ${batchSize})...`);
+  while (offset < segments.length) {
+    const batch = segments.slice(offset, offset + batchSize);
+    let results;
+    try {
+      results = await transcribeVadBatch({ recognizer, audioInput, sampleRate, segments: batch, sourceLanguage, offset });
+    } catch (error) {
+      if (!isLikelyMemoryError(error) || batchSize === 1) throw error;
+      batchSize = batchSize === 4 ? 2 : 1;
+      reportTranscriptionProgress(
+        Math.round((offset / Math.max(1, segments.length)) * 100),
+        `GPU memory constrained; retrying ASR with batch ${batchSize}...`,
+        { batchSize },
+      );
+      continue;
+    }
+    for (const result of results) {
+      totalPreparationMs += result.preparationMs;
+      totalInferenceMs += result.inferenceMs;
+      totalAudioSeconds += result.audioSeconds;
+      segmentTimings.push({
+        index: result.index,
+        audioSeconds: roundMetric(result.audioSeconds),
+        preparationMs: result.preparationMs,
+        inferenceMs: result.inferenceMs,
+        realtimeFactor: result.realtimeFactor,
+      });
+      transcribed.push({
+        index: result.index,
+        start: result.start,
+        end: result.end,
+        text: result.text,
+      });
+    }
+    offset += batch.length;
+    const completed = offset;
     reportTranscriptionProgress(
       Math.round((completed / Math.max(1, segments.length)) * 100),
       completed < segments.length
-        ? `Transcribed ${completed}/${segments.length} speech segments in ${formatSeconds(inferenceMs)} (${realtimeFactor.toFixed(2)}× realtime); processing segment ${completed + 1}...`
+        ? `Transcribed ${completed}/${segments.length} speech segments (batch ${batchSize}); processing segment ${completed + 1}...`
         : `Transcribed all ${segments.length} speech segments in ${formatSeconds(totalInferenceMs)} (${calculateRealtimeFactor(totalInferenceMs, totalAudioSeconds).toFixed(2)}× realtime).`,
       {
         completedSegments: completed,
         segmentCount: segments.length,
-        segmentInferenceMs: inferenceMs,
-        segmentAudioSeconds: roundMetric(audioSeconds),
-        segmentRealtimeFactor: realtimeFactor,
+        batchSize,
         totalInferenceMs: roundMetric(totalInferenceMs),
         totalAudioSeconds: roundMetric(totalAudioSeconds),
       },
@@ -193,6 +202,7 @@ async function transcribeVadSegments({ recognizer, audioInput, sampleRate, segme
     segments: transcribed,
     timings: {
       mode: "vad-segments",
+      batchSize,
       segmentCount: segments.length,
       audioSeconds: roundMetric(totalAudioSeconds),
       preparationMs: roundMetric(totalPreparationMs),
@@ -202,6 +212,44 @@ async function transcribeVadSegments({ recognizer, audioInput, sampleRate, segme
       segments: segmentTimings,
     },
   };
+}
+
+async function transcribeVadBatch({ recognizer, audioInput, sampleRate, segments, sourceLanguage, offset }) {
+  const prepared = segments.map((segment, index) => {
+    const preparationStartedAt = nowMs();
+    const pcmSlice = slicePcmForSegment(audioInput, sampleRate, segment);
+    const preparationMs = elapsedMs(preparationStartedAt);
+    return {
+      segment,
+      index: segment.index ?? offset + index + 1,
+      pcmSlice,
+      preparationMs,
+      audioSeconds: pcmSlice.length / sampleRate,
+    };
+  });
+  const outcomes = await Promise.allSettled(prepared.map(async (item) => {
+    const inferenceStartedAt = nowMs();
+    const output = await recognizer(item.pcmSlice, createWhisperOptions({ sourceLanguage, returnTimestamps: false }));
+    const inferenceMs = elapsedMs(inferenceStartedAt);
+    return {
+      index: item.index,
+      start: Number(item.segment.start || 0),
+      end: Number(item.segment.end || item.segment.start || 0),
+      text: extractWhisperText(output),
+      preparationMs: item.preparationMs,
+      audioSeconds: item.audioSeconds,
+      inferenceMs,
+      realtimeFactor: calculateRealtimeFactor(inferenceMs, item.audioSeconds),
+    };
+  }));
+  const failure = outcomes.find((outcome) => outcome.status === "rejected");
+  if (failure) throw failure.reason;
+  return outcomes.map((outcome) => outcome.value);
+}
+
+function isLikelyMemoryError(error) {
+  const message = String(error?.message || error || "").toLowerCase();
+  return /out of memory|oom|memory|allocation|resource exhausted|gpu/.test(message);
 }
 
 async function transcribeWholeAudio({ recognizer, audioInput, request, sourceLanguage }) {
