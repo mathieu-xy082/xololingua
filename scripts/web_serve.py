@@ -9,6 +9,7 @@ COOP/COEP headers instead of using bare `python -m http.server`.
 from __future__ import annotations
 
 import argparse
+import webbrowser
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Iterable
@@ -37,7 +38,17 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--host", default=DEFAULT_HOST)
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--directory", type=Path, default=ROOT)
+    parser.add_argument("--no-browser", action="store_true", help="Do not open the frontend in the system default browser.")
     return parser.parse_args(argv)
+
+
+def frontend_url(host: str, port: int) -> str:
+    browser_host = "127.0.0.1" if host in {"0.0.0.0", "::"} else host
+    return f"http://{browser_host}:{port}"
+
+
+def open_default_browser(url: str) -> bool:
+    return bool(webbrowser.open(url, new=2))
 
 
 def main(argv: Iterable[str] | None = None) -> int:
@@ -48,7 +59,13 @@ def main(argv: Iterable[str] | None = None) -> int:
         **handler_kwargs,
     )
     server = ThreadingHTTPServer((args.host, args.port), handler)
-    print(f"Serving XoloLingua PWA on http://{args.host}:{args.port} from {args.directory}", flush=True)
+    url = frontend_url(args.host, args.port)
+    print(f"Serving XoloLingua PWA on {url} from {args.directory}", flush=True)
+    if not args.no_browser:
+        if open_default_browser(url):
+            print("Opened XoloLingua in the system default browser.", flush=True)
+        else:
+            print(f"Could not open the system default browser; open {url} manually.", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

@@ -162,15 +162,15 @@ In a second terminal, start the web application:
 pdm run web
 ```
 
-Open <http://localhost:4173>. The local service health information should appear at the top of the application; its API listens on <http://127.0.0.1:8765>.
+The command opens <http://localhost:4173> in the system default browser. Pass `--no-browser` when only the server is needed. The local service health information should appear at the top of the application; its API listens on <http://127.0.0.1:8765>. XoloLingua requests a high-performance WebGPU adapter from that browser automatically and reports the selected runtime in the model panel.
 
-On Linux systems where normal Chrome does not expose the hardware WebGPU adapter, keep `pdm run web` running and launch an isolated WebGPU-enabled Chrome profile from a third terminal:
+For diagnostics only, Linux developers can compare the default browser with an isolated Chrome profile carrying explicit Vulkan/WebGPU flags:
 
 ```bash
-pdm run webgpu-browser
+pdm run debug-webgpu-chrome
 ```
 
-This helper enables Chrome's experimental WebGPU/Vulkan flags without modifying the default browser profile. During model initialization, the UI must report a hardware label such as `WebGPU (NVIDIA Lovelace)`. `WebGPU (Google Swiftshader)` is software rendering, and `WASM CPU` means the automatic safety fallback was used. These flags are Linux-development aids; browsers that expose hardware WebGPU normally do not need the helper.
+This diagnostic helper does not replace the normal `pdm run web` flow and does not modify the default browser profile. During model initialization, the UI reports a hardware label such as `WebGPU (NVIDIA Lovelace)`. `WebGPU (Google Swiftshader)` is software rendering, and `WASM CPU` means the automatic safety fallback was used.
 
 ### Configure Whisper
 

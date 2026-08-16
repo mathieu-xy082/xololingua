@@ -28,7 +28,7 @@ distribution = false
 [tool.pdm.scripts]
 service = "python local_service.py"
 web = "python scripts/web_serve.py"
-webgpu-browser = "python scripts/launch_webgpu_chrome.py"
+debug-webgpu-chrome = "python scripts/launch_webgpu_chrome.py"
 browser-install = "python -m playwright install chromium"
 browser-e2e = "python scripts/browser_e2e_validate.py"
 e2e-browser-strict = "python scripts/browser_e2e_validate.py --require-browser-audio --require-browser-vad --require-browser-transcription --require-browser-translation --inject-backend-reference-browser-ml --compare-backend-srt"

@@ -214,7 +214,7 @@ def maybe_start_servers(args: argparse.Namespace) -> list[ManagedProcess]:
         service.start()
         processes.append(service)
     if not url_ok(args.frontend_url):
-        web = ManagedProcess("web", ["pdm", "run", "web"], ROOT)
+        web = ManagedProcess("web", ["pdm", "run", "web", "--no-browser"], ROOT)
         web.start()
         processes.append(web)
 

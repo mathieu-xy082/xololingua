@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Launch XoloLingua in an isolated Chrome profile with Linux WebGPU enabled."""
+"""Diagnose Linux WebGPU in an isolated Chrome profile with explicit flags."""
 
 from __future__ import annotations
 
