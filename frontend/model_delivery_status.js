@@ -66,11 +66,12 @@ export function updateModelDelivery(tracker, event = {}) {
       && Number(event.progress) >= 70);
   const activeFile = selectActiveFile(files, file);
   const progress = runtimeReady ? 100 : calculateDeliveryProgress(aggregate, tracker.current.progress);
-  const message = runtimeReady
+  const message = event.message
+    || (runtimeReady
     ? `${tracker.current.modelId} is loaded; preparing browser inference...`
     : activeFile
       ? `Downloading ${tracker.current.modelId} — ${shortFileName(activeFile)}...`
-      : `Preparing ${tracker.current.modelId} download...`;
+      : `Preparing ${tracker.current.modelId} download...`);
 
   return {
     ...tracker,

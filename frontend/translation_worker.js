@@ -63,7 +63,12 @@ async function warmupTranslator({
   let warmupInferenceMs = 0;
   try {
     const modelLoadStartedAt = nowMs();
-    translator = await getTranslator(modelId, device);
+    const stopModelHeartbeat = startModelPreparationHeartbeat("OPUS");
+    try {
+      translator = await getTranslator(modelId, device);
+    } finally {
+      stopModelHeartbeat();
+    }
     modelLoadMs = elapsedMs(modelLoadStartedAt);
     self.postMessage({ type: "progress", event: { stage: "translation-warmup", progress: 70, message: "Running translation warmup sample..." } });
     const inferenceStartedAt = nowMs();
@@ -199,6 +204,21 @@ function roundMetric(value) {
 
 function formatSeconds(milliseconds) {
   return `${(milliseconds / 1000).toFixed(1)}s`;
+}
+
+function startModelPreparationHeartbeat(label) {
+  const startedAt = nowMs();
+  const timer = setInterval(() => {
+    self.postMessage({
+      type: "progress",
+      event: {
+        stage: "loading-model",
+        progress: 5,
+        message: `${label} download or compilation is still active — ${formatSeconds(elapsedMs(startedAt))} elapsed.`,
+      },
+    });
+  }, 5_000);
+  return () => clearInterval(timer);
 }
 
 async function getTranslator(modelId, devicePreference = "auto") {

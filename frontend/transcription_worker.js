@@ -51,7 +51,13 @@ async function warmupRecognizer({ modelId = DEFAULT_MODEL_ID, sampleSeconds = 1,
   configureModelSource(remoteModels);
   self.postMessage({ type: "progress", event: { stage: "asr-warmup", progress: 5, message: "Loading ASR model..." } });
   const modelLoadStartedAt = nowMs();
-  const recognizer = await getRecognizer(modelId, device);
+  const stopModelHeartbeat = startModelPreparationHeartbeat("Whisper");
+  let recognizer;
+  try {
+    recognizer = await getRecognizer(modelId, device);
+  } finally {
+    stopModelHeartbeat();
+  }
   const modelLoadMs = elapsedMs(modelLoadStartedAt);
   self.postMessage({ type: "progress", event: { stage: "asr-warmup", progress: 70, message: "Running ASR warmup sample..." } });
   const sampleLength = Math.max(1, Math.round(DEFAULT_SAMPLE_RATE * Math.max(0.1, sampleSeconds)));
@@ -272,6 +278,21 @@ function roundMetric(value) {
 
 function formatSeconds(milliseconds) {
   return `${(milliseconds / 1000).toFixed(1)}s`;
+}
+
+function startModelPreparationHeartbeat(label) {
+  const startedAt = nowMs();
+  const timer = setInterval(() => {
+    self.postMessage({
+      type: "progress",
+      event: {
+        stage: "loading-model",
+        progress: 5,
+        message: `${label} download or compilation is still active — ${formatSeconds(elapsedMs(startedAt))} elapsed.`,
+      },
+    });
+  }, 5_000);
+  return () => clearInterval(timer);
 }
 
 function slicePcmForSegment(audioInput, sampleRate, segment) {
