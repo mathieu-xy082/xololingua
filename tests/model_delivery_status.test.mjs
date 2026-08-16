@@ -121,6 +121,29 @@ test("model delivery status only claims purge after worker confirmation", () => 
   });
 });
 
+test("model delivery status exposes the browser runtime fallback reason", () => {
+  let tracker = beginModelDelivery(createModelDeliveryTracker(), {
+    stage: "transcription",
+    modelId: "Xenova/whisper-base",
+  });
+  tracker = finishModelDelivery(tracker, {
+    modelId: "Xenova/whisper-base",
+    stageResult: {
+      stage: "transcription",
+      runtime: "browser",
+      metadata: {
+        cachePurged: true,
+        filesDeleted: 3,
+        executionDevice: "wasm",
+        executionDeviceLabel: "WASM CPU",
+        deviceFallbackReason: "WebGPU pipeline initialization failed: unsupported operator",
+      },
+    },
+  });
+
+  assert.match(describeModelDelivery(tracker).status, /WebGPU fallback reason: WebGPU pipeline initialization failed: unsupported operator\./);
+});
+
 test("model delivery status exposes the selected inference engine while work is running", () => {
   let tracker = beginModelDelivery(createModelDeliveryTracker(), {
     stage: "transcription",

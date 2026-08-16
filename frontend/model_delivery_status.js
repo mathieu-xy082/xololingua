@@ -158,9 +158,15 @@ export function describeModelDelivery(tracker) {
 
   const deletedFiles = completed.reduce((total, entry) => total + entry.filesDeleted, 0);
   const runtimeLabels = [...new Set(completed.map((entry) => entry.executionDeviceLabel).filter(Boolean))];
+  const fallbackReasons = [...new Set(completed
+    .map((entry) => entry.deviceFallbackReason)
+    .filter(Boolean))];
   const performanceSummary = `${formatTranscriptionPerformance(completed)}${formatTranslationPerformance(completed)}`;
+  const fallbackSummary = fallbackReasons.length > 0
+    ? ` WebGPU fallback reason: ${fallbackReasons.join(" | ")}.`
+    : "";
   return {
-    status: `Browser models used successfully with ${runtimeLabels.join(" / ")}; transient cache purge confirmed (${deletedFiles} cached files deleted).${performanceSummary}`,
+    status: `Browser models used successfully with ${runtimeLabels.join(" / ")}; transient cache purge confirmed (${deletedFiles} cached files deleted).${fallbackSummary}${performanceSummary}`,
     progress: 100,
     progressText: "purged",
   };
