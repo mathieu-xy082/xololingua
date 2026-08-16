@@ -44,6 +44,14 @@ test("transcription worker supports long-form ASR aligned back onto VAD windows"
   assert.match(workerSource, /transcriptionMode === "vad-segments"/);
 });
 
+test("transcription worker exposes an explicit model disposal protocol", () => {
+  const workerSource = readFileSync(new URL("../frontend/transcription_worker.js", import.meta.url), "utf-8");
+
+  assert.match(workerSource, /message\.type === "dispose"/);
+  assert.match(workerSource, /type:\s*"dispose-complete"/);
+  assert.match(workerSource, /request\.purgeCache !== false/);
+});
+
 test("client transcriber forwards its configured long-form mode to the worker", async () => {
   const calls = [];
   const transcriber = createClientTranscriber({
