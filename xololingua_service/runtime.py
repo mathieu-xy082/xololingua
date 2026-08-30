@@ -135,7 +135,10 @@ def _probe_with_gpu_warmup() -> dict:
             runtime = probe_whisper_runtime("cuda" if WHISPER_DEVICE_CHOICE == "auto" else WHISPER_DEVICE_CHOICE)
             last_runtime = runtime
             if runtime.get("device") == "cuda" and runtime.get("available"):
-                print(f"[whisper] GPU warmup succeeded on attempt {attempt}", flush=True)
+                print(
+                    f"[whisper] faster-whisper mini job succeeded — model loaded and test inference completed on CUDA (attempt {attempt})",
+                    flush=True,
+                )
                 return runtime
             print(f"[whisper] GPU warmup probe did not select CUDA: {runtime.get('fallbackReason', 'unknown reason')}", flush=True)
         except Exception as exc:
