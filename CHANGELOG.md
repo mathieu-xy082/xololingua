@@ -10,6 +10,7 @@ This project follows Semantic Versioning.
 
 - Added a logged CUDA warmup with NVIDIA wake-up and retried Whisper validation before selecting the CPU fallback.
 - Added an explicit log confirming that the faster-whisper mini inference completed successfully on CUDA.
+- Added device-aware ASR scheduling: sequential WebGPU inference and adaptive 4/2/1 batching for WASM CPU.
 - Added CPU retry handling when CUDA becomes unavailable during language detection after a successful startup probe.
 
 ## 1.1.0 - 2026-08-16

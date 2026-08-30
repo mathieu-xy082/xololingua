@@ -141,14 +141,22 @@ async function transcribeAudio(request = {}) {
 
 async function transcribeVadSegments({ recognizer, audioInput, sampleRate, segments, sourceLanguage }) {
   const transcriptionStartedAt = nowMs();
+  const executionDevice = recognizerRuntime?.device || "wasm";
+  const isWebGpu = executionDevice === "webgpu";
   const transcribed = [];
   const segmentTimings = [];
   let totalInferenceMs = 0;
   let totalPreparationMs = 0;
   let totalAudioSeconds = 0;
-  let batchSize = 4;
+  let batchSize = isWebGpu ? 1 : 4;
   let offset = 0;
-  reportTranscriptionProgress(1, `Transcribing speech segments (batch ${batchSize})...`);
+  reportTranscriptionProgress(
+    1,
+    isWebGpu
+      ? "Transcribing speech segments (WebGPU, sequential)..."
+      : `Transcribing speech segments (WASM CPU, batch ${batchSize})...`,
+    { executionDevice, batchMode: isWebGpu ? "sequential" : "adaptive" },
+  );
   while (offset < segments.length) {
     const batch = segments.slice(offset, offset + batchSize);
     let results;
@@ -159,8 +167,8 @@ async function transcribeVadSegments({ recognizer, audioInput, sampleRate, segme
       batchSize = batchSize === 4 ? 2 : 1;
       reportTranscriptionProgress(
         Math.round((offset / Math.max(1, segments.length)) * 100),
-        `GPU memory constrained; retrying ASR with batch ${batchSize}...`,
-        { batchSize },
+        `ASR runtime memory constrained; retrying with batch ${batchSize}...`,
+        { batchSize, executionDevice, batchMode: "adaptive" },
       );
       continue;
     }
@@ -187,12 +195,17 @@ async function transcribeVadSegments({ recognizer, audioInput, sampleRate, segme
     reportTranscriptionProgress(
       Math.round((completed / Math.max(1, segments.length)) * 100),
       completed < segments.length
-        ? `Transcribed ${completed}/${segments.length} speech segments (batch ${batchSize}); processing segment ${completed + 1}...`
-        : `Transcribed all ${segments.length} speech segments in ${formatSeconds(totalInferenceMs)} (${calculateRealtimeFactor(totalInferenceMs, totalAudioSeconds).toFixed(2)}× realtime).`,
+        ? isWebGpu
+          ? `Transcribed ${completed}/${segments.length} speech segments (WebGPU, sequential); processing segment ${completed + 1}...`
+          : `Transcribed ${completed}/${segments.length} speech segments (WASM CPU, batch ${batchSize}); processing segment ${completed + 1}...`
+        : `Transcribed all ${segments.length} speech segments (${isWebGpu ? "WebGPU, sequential" : `WASM CPU, batch ${batchSize}`}) in ${formatSeconds(totalInferenceMs)} (${calculateRealtimeFactor(totalInferenceMs, totalAudioSeconds).toFixed(2)}× realtime).`,
       {
         completedSegments: completed,
         segmentCount: segments.length,
         batchSize,
+        executionDevice,
+        batchMode: isWebGpu ? "sequential" : "adaptive",
+        maxInFlight: batchSize,
         totalInferenceMs: roundMetric(totalInferenceMs),
         totalAudioSeconds: roundMetric(totalAudioSeconds),
       },
@@ -203,6 +216,9 @@ async function transcribeVadSegments({ recognizer, audioInput, sampleRate, segme
     timings: {
       mode: "vad-segments",
       batchSize,
+      executionDevice,
+      batchMode: isWebGpu ? "sequential" : "adaptive",
+      maxInFlight: batchSize,
       segmentCount: segments.length,
       audioSeconds: roundMetric(totalAudioSeconds),
       preparationMs: roundMetric(totalPreparationMs),
