@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 from .settings import (
@@ -16,6 +18,9 @@ from .settings import (
     WHISPER_GPU_MODEL,
     WHISPER_PYTHON,
 )
+
+GPU_WARMUP_ATTEMPTS = max(1, int(os.environ.get("XOLOLINGUA_GPU_WARMUP_ATTEMPTS", "3")))
+GPU_WARMUP_DELAY_SECONDS = max(0.0, float(os.environ.get("XOLOLINGUA_GPU_WARMUP_DELAY_SECONDS", "2")))
 
 WHISPER_RUNTIME: dict = {
     "backend": "unknown",
@@ -98,7 +103,7 @@ def detect_whisper_runtime() -> None:
         WHISPER_RUNTIME["available"] = False
         return
     try:
-        runtime = probe_whisper_runtime()
+        runtime = _probe_with_gpu_warmup()
         WHISPER_RUNTIME = runtime
         CPU_WHISPER_RUNTIME = runtime if runtime.get("device") == "cpu" else _probe_cpu_whisper_runtime(worker_python)
         device_label = f"CUDA ({runtime.get('cudaDevices', 0)} GPU)" if runtime["device"] == "cuda" else "CPU"
@@ -114,6 +119,50 @@ def detect_whisper_runtime() -> None:
                            "nvidiaSmi": False, "nvidiaSmiError": "", "fallbackReason": str(exc),
                            "requestedDevice": WHISPER_DEVICE_CHOICE}
         CPU_WHISPER_RUNTIME = WHISPER_RUNTIME
+
+
+def _probe_with_gpu_warmup() -> dict:
+    """Wake the GPU and retry the real CUDA probe before selecting CPU."""
+    if WHISPER_DEVICE_CHOICE == "cpu":
+        print("[whisper] GPU warmup skipped — CPU explicitly requested")
+        return probe_whisper_runtime("cpu")
+
+    last_runtime: dict | None = None
+    for attempt in range(1, GPU_WARMUP_ATTEMPTS + 1):
+        print(f"[whisper] GPU warmup attempt {attempt}/{GPU_WARMUP_ATTEMPTS}: querying NVIDIA runtime", flush=True)
+        _wake_gpu()
+        try:
+            runtime = probe_whisper_runtime("cuda" if WHISPER_DEVICE_CHOICE == "auto" else WHISPER_DEVICE_CHOICE)
+            last_runtime = runtime
+            if runtime.get("device") == "cuda" and runtime.get("available"):
+                print(f"[whisper] GPU warmup succeeded on attempt {attempt}", flush=True)
+                return runtime
+            print(f"[whisper] GPU warmup probe did not select CUDA: {runtime.get('fallbackReason', 'unknown reason')}", flush=True)
+        except Exception as exc:
+            print(f"[whisper] GPU warmup probe failed on attempt {attempt}: {exc}", flush=True)
+        if attempt < GPU_WARMUP_ATTEMPTS:
+            print(f"[whisper] waiting {GPU_WARMUP_DELAY_SECONDS:g}s before retry", flush=True)
+            time.sleep(GPU_WARMUP_DELAY_SECONDS)
+
+    if last_runtime is not None:
+        return last_runtime
+    return probe_whisper_runtime("cpu")
+
+
+def _wake_gpu() -> None:
+    """Issue a lightweight NVIDIA query to wake the device before CUDA init."""
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name,pci.bus_id", "--format=csv,noheader"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        detail = result.stdout.strip() or "device detected"
+        print(f"[whisper] nvidia-smi ready: {detail}", flush=True)
+    except Exception as exc:
+        print(f"[whisper] nvidia-smi wake query failed: {exc}", flush=True)
 
 
 def _probe_cpu_whisper_runtime(worker_python: str) -> dict:

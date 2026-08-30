@@ -4,6 +4,12 @@ All notable changes to XoloLingua will be documented in this file.
 
 This project follows Semantic Versioning.
 
+## Unreleased
+
+### Added
+
+- Added a logged CUDA warmup with NVIDIA wake-up and retried Whisper validation before selecting the CPU fallback.
+
 ## 1.1.0 - 2026-08-16
 
 ### Added
