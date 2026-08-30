@@ -97,6 +97,9 @@ export async function transcribeWhisperInBatches({
   let runtimeRestartCount = 0;
   let encoderBatchCallCount = 0;
   let decoderGenerationCallCount = 0;
+  let disposedInputResourceCount = 0;
+  let disposedGenerationOutputCount = 0;
+  let disposedGenerationResourceCount = 0;
   let batchStrategy = "full-generate-batch";
   let downgradeReason = "";
   const generateBatchSizes = [];
@@ -121,6 +124,7 @@ export async function transcribeWhisperInBatches({
     const inferenceStartedAt = now();
     attemptedGenerationCallCount += 1;
     let generated;
+    let generationError;
     try {
       const generationOptions = {
         return_token_timestamps: true,
@@ -141,6 +145,7 @@ export async function transcribeWhisperInBatches({
       encoderBatchCallCount += batchResult.encoderBatchCallCount;
       decoderGenerationCallCount += batchResult.decoderGenerationCallCount;
     } catch (error) {
+      generationError = error;
       inferenceMs += elapsed(inferenceStartedAt, now);
       if (selected.length > 1 && isLikelyWebGpuMemoryError(error)) {
         const previousBatchSize = effectiveBatchSize;
@@ -180,15 +185,36 @@ export async function transcribeWhisperInBatches({
         `Internal Whisper batch generation failed at batch ${selected.length}: ${errorMessage(error)}`,
         { cause: error },
       );
+    } finally {
+      const inputDisposal = await disposeWhisperResources([inputs, ...features]);
+      disposedInputResourceCount += inputDisposal.resourceCount;
+      if (!generationError && inputDisposal.errors.length > 0) {
+        throw new BatchedWhisperRuntimeError(
+          `Whisper input cleanup failed: ${inputDisposal.errors.join(" | ")}`,
+        );
+      }
     }
     inferenceMs += elapsed(inferenceStartedAt, now);
     generationCallCount += 1;
     generateBatchSizes.push(selected.length);
-    decodedWindows.push(...decodeGeneratedBatch({
-      generated,
-      windows: selected,
-      tokenizer: activeRecognizer.tokenizer,
-    }));
+    let decodedBatch;
+    try {
+      decodedBatch = decodeGeneratedBatch({
+        generated,
+        windows: selected,
+        tokenizer: activeRecognizer.tokenizer,
+      });
+    } finally {
+      const disposal = await disposeWhisperGenerationOutputs(generated);
+      disposedGenerationOutputCount += disposal.outputCount;
+      disposedGenerationResourceCount += disposal.resourceCount;
+      if (disposal.errors.length > 0) {
+        throw new BatchedWhisperRuntimeError(
+          `Whisper GPU output cleanup failed: ${disposal.errors.join(" | ")}`,
+        );
+      }
+    }
+    decodedWindows.push(...decodedBatch);
     offset += selected.length;
     onProgress({
       completedWindows: offset,
@@ -227,6 +253,9 @@ export async function transcribeWhisperInBatches({
       runtimeRestartCount,
       encoderBatchCallCount,
       decoderGenerationCallCount,
+      disposedInputResourceCount,
+      disposedGenerationOutputCount,
+      disposedGenerationResourceCount,
       batchStrategy,
       generateBatchSizes,
       downgradeReason,
@@ -238,6 +267,38 @@ export async function transcribeWhisperInBatches({
       ...alignment.metrics,
     },
   };
+}
+
+export async function disposeWhisperGenerationOutputs(generated) {
+  const outputs = Array.isArray(generated) ? generated : generated ? [generated] : [];
+  const disposal = await disposeWhisperResources(outputs);
+  return { outputCount: outputs.length, ...disposal };
+}
+
+async function disposeWhisperResources(resources) {
+  const seen = new Set();
+  const errors = [];
+  let resourceCount = 0;
+
+  const disposeValue = async (value) => {
+    if (!value || (typeof value !== "object" && typeof value !== "function") || seen.has(value)) return;
+    seen.add(value);
+    if (typeof value.dispose === "function") {
+      try {
+        await value.dispose();
+        resourceCount += 1;
+      } catch (error) {
+        errors.push(errorMessage(error));
+      }
+      return;
+    }
+    for (const child of Array.isArray(value) ? value : Object.values(value)) {
+      await disposeValue(child);
+    }
+  };
+
+  for (const resource of resources) await disposeValue(resource);
+  return { resourceCount, errors };
 }
 
 export function alignWhisperWordsToVadSegments(words, vadSegments, { toleranceSeconds = 1 } = {}) {

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   alignWhisperWordsToVadSegments,
   createWhisperWindows,
+  disposeWhisperGenerationOutputs,
   transcribeWhisperInBatches,
 } from "../frontend/batched_whisper_runtime.js";
 
@@ -51,6 +52,22 @@ test("word alignment preserves VAD timestamps and segment indices without duplic
   });
 });
 
+test("Whisper generation cleanup disposes KV caches and nested attention tensors exactly once", async () => {
+  const disposed = [];
+  const sharedTensor = { dispose: async () => disposed.push("shared") };
+  const output = {
+    sequences: { dispose: () => disposed.push("sequences") },
+    token_timestamps: { dispose: () => disposed.push("timestamps") },
+    past_key_values: { dispose: async () => disposed.push("kv-cache") },
+    cross_attentions: [[sharedTensor], [sharedTensor]],
+  };
+
+  const report = await disposeWhisperGenerationOutputs(output);
+
+  assert.deepEqual(disposed.sort(), ["kv-cache", "sequences", "shared", "timestamps"]);
+  assert.deepEqual(report, { outputCount: 1, resourceCount: 4, errors: [] });
+});
+
 test("generic internal Whisper batching sends four windows through one model.generate call", async () => {
   const generateBatchSizes = [];
   const recognizer = createFakeRecognizer({ generateBatchSizes });
@@ -71,7 +88,32 @@ test("generic internal Whisper batching sends four windows through one model.gen
   assert.equal(result.metrics.effectiveBatchSize, 4);
   assert.equal(result.metrics.windowCount, 4);
   assert.equal(result.metrics.generationCallCount, 1);
+  assert.equal(result.metrics.disposedInputResourceCount, 5);
+  assert.equal(result.metrics.disposedGenerationOutputCount, 1);
+  assert.equal(result.metrics.disposedGenerationResourceCount, 2);
   assert.equal(result.segments[0].text, "bonjour monde");
+});
+
+test("long-form sequential WebGPU decoding releases every window output before continuing", async () => {
+  const generateBatchSizes = [];
+  const recognizer = createFakeRecognizer({ generateBatchSizes });
+
+  const result = await transcribeWhisperInBatches({
+    recognizer,
+    audioInput: new Float32Array(90),
+    sampleRate: 10,
+    vadSegments: [{ index: 1, start: 0, end: 9 }],
+    sourceLanguage: "fr",
+    initialBatchSize: 1,
+    chunkSeconds: 3,
+    strideSeconds: 0.5,
+  });
+
+  assert.deepEqual(generateBatchSizes, [1, 1, 1, 1]);
+  assert.equal(result.metrics.windowCount, 4);
+  assert.equal(result.metrics.disposedInputResourceCount, 4);
+  assert.equal(result.metrics.disposedGenerationOutputCount, 4);
+  assert.equal(result.metrics.disposedGenerationResourceCount, 8);
 });
 
 test("Whisper-specific batching batches the encoder and keeps decoder generation at batch one", async () => {
@@ -136,7 +178,7 @@ test("internal Whisper batching downgrades from four to two after WebGPU memory 
 
 function createFakeRecognizer({ generateBatchSizes, encoderBatchSizes, failGenerate = () => {} }) {
   const processor = async () => ({
-    input_features: { dims: [1, 2, 3] },
+    input_features: { dims: [1, 2, 3], dispose() {} },
   });
   processor.feature_extractor = {
     config: {
@@ -160,9 +202,11 @@ function createFakeRecognizer({ generateBatchSizes, encoderBatchSizes, failGener
       return {
         sequences: {
           tolist: () => Array.from({ length: batchSize }, () => [1n, 2n, 3n]),
+          dispose() {},
         },
         token_timestamps: {
           tolist: () => Array.from({ length: batchSize }, () => [0, 0.1, 0.2]),
+          dispose() {},
         },
       };
     },
@@ -204,5 +248,5 @@ function createFakeRecognizer({ generateBatchSizes, encoderBatchSizes, failGener
 }
 
 function concatenateFakeTensors(tensors) {
-  return { dims: [tensors.length, ...tensors[0].dims.slice(1)] };
+  return { dims: [tensors.length, ...tensors[0].dims.slice(1)], dispose() {} };
 }
