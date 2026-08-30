@@ -9,6 +9,7 @@ This project follows Semantic Versioning.
 ### Added
 
 - Added a logged CUDA warmup with NVIDIA wake-up and retried Whisper validation before selecting the CPU fallback.
+- Added CPU retry handling when CUDA becomes unavailable during language detection after a successful startup probe.
 
 ## 1.1.0 - 2026-08-16
 

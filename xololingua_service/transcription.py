@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import subprocess
 import uuid
 from pathlib import Path
 
@@ -24,7 +25,10 @@ def detect_audio_language(audio_path: Path, runtime: dict | None = None, job_id:
     if not use_worker:
         raise RuntimeError("Language detection requires the faster-whisper worker runtime.")
 
-    return _detect_audio_language_worker(audio_path, worker_python, job_id, selected_runtime)
+    try:
+        return _detect_audio_language_worker(audio_path, worker_python, job_id, selected_runtime)
+    except subprocess.CalledProcessError as error:
+        return _retry_language_detection_on_cpu(error, lambda cpu: _detect_audio_language_worker(audio_path, worker_python, job_id, cpu), selected_runtime)
 
 
 def detect_audio_languages(audio_paths: list[Path], runtime: dict | None = None, job_id: str | None = None) -> list[dict]:
@@ -40,7 +44,23 @@ def detect_audio_languages(audio_paths: list[Path], runtime: dict | None = None,
     if not use_worker:
         raise RuntimeError("Language detection requires the faster-whisper worker runtime.")
 
-    return _detect_audio_languages_worker(audio_paths, worker_python, job_id, selected_runtime)
+    try:
+        return _detect_audio_languages_worker(audio_paths, worker_python, job_id, selected_runtime)
+    except subprocess.CalledProcessError as error:
+        return _retry_language_detection_on_cpu(error, lambda cpu: _detect_audio_languages_worker(audio_paths, worker_python, job_id, cpu), selected_runtime)
+
+
+def _retry_language_detection_on_cpu(error: subprocess.CalledProcessError, retry, runtime: dict):
+    detail = (error.stderr or error.output or str(error)).strip()
+    if runtime.get("device") != "cuda" or "cuda" not in detail.lower():
+        raise error
+    cpu_runtime = whisper_runtime.CPU_WHISPER_RUNTIME
+    if not cpu_runtime.get("available"):
+        raise RuntimeError(
+            f"GPU language detection failed and CPU fallback is unavailable: {detail}"
+        ) from error
+    print(f"[whisper] GPU language detection failed: {detail.splitlines()[-1] if detail else error}; retrying on CPU", flush=True)
+    return retry({**cpu_runtime, "fallbackReason": f"Runtime fallback after CUDA language detection failure: {detail}"})
 
 
 def _detect_audio_language_worker(audio_path: Path, worker_python: str, job_id: str | None, runtime: dict) -> dict:
