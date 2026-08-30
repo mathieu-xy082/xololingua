@@ -12,12 +12,14 @@ This project follows Semantic Versioning.
 - Added a logged CUDA warmup with NVIDIA wake-up and retried Whisper validation before selecting the CPU fallback.
 - Added an explicit log confirming that the faster-whisper mini inference completed successfully on CUDA.
 - Added device-aware ASR scheduling: sequential WebGPU inference and adaptive 4/2/1 batching for WASM CPU.
+- Added timestamp-preserving Whisper WebGPU decoding over overlapping 30-second windows, official overlap decoding, VAD timestamp realignment, and an automated 1/2/4 internal-batch capability benchmark.
 
 ### Fixed
 
 - Invalidated the PWA cache after device-aware ASR worker changes so browsers load the current GPU/CPU scheduling logic.
 - Updated `pdm run web` to launch the default Chromium-family browser with Vulkan/WebGPU flags in a dedicated XoloLingua profile.
 - Added CPU retry handling when CUDA becomes unavailable during language detection after a successful startup probe.
+- Kept production WebGPU decoding at the validated batch size of 1 because the current Whisper ONNX/WebGPU sessions invalidate the GPU context at batch sizes 2 and 4.
 
 ## 1.1.0 - 2026-08-16
 

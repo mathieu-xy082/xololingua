@@ -29,6 +29,7 @@ distribution = false
 service = "python local_service.py"
 web = "python scripts/web_serve.py"
 benchmark-asr-webgpu = "python scripts/asr_dtype_benchmark.py"
+benchmark-asr-batching = "python scripts/asr_batching_benchmark.py"
 debug-webgpu-chrome = "python scripts/launch_webgpu_chrome.py"
 browser-install = "python -m playwright install chromium"
 browser-e2e = "python scripts/browser_e2e_validate.py"

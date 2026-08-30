@@ -50,7 +50,7 @@ test("service worker precaches the full frontend module graph used by offline as
     ...appHybridRouterWiringSource.matchAll(/import\s+[^;]+from\s+["']\.\/(client_pipeline_router\.js)["']/g),
     ...clientPipelineRouterSource.matchAll(/import\s+[^;]+from\s+["']\.\/(pipeline_stage_contract\.js)["']/g),
     ...clientPipelineCapabilitiesSource.matchAll(/import\s+[^;]+from\s+["']\.\/(client_[^"']+\.js)["']/g),
-    ...transcriptionWorkerSource.matchAll(/import\s+[^;]+from\s+["']\.\/(browser_inference_device\.js)["']/g),
+    ...transcriptionWorkerSource.matchAll(/import\s+[^;]+from\s+["']\.\/((?:browser_inference_device|batched_whisper_runtime)\.js)["']/g),
     ...translationWorkerSource.matchAll(/import\s+[^;]+from\s+["']\.\/(browser_inference_device\.js)["']/g),
     ...clientTranscriberSource.matchAll(/import\s+[^;]+from\s+["']\.\/(worker_request_session\.js)["']/g),
     ...clientTranslatorSource.matchAll(/import\s+[^;]+from\s+["']\.\/(worker_request_session\.js)["']/g),
