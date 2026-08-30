@@ -101,6 +101,14 @@ The production PWA does not require users to prepare model files manually. When 
 
 The first run therefore requires internet access to Hugging Face. If the resolved OPUS-MT repository does not exist, a download fails, or the browser cannot run the model, the hybrid router records the failure and uses the Python fallback. The former packaged-model manifests and manual bootstrap command have been removed; model delivery is entirely driven by the selected language pair.
 
+To benchmark the available Whisper quantizations on the same 30-second WebGPU sample, run:
+
+```bash
+pdm run benchmark-asr-webgpu --video /path/to/video.mp4
+```
+
+The command compares `fp16`, `q4f16`, and `q4`, rejects WASM fallbacks and text similarity regressions, purges each transient model, and writes a ranked JSON report under `~/.cache/xololingua/benchmarks/`.
+
 Remote model responses bypass the browser HTTP cache and are not stored in the PWA shell cache. Temporary Transformers.js caching is enabled only to share files between warmup and inference within one pipeline run, and is purged after use.
 
 The ffmpeg.wasm audio-extraction prototype keeps explicit browser memory and duration guards: normal client-side operation accepts videos up to 1 hour or 800 MiB by default, while CI/demo runs can still pass shorter per-extractor overrides (for example 60 seconds) to keep validation fast. It rejects inputs before loading the WASM runtime when `File.size` metadata is available, then rechecks the fetched byte buffer before writing into the ffmpeg.wasm virtual filesystem, releasing the runtime when `releaseAfterRun` is enabled, so streams or synthetic file-like inputs cannot bypass the browser memory guard. Browser metadata probing fails explicitly after 10 seconds by default so stalled video headers do not leave object URLs or extraction promises hanging. The extractor exposes an opt-in `releaseAfterRun` mode that terminates/exits the ffmpeg.wasm runtime after virtual filesystem cleanup, which is useful for demo flows that process one short clip at a time and need to return the WASM heap promptly. If ffmpeg.wasm cannot transcode a selected file, the browser error keeps the original failure as its cause while directing users to the Python fallback. Larger media or unsupported codecs should use the explicit Python `/api/extract-audio` fallback until a streaming/WebCodecs path is available.

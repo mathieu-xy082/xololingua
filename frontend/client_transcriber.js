@@ -66,6 +66,7 @@ export function createClientTranscriber({
         resultType: "warmup-complete",
         request: {
           modelId: model.modelId,
+          ...(model.dtype ? { dtype: model.dtype } : {}),
           sampleSeconds: warmupSampleSeconds,
           sourceLanguage: request?.sourceLanguage || "auto",
           ...(model.remoteModels ? { remoteModels: true } : {}),
@@ -146,6 +147,7 @@ export function createClientTranscriber({
         remoteModels: model.remoteModels,
         purgeAfterUse: model.purgeAfterUse,
         device: model.device,
+        dtype: model.dtype,
       });
       const activeWarmupMetadata = warmupMetadata || {};
       let result;
@@ -205,6 +207,7 @@ function resolveModelRequest({ request, modelId, modelResolver, remoteModels, pu
     remoteModels: resolved?.remote ?? remoteModels,
     purgeAfterUse: resolved?.purgeAfterUse ?? purgeAfterUse,
     device: resolved?.device || resolved?.devicePreference || devicePreference,
+    dtype: resolved?.dtype,
   };
 }
 
@@ -215,6 +218,7 @@ async function prepareTranscriptionWorkerRequest({
   remoteModels = false,
   purgeAfterUse = false,
   device,
+  dtype,
 }) {
   const audio = await prepareTranscriptionAudio(request.audio, environment);
   return {
@@ -224,6 +228,7 @@ async function prepareTranscriptionWorkerRequest({
     ...(remoteModels ? { remoteModels: true } : {}),
     ...(purgeAfterUse ? { purgeAfterUse: true } : {}),
     ...(device ? { device } : {}),
+    ...(dtype ? { dtype } : {}),
   };
 }
 

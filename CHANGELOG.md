@@ -8,6 +8,7 @@ This project follows Semantic Versioning.
 
 ### Added
 
+- Added a reproducible WebGPU ASR dtype benchmark for `fp16`, `q4f16`, and `q4`, including quality similarity, timing, cache-purge, and adapter diagnostics.
 - Added a logged CUDA warmup with NVIDIA wake-up and retried Whisper validation before selecting the CPU fallback.
 - Added an explicit log confirming that the faster-whisper mini inference completed successfully on CUDA.
 - Added device-aware ASR scheduling: sequential WebGPU inference and adaptive 4/2/1 batching for WASM CPU.
