@@ -16,6 +16,8 @@ This project follows Semantic Versioning.
 
 ### Fixed
 
+- Released Whisper input tensors, token timestamps, attention tensors, and KV caches after every long-form WebGPU window to prevent accumulated GPU resources from invalidating the browser compute context.
+- Made bounded pivot translation hops explicit in progress and diagnostics, including both model identifiers and aggregate timing/cache-purge metadata.
 - Invalidated the PWA cache after device-aware ASR worker changes so browsers load the current GPU/CPU scheduling logic.
 - Updated `pdm run web` to launch the default Chromium-family browser with Vulkan/WebGPU flags in a dedicated XoloLingua profile.
 - Added CPU retry handling when CUDA becomes unavailable during language detection after a successful startup probe.

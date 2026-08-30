@@ -25,6 +25,27 @@ export function beginModelDelivery(tracker, { stage, modelId } = {}) {
 export function updateModelDelivery(tracker, event = {}) {
   if (!tracker?.current) return tracker || createModelDeliveryTracker();
 
+  if (event.stage === "translation-route") {
+    return {
+      ...tracker,
+      current: {
+        ...tracker.current,
+        modelId: event.modelId || tracker.current.modelId,
+        phase: "preparing",
+        files: {},
+        file: "",
+        loaded: null,
+        total: null,
+        completedFileCount: 0,
+        fileCount: 0,
+        progress: clampProgress(event.progress || 0),
+        routeIndex: event.routeIndex,
+        routeCount: event.routeCount,
+        message: event.message || `Preparing translation hop ${event.routeIndex}/${event.routeCount}...`,
+      },
+    };
+  }
+
   if (event.stage === "inference-runtime") {
     return {
       ...tracker,
@@ -105,6 +126,7 @@ export function finishModelDelivery(tracker, { stageResult, modelId } = {}) {
       executionDeviceLabel: metadata.executionDeviceLabel || metadata.executionDevice || "unknown runtime",
       deviceFallbackReason: metadata.deviceFallbackReason || "",
       translationRoute: Array.isArray(metadata.translationRoute) ? metadata.translationRoute : [],
+      translationHops: Array.isArray(metadata.translationHops) ? metadata.translationHops : [],
       pivotLanguage: metadata.pivotLanguage || "",
       timings: metadata.timings || {},
       warmupTimings: metadata.warmup?.timings || {},
@@ -161,8 +183,9 @@ export function describeModelDelivery(tracker) {
   const deletedFiles = completed.reduce((total, entry) => total + entry.filesDeleted, 0);
   const runtimeLabels = [...new Set(completed.map((entry) => entry.executionDeviceLabel).filter(Boolean))];
   const translationRoute = completed.find((entry) => entry.stage === "translation")?.translationRoute || [];
+  const translationModels = translationRoute.map((step) => step.modelId).filter(Boolean);
   const routeSummary = translationRoute.length > 1
-    ? ` Translation route: ${[translationRoute[0].sourceLanguage, ...translationRoute.map((step) => step.targetLanguage)].join(" → ")}.`
+    ? ` Translation route: ${[translationRoute[0].sourceLanguage, ...translationRoute.map((step) => step.targetLanguage)].join(" → ")}${translationModels.length > 0 ? ` (${translationModels.join(" then ")})` : ""}.`
     : "";
   const fallbackReasons = [...new Set(completed
     .map((entry) => entry.deviceFallbackReason)
@@ -188,7 +211,10 @@ function formatTranscriptionPerformance(completed) {
     : timings.audioSeconds > 0
       ? (timings.inferenceMs / 1000) / timings.audioSeconds
       : 0;
-  return ` ASR: ${formatSeconds(timings.inferenceMs)} inference for ${timings.audioSeconds.toFixed(1)}s audio (${realtimeFactor.toFixed(2)}× realtime)${warmupMs > 0 ? `; warmup ${formatSeconds(warmupMs)}` : ""}.`;
+  const cleanup = Number.isFinite(timings.disposedGenerationOutputCount)
+    ? `; released ${timings.disposedGenerationOutputCount} generation outputs (${Number(timings.disposedGenerationResourceCount || 0)} resources)`
+    : "";
+  return ` ASR: ${formatSeconds(timings.inferenceMs)} inference for ${timings.audioSeconds.toFixed(1)}s audio (${realtimeFactor.toFixed(2)}× realtime)${warmupMs > 0 ? `; warmup ${formatSeconds(warmupMs)}` : ""}${cleanup}.`;
 }
 
 function formatTranslationPerformance(completed) {
@@ -196,7 +222,8 @@ function formatTranslationPerformance(completed) {
   const timings = translation?.timings;
   if (!Number.isFinite(timings?.inferenceMs) || !Number.isFinite(timings?.segmentCount)) return "";
   const warmupMs = Number(translation?.warmupTimings?.warmupTotalMs || 0);
-  return ` Translation: ${formatSeconds(timings.inferenceMs)} inference for ${timings.segmentCount} segments${warmupMs > 0 ? `; warmup ${formatSeconds(warmupMs)}` : ""}.`;
+  const hopLabel = Number(timings.hopCount) > 1 ? ` across ${timings.hopCount} hops` : "";
+  return ` Translation: ${formatSeconds(timings.inferenceMs)} inference for ${timings.segmentCount} segments${hopLabel}${warmupMs > 0 ? `; warmup ${formatSeconds(warmupMs)}` : ""}.`;
 }
 
 function formatSeconds(milliseconds) {

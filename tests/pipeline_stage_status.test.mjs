@@ -43,3 +43,24 @@ test("pipeline stage summary reads fallback endpoints and reason from canonical 
     "Transcription: Python fallback (python-backend) via POST /api/transcribe-audio, POST /api/subtitle-jobs — fallback reason: WebGPU unavailable",
   );
 });
+
+test("pipeline stage summary exposes the browser device and French to Spanish pivot models", () => {
+  const summary = formatPipelineStageSummary([{
+    stage: "translation",
+    runtime: "browser",
+    strategy: "remote-transformers.js",
+    metadata: {
+      executionDevice: "webgpu",
+      executionDeviceLabel: "WebGPU (NVIDIA Lovelace)",
+      translationRoute: [
+        { sourceLanguage: "fr", targetLanguage: "en", modelId: "Xenova/opus-mt-fr-en" },
+        { sourceLanguage: "en", targetLanguage: "es", modelId: "Xenova/opus-mt-en-es" },
+      ],
+    },
+  }]);
+
+  assert.equal(
+    summary,
+    "Translation: Browser (remote-transformers.js) on WebGPU (NVIDIA Lovelace) via fr → en → es using Xenova/opus-mt-fr-en then Xenova/opus-mt-en-es",
+  );
+});

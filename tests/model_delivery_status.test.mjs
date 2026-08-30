@@ -144,7 +144,7 @@ test("model delivery status exposes the browser runtime fallback reason", () => 
   assert.match(describeModelDelivery(tracker).status, /WebGPU fallback reason: WebGPU pipeline initialization failed: unsupported operator\./);
 });
 
-test("model delivery status exposes a pivot translation route", () => {
+test("model delivery status exposes a French to Spanish pivot route and both model identifiers", () => {
   let tracker = beginModelDelivery(createModelDeliveryTracker(), {
     stage: "translation",
     modelId: "Xenova/opus-mt-fr-en",
@@ -156,18 +156,43 @@ test("model delivery status exposes a pivot translation route", () => {
       runtime: "browser",
       metadata: {
         cachePurged: true,
-        filesDeleted: 8,
+        filesDeleted: 11,
         executionDevice: "webgpu",
         executionDeviceLabel: "WebGPU (NVIDIA Lovelace)",
         translationRoute: [
-          { sourceLanguage: "fr", targetLanguage: "en" },
-          { sourceLanguage: "en", targetLanguage: "zh" },
+          { sourceLanguage: "fr", targetLanguage: "en", modelId: "Xenova/opus-mt-fr-en" },
+          { sourceLanguage: "en", targetLanguage: "es", modelId: "Xenova/opus-mt-en-es" },
         ],
       },
     },
   });
 
-  assert.match(describeModelDelivery(tracker).status, /Translation route: fr → en → zh\./);
+  assert.match(
+    describeModelDelivery(tracker).status,
+    /Translation route: fr → en → es \(Xenova\/opus-mt-fr-en then Xenova\/opus-mt-en-es\)\./,
+  );
+});
+
+test("model delivery status switches model identity between pivot translation hops", () => {
+  let tracker = beginModelDelivery(createModelDeliveryTracker(), {
+    stage: "translation",
+    modelId: "Xenova/opus-mt-fr-en",
+  });
+  tracker = updateModelDelivery(tracker, {
+    stage: "translation-route",
+    progress: 50,
+    routeIndex: 2,
+    routeCount: 2,
+    modelId: "Xenova/opus-mt-en-es",
+    message: "Translation hop 2/2: preparing Xenova/opus-mt-en-es (en → es)...",
+  });
+
+  assert.deepEqual(describeModelDelivery(tracker), {
+    status: "Translation hop 2/2: preparing Xenova/opus-mt-en-es (en → es)...",
+    progress: 50,
+    progressText: "50%",
+  });
+  assert.equal(tracker.current.modelId, "Xenova/opus-mt-en-es");
 });
 
 test("model delivery status exposes the selected inference engine while work is running", () => {
@@ -257,6 +282,38 @@ test("model delivery status exposes completed translation performance timings", 
     progress: 100,
     progressText: "purged",
   });
+});
+
+test("model delivery status reports long-form Whisper resource cleanup", () => {
+  let tracker = beginModelDelivery(createModelDeliveryTracker(), {
+    stage: "transcription",
+    modelId: "Xenova/whisper-base",
+  });
+  tracker = finishModelDelivery(tracker, {
+    modelId: "Xenova/whisper-base",
+    stageResult: {
+      stage: "transcription",
+      runtime: "browser",
+      metadata: {
+        cachePurged: true,
+        filesDeleted: 7,
+        executionDevice: "webgpu",
+        executionDeviceLabel: "WebGPU (NVIDIA Lovelace)",
+        timings: {
+          inferenceMs: 8500,
+          audioSeconds: 17,
+          realtimeFactor: 0.5,
+          disposedGenerationOutputCount: 48,
+          disposedGenerationResourceCount: 192,
+        },
+      },
+    },
+  });
+
+  assert.match(
+    describeModelDelivery(tracker).status,
+    /released 48 generation outputs \(192 resources\)/,
+  );
 });
 
 test("model delivery status exposes an unconfirmed purge", () => {
