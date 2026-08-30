@@ -75,7 +75,7 @@ export function createClientTranscriber({
         },
         onProgress,
         timeoutMs: warmupTimeoutMs,
-        timeoutMessage: `Browser transcription warmup timed out after ${warmupTimeoutMs}ms.`,
+        timeoutMessage: `Browser transcription warmup reported no progress for ${warmupTimeoutMs}ms.`,
         failureMessage: "Browser transcription warmup failed.",
       }).then((metadata) => {
         warmupMetadata = metadata || {};
@@ -195,7 +195,7 @@ function createPersistentTranscriptionWorkerClient({ session, maxWorkerResponseM
     request,
     onProgress,
     timeoutMs: maxWorkerResponseMs,
-    timeoutMessage: `Browser transcription worker timed out after ${maxWorkerResponseMs}ms.`,
+    timeoutMessage: `Browser transcription worker reported no progress for ${maxWorkerResponseMs}ms.`,
     failureMessage: "Browser transcription worker failed.",
   });
 }

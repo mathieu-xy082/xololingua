@@ -24,7 +24,7 @@ const MAX_DURATION_SECONDS = 2.5 * 60 * 60;
 const SEGMENT_SECONDS = 12;
 const LOCAL_SERVICE_URL = "http://127.0.0.1:8765";
 globalThis.__xololinguaDynamicModels = true;
-const APP_ASSET_VERSION = "2026-08-30-3";
+const APP_ASSET_VERSION = "2026-08-30-4";
 const backendClient = createBackendClient({ baseUrl: LOCAL_SERVICE_URL });
 const clientPipelineCapabilities = collectClientPipelineCapabilities();
 const appClientAdapters = createAppClientAdapters({
@@ -833,7 +833,9 @@ function syncSubtitleProgress(job) {
     state.modelDelivery.current?.stage === "translation"
     && (job.stage === "translation-route" || job.stage === "loading-model" || job.stage === "translation-warmup")
   ) {
-    const preparation = clampProgress(state.modelDelivery.current.progress);
+    const preparation = typeof job.translationProgress === "number"
+      ? clampProgress(job.translationProgress)
+      : clampProgress(state.modelDelivery.current.progress);
     setSubtitleProgress(100, preparation);
     return;
   }

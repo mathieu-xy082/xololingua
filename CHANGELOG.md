@@ -16,6 +16,8 @@ This project follows Semantic Versioning.
 
 ### Fixed
 
+- Changed browser-worker inference limits from absolute deadlines to inactivity timeouts refreshed by progress, preventing healthy long-form WebGPU transcription from being discarded after five minutes.
+- Allocated fixed five-percent model-preparation budgets per translation hop and kept the remaining progress monotonic across direct and English-pivot inference.
 - Released Whisper input tensors, token timestamps, attention tensors, and KV caches after every long-form WebGPU window to prevent accumulated GPU resources from invalidating the browser compute context.
 - Made bounded pivot translation hops explicit in progress and diagnostics, including both model identifiers and aggregate timing/cache-purge metadata.
 - Invalidated the PWA cache after device-aware ASR worker changes so browsers load the current GPU/CPU scheduling logic.

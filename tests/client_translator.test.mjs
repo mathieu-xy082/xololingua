@@ -391,8 +391,99 @@ test("client translator fails fast when translation warmup times out", async () 
       sourceLanguage: "fr",
       targetLanguage: "en",
     }),
-    /Browser translation warmup worker did not respond within 5ms\./,
+    /Browser translation warmup worker reported no progress for 5ms\./,
   );
+});
+
+test("remote French to Spanish translation reserves five percent per model and splits inference across both hops", async () => {
+  const workerInstances = [];
+  class BudgetWorker {
+    constructor() {
+      this.messages = [];
+      workerInstances.push(this);
+    }
+
+    postMessage(message) {
+      this.messages.push(message);
+      queueMicrotask(() => {
+        if (message.type === "warmup") {
+          this.onmessage({
+            data: {
+              type: "progress",
+              event: { stage: "loading-model", progress: 100 },
+            },
+          });
+          this.onmessage({
+            data: {
+              type: "progress",
+              event: { stage: "translation-warmup", progress: 70 },
+            },
+          });
+          this.onmessage({ data: { type: "warmup-complete", metadata: {} } });
+          return;
+        }
+        this.onmessage({
+          data: {
+            type: "progress",
+            event: { stage: "translating", progress: 0 },
+          },
+        });
+        this.onmessage({
+          data: {
+            type: "progress",
+            event: { stage: "translating", progress: 100 },
+          },
+        });
+        this.onmessage({
+          data: {
+            type: "result",
+            result: {
+              segments: message.request.segments.map((segment) => ({
+                index: segment.index,
+                text: `${message.request.targetLanguage.toUpperCase()}:${segment.text}`,
+              })),
+            },
+          },
+        });
+      });
+    }
+
+    terminate() {}
+  }
+  const progress = [];
+  const translator = createClientTranslator({
+    environment: { Worker: BudgetWorker },
+    workerUrl: "/frontend/translation_worker.js",
+    modelResolver: resolveTranslationModel,
+    warmupTimeoutMs: 1000,
+    maxWorkerResponseMs: 1000,
+  });
+
+  const result = await translator.translateSegments({
+    sourceLanguage: "fr",
+    targetLanguage: "es",
+    segments: [{ index: 1, start: 0, end: 1, text: "Bonjour" }],
+  }, (event) => progress.push(event));
+
+  assert.deepEqual(
+    progress.map(({ stage, progress: value, translationProgress }) => ({ stage, progress: value, translationProgress })),
+    [
+      { stage: "translation-route", progress: 0, translationProgress: 0 },
+      { stage: "loading-model", progress: 5, translationProgress: 5 },
+      { stage: "translation-warmup", progress: 5, translationProgress: 5 },
+      { stage: "translating", progress: 5, translationProgress: 5 },
+      { stage: "translating", progress: 50, translationProgress: 50 },
+      { stage: "translation-route", progress: 50, translationProgress: 50 },
+      { stage: "loading-model", progress: 55, translationProgress: 55 },
+      { stage: "translation-warmup", progress: 55, translationProgress: 55 },
+      { stage: "translating", progress: 55, translationProgress: 55 },
+      { stage: "translating", progress: 100, translationProgress: 100 },
+    ],
+  );
+  assert.deepEqual(result.segments, [{ index: 1, start: 0, end: 1, text: "ES:EN:Bonjour" }]);
+  assert.deepEqual(workerInstances[0].messages.map(({ type }) => type), [
+    "warmup", "translate", "warmup", "translate",
+  ]);
 });
 
 test("client translator maps worker progress into bounded translation progress events", async () => {
