@@ -146,6 +146,33 @@ class PipelineIntegrationTests(unittest.TestCase):
             self.assertTrue(all("translatedText" in s for s in status["segments"]))
             self.assertEqual(status["segments"][0]["translatedText"], "Hello world.")
 
+    def test_transcribe_audio_retries_cpu_when_cuda_worker_cannot_load(self):
+        audio_id = "b" * 32
+        segments = [{"index": 1, "start": 0.0, "end": 1.0}]
+        transcribed = [{**segments[0], "text": "Bonjour."}]
+        cuda_runtime = {"backend": "faster-whisper", "available": True, "device": "cuda", "model": "small", "computeType": "float16"}
+        cpu_runtime = {"backend": "faster-whisper", "available": True, "device": "cpu", "model": "base", "computeType": "int8"}
+        cuda_error = subprocess.CalledProcessError(
+            1, ["worker"], stderr="RuntimeError: CUDA failed with error CUDA-capable device(s) is/are busy or unavailable"
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            (Path(directory) / f"{audio_id}.wav").touch()
+            with (
+                mock.patch.object(http_api, "WORK_DIR", Path(directory)),
+                mock.patch.dict(runtime.WHISPER_RUNTIME, cuda_runtime, clear=True),
+                mock.patch.dict(runtime.CPU_WHISPER_RUNTIME, cpu_runtime, clear=True),
+                mock.patch.object(transcription, "transcribe_segments", side_effect=[cuda_error, transcribed]) as transcribe,
+            ):
+                response = self._post_json("/api/transcribe-audio", {
+                    "audioId": audio_id,
+                    "languageCode": "fr",
+                    "segments": segments,
+                })
+
+        self.assertEqual(response["segments"], transcribed)
+        self.assertEqual([call.kwargs["runtime"]["device"] for call in transcribe.call_args_list], ["cuda", "cpu"])
+
     def test_cancel_subtitle_job_endpoint_marks_job_cancelled(self):
         job_id = "d" * 32
         local_service.put_job(job_id, {

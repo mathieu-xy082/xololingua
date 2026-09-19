@@ -59,7 +59,9 @@ def _retry_language_detection_on_cpu(error: subprocess.CalledProcessError, retry
         raise RuntimeError(
             f"GPU language detection failed and CPU fallback is unavailable: {detail}"
         ) from error
-    print(f"[whisper] GPU language detection failed: {detail.splitlines()[-1] if detail else error}; retrying on CPU", flush=True)
+    sample = next((line for line in reversed(detail.splitlines()) if line.startswith("[whisper] language detection sample ")), "")
+    context = f"{sample}; " if sample else ""
+    print(f"[whisper] GPU language detection failed: {context}{detail.splitlines()[-1] if detail else error}; retrying on CPU", flush=True)
     return retry({**cpu_runtime, "fallbackReason": f"Runtime fallback after CUDA language detection failure: {detail}"})
 
 
@@ -138,6 +140,52 @@ def transcribe_segments(audio_path: Path, segments: list[dict], language_code: s
         return _transcribe_segments_worker(audio_path, segments, language_code, progress_callback, worker_python, job_id, selected_runtime)
     else:
         return _transcribe_segments_cli(audio_path, segments, language_code, progress_callback, job_id)
+
+
+def transcribe_segments_with_cpu_fallback(
+    audio_path: Path,
+    segments: list[dict],
+    language_code: str,
+    progress_callback=None,
+    job_id: str | None = None,
+    runtime: dict | None = None,
+    on_cpu_fallback=None,
+) -> list[dict]:
+    """Retry a failed CUDA worker on the independently probed CPU runtime."""
+    from .jobs import command_error_summary
+
+    selected_runtime = dict(runtime or whisper_runtime.WHISPER_RUNTIME)
+    try:
+        return transcribe_segments(
+            audio_path, segments, language_code, progress_callback, job_id,
+            runtime=selected_runtime,
+        )
+    except subprocess.CalledProcessError as gpu_error:
+        if selected_runtime.get("device") != "cuda":
+            raise
+
+        gpu_reason = command_error_summary(gpu_error)
+        cpu_runtime = whisper_runtime.CPU_WHISPER_RUNTIME
+        if not cpu_runtime.get("available"):
+            raise RuntimeError(
+                f"GPU transcription failed and CPU fallback is unavailable. "
+                f"GPU error: {gpu_reason}. "
+                f"CPU fallback error: {cpu_runtime.get('fallbackReason', 'unknown')}"
+            ) from gpu_error
+
+        if on_cpu_fallback:
+            on_cpu_fallback(gpu_reason)
+        print(f"[whisper] GPU transcription failed: {gpu_reason}; retrying on CPU", flush=True)
+        try:
+            return transcribe_segments(
+                audio_path, segments, language_code, progress_callback, job_id,
+                runtime={**cpu_runtime, "fallbackReason": f"Runtime fallback after CUDA failure: {gpu_reason}"},
+            )
+        except subprocess.CalledProcessError as cpu_error:
+            raise RuntimeError(
+                f"GPU transcription failed: {gpu_reason}. "
+                f"CPU fallback failed: {command_error_summary(cpu_error)}"
+            ) from cpu_error
 
 
 def _transcribe_segments_worker(
