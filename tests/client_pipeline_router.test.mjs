@@ -185,6 +185,81 @@ test("hybrid pipeline router falls back to the Python segmentation endpoint when
   });
 });
 
+test("hybrid pipeline router sends server-stored audio directly to Python VAD", async () => {
+  const calls = [];
+  const router = createHybridPipelineRouter({
+    capabilityReport: {
+      stages: { vad: { runtime: "browser", strategy: "vad-web" } },
+    },
+    clientAdapters: {
+      vad: async () => {
+        calls.push("browser");
+        throw new Error("Browser VAD must not receive server-only audio");
+      },
+    },
+    serverAdapters: {
+      vad: async (audio) => {
+        calls.push(["server", audio.audioId]);
+        return [{ start: 0, end: 1.5 }];
+      },
+    },
+  });
+
+  const result = await router.runVadSegmentation({
+    audioId: "audio-123",
+    audioBlob: null,
+    storage: "server",
+  });
+
+  assert.deepEqual(calls, [["server", "audio-123"]]);
+  assert.equal(result.runtime, "server-fallback");
+  assert.equal(result.strategy, "python-backend");
+  assert.deepEqual(result.metadata, { fallbackEndpoints: ["POST /api/segment-audio"] });
+});
+
+test("subtitle pipeline skips browser VAD when audio extraction fell back to Python", async () => {
+  const calls = [];
+  const router = createHybridPipelineRouter({
+    capabilityReport: {
+      stages: {
+        audioExtraction: { runtime: "browser", strategy: "ffmpeg.wasm" },
+        vad: { runtime: "browser", strategy: "vad-web" },
+        transcription: { runtime: "server-fallback", strategy: "unavailable" },
+        translation: { runtime: "server-fallback", strategy: "unavailable" },
+      },
+    },
+    clientAdapters: {
+      audioExtraction: async () => {
+        throw new Error("Video exceeds browser duration limit");
+      },
+      vad: async () => {
+        calls.push("browser-vad");
+        throw new Error("Browser VAD must not receive server-only audio");
+      },
+    },
+    serverAdapters: {
+      audioExtraction: async () => ({ audioId: "audio-123" }),
+      vad: async (audioId) => {
+        calls.push(["server-vad", audioId]);
+        return [{ start: 0, end: 1.5 }];
+      },
+      transcription: async ({ segments }) => segments.map((segment) => ({ ...segment, text: "Bonjour" })),
+      translation: async ({ segments }) => segments,
+    },
+  });
+
+  const result = await router.runSubtitlePipeline({
+    file: { name: "long.mp4" },
+    sourceLanguage: "fr",
+    targetLanguage: "en",
+  });
+
+  assert.deepEqual(calls, [["server-vad", "audio-123"]]);
+  assert.equal(result.vad.runtime, "server-fallback");
+  assert.equal(result.vad.strategy, "python-backend");
+  assert.deepEqual(result.vad.metadata, { fallbackEndpoints: ["POST /api/segment-audio"] });
+});
+
 test("hybrid pipeline router passes canonical browser VAD segments to transcription", async () => {
   const calls = [];
   const router = createHybridPipelineRouter({

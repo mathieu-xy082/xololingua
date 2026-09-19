@@ -55,6 +55,7 @@ export function createHybridPipelineRouter({
         browserAdapterLabel: "Browser VAD segmentation",
         serverAdapterLabel: "Python fallback VAD segmentation",
         input: audioId,
+        preferServer: isServerOnlyAudio(audioId),
         onProgress,
         capabilityReport,
         clientAdapters,
@@ -137,6 +138,7 @@ export function createHybridPipelineRouter({
         browserAdapterLabel: "Browser VAD segmentation",
         serverAdapterLabel: "Python fallback VAD segmentation",
         input: audioForPipeline,
+        preferServer: audioExtraction.runtime !== "browser" && isServerOnlyAudio(extractedAudio),
         onProgress: onVadProgress,
         capabilityReport,
         clientAdapters,
@@ -298,6 +300,11 @@ function isCanonicalStageResult(result, stageName) {
     && result?.metadata !== undefined;
 }
 
+function isServerOnlyAudio(audio) {
+  return Boolean(audio && typeof audio === "object" && audio.audioId
+    && !audio.audioBlob && !(audio.pcm instanceof Float32Array));
+}
+
 function normalizeStageResult({ stageName, runtime, strategy, payload, metadata }) {
   if (isCanonicalStageResult(payload, stageName)) {
     return payload;
@@ -324,6 +331,7 @@ async function runStage({
   browserAdapterLabel,
   serverAdapterLabel,
   input,
+  preferServer = false,
   onProgress,
   capabilityReport,
   clientAdapters,
@@ -333,7 +341,7 @@ async function runStage({
     runtime: "server-fallback",
     strategy: "unavailable",
   };
-  const useBrowser = stage.runtime === "browser";
+  const useBrowser = stage.runtime === "browser" && !preferServer;
   const adapters = useBrowser ? clientAdapters : serverAdapters;
   const adapter = adapters[stageName];
 
@@ -356,7 +364,9 @@ async function runStage({
   }
 
   const runtime = browserFailureReason || !useBrowser ? "server-fallback" : "browser";
-  const strategy = browserFailureReason ? "python-backend" : stage.strategy;
+  const strategy = browserFailureReason || (preferServer && stage.runtime === "browser")
+    ? "python-backend"
+    : stage.strategy;
   const adapterMetadata = (stageName === "transcription" || stageName === "translation")
     && payload?.metadata
     && typeof payload.metadata === "object"
