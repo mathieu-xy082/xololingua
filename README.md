@@ -8,7 +8,7 @@ The application is currently under development and has not published its first r
 
 - Drag-and-drop MP4 selection and video preview.
 - Validation of file type and the 2 h 30 min duration limit.
-- Whisper-based spoken-language identification and transcription, with CUDA support and a CPU fallback.
+- Whisper-based spoken-language identification from 10 clips distributed across long videos, with CUDA support and a CPU fallback. The source language can be selected or corrected manually before generating subtitles.
 - Silence-based audio segmentation with a review of segment timings.
 - Offline translation using locally installed Argos Translate language packages.
 - Asynchronous subtitle jobs with progress reporting and cancellation.

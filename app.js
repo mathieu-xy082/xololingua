@@ -24,7 +24,7 @@ const MAX_DURATION_SECONDS = 2.5 * 60 * 60;
 const SEGMENT_SECONDS = 12;
 const LOCAL_SERVICE_URL = "http://127.0.0.1:8765";
 globalThis.__xololinguaDynamicModels = true;
-const APP_ASSET_VERSION = "2026-09-20-1";
+const APP_ASSET_VERSION = "2026-09-20-2";
 const backendClient = createBackendClient({ baseUrl: LOCAL_SERVICE_URL });
 const clientPipelineCapabilities = collectClientPipelineCapabilities();
 const appClientAdapters = createAppClientAdapters({
@@ -105,6 +105,7 @@ const state = {
   duration: 0,
   metadataReady: false,
   sourceLanguage: null,
+  sourceLanguageManuallySelected: false,
   targetLanguage: "",
   languageProgress: 0,
   extractedAudio: null,
@@ -134,6 +135,7 @@ const els = {
   languageProgressText: document.querySelector("#languageProgressText"),
   languageProgressBar: document.querySelector("#languageProgressBar"),
   sourceLanguageOutput: document.querySelector("#sourceLanguageOutput"),
+  sourceLanguageSelect: document.querySelector("#sourceLanguageSelect"),
   targetLanguageSelect: document.querySelector("#targetLanguageSelect"),
   targetStatus: document.querySelector("#targetStatus"),
   segmentButton: document.querySelector("#segmentButton"),
@@ -181,7 +183,13 @@ fetchServiceStatus();
 fetchTranslationPairs();
 
 function populateLanguages() {
+  els.sourceLanguageSelect.replaceChildren();
   els.targetLanguageSelect.replaceChildren();
+
+  const sourcePlaceholder = document.createElement("option");
+  sourcePlaceholder.value = "";
+  sourcePlaceholder.textContent = "Select source language";
+  els.sourceLanguageSelect.append(sourcePlaceholder);
 
   const placeholder = document.createElement("option");
   placeholder.value = "";
@@ -189,10 +197,12 @@ function populateLanguages() {
   els.targetLanguageSelect.append(placeholder);
 
   languages.forEach((language) => {
-    const option = document.createElement("option");
-    option.value = language.code;
-    option.textContent = language.name;
-    els.targetLanguageSelect.append(option);
+    for (const select of [els.sourceLanguageSelect, els.targetLanguageSelect]) {
+      const option = document.createElement("option");
+      option.value = language.code;
+      option.textContent = language.name;
+      select.append(option);
+    }
   });
 }
 
@@ -301,6 +311,14 @@ function bindEvents() {
   });
 
   els.identifyButton.addEventListener("click", identifyLanguage);
+  els.sourceLanguageSelect.addEventListener("change", () => {
+    const language = getLanguage(els.sourceLanguageSelect.value);
+    selectSourceLanguage(language, Boolean(language));
+    els.languageStatus.textContent = language
+      ? `Source language selected manually: ${language.name}.`
+      : "Select a source language or run identification.";
+    setProgress("language", language ? 100 : 0);
+  });
   els.clearVideoButton.addEventListener("click", () => {
     resetOutput();
     render();
@@ -358,10 +376,7 @@ async function identifyLanguage() {
 
   state.busyStep = "language";
   els.languageStatus.textContent = "Identifying main language...";
-  state.sourceLanguage = null;
-  state.targetLanguage = "";
   setProgress("language", 0);
-  resetSegmentation();
   render();
 
   try {
@@ -372,8 +387,7 @@ async function identifyLanguage() {
         els.languageStatus.textContent = message;
       },
     );
-    state.extractedAudio = null;
-    state.sourceLanguage = detected.language;
+    selectSourceLanguage(detected.language);
     els.languageStatus.textContent = "Main language identified.";
     setProgress("language", 100);
   } catch (error) {
@@ -383,6 +397,17 @@ async function identifyLanguage() {
     state.busyStep = "";
     render();
   }
+}
+
+function selectSourceLanguage(language, manuallySelected = false) {
+  const changed = state.sourceLanguage?.code !== language?.code;
+  state.sourceLanguage = language;
+  state.sourceLanguageManuallySelected = manuallySelected;
+  if (state.targetLanguage && (!language || !isSupportedPair(language.code, state.targetLanguage))) {
+    state.targetLanguage = "";
+  }
+  if (changed) resetSegmentation();
+  render();
 }
 
 async function segmentAudio() {
@@ -660,10 +685,12 @@ function render() {
     : "";
 
   els.sourceLanguageOutput.textContent = sourceLanguage
-    ? `Source language: ${sourceLanguage.name}`
+    ? `Source language: ${sourceLanguage.name}${state.sourceLanguageManuallySelected ? " (selected manually)" : ""}`
     : "Source language: unknown";
 
-  els.targetLanguageSelect.disabled = !sourceLanguage;
+  els.sourceLanguageSelect.disabled = !hasValidVideo || Boolean(state.busyStep);
+  els.sourceLanguageSelect.value = sourceLanguage?.code || "";
+  els.targetLanguageSelect.disabled = !sourceLanguage || Boolean(state.busyStep);
   els.targetLanguageSelect.value = state.targetLanguage;
 
   [...els.targetLanguageSelect.options].forEach((option) => {
@@ -686,8 +713,8 @@ function render() {
     els.targetStatus.textContent = `Target selected: ${targetLanguage.name}.`;
   }
 
-  els.segmentButton.disabled = !canSegment() || state.busyStep === "segmentation";
-  els.generateButton.disabled = !canGenerate() || state.busyStep === "subtitle";
+  els.segmentButton.disabled = !canSegment() || Boolean(state.busyStep);
+  els.generateButton.disabled = !canGenerate() || Boolean(state.busyStep);
   els.cancelGenerateButton.hidden = state.busyStep !== "subtitle";
   els.cancelGenerateButton.disabled = state.subtitleCancelRequested;
   renderSegmentReview();
@@ -720,6 +747,7 @@ function resetOutput() {
   state.duration = 0;
   state.metadataReady = false;
   state.sourceLanguage = null;
+  state.sourceLanguageManuallySelected = false;
   state.targetLanguage = "";
   state.languageProgress = 0;
   state.extractedAudio = null;
@@ -730,6 +758,7 @@ function resetOutput() {
   els.videoCard.hidden = true;
   els.fileInput.value = "";
   els.targetLanguageSelect.value = "";
+  els.sourceLanguageSelect.value = "";
   setProgress("language", 0);
   resetSegmentation();
 }

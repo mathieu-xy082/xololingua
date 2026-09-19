@@ -85,6 +85,7 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--video", type=Path, default=DEFAULT_VIDEO, help="MP4 video used as the real E2E fixture.")
     parser.add_argument("--target", default="en", help="Target language code selected in the UI.")
     parser.add_argument("--expected-source-label", default="French", help="Expected source language label shown by the UI.")
+    parser.add_argument("--source-override", help="Correct the detected source language with this code before segmentation.")
     parser.add_argument("--frontend-url", default=DEFAULT_FRONTEND_URL, help="URL of the static frontend.")
     parser.add_argument("--service-url", default=DEFAULT_SERVICE_URL, help="URL of the local backend service.")
     parser.add_argument("--download-dir", type=Path, default=DEFAULT_DOWNLOAD_DIR, help="Directory where the downloaded .srt is saved.")
@@ -914,16 +915,31 @@ def run_browser_workflow(args: argparse.Namespace) -> Path | None:
 
             log_step("Clicking Identify language")
             page.locator("#identifyButton").click()
-            expect(page.locator("#sourceLanguageOutput")).to_contain_text(
-                f"Source language: {args.expected_source_label}",
-                timeout=args.language_timeout_ms,
-            )
+            if args.source_override:
+                expect(page.locator("#identifyButton")).to_be_enabled(timeout=args.language_timeout_ms)
+                source_select = page.locator("#sourceLanguageSelect")
+                expect(source_select).to_be_enabled()
+                source_select.select_option(args.source_override)
+                expect(source_select).to_have_value(args.source_override)
+                expect(page.locator("#sourceLanguageOutput")).to_contain_text("selected manually")
+            else:
+                expect(page.locator("#sourceLanguageOutput")).to_contain_text(
+                    f"Source language: {args.expected_source_label}",
+                    timeout=args.language_timeout_ms,
+                )
 
             log_step(f"Selecting target language {args.target}")
             target_select = page.locator("#targetLanguageSelect")
             expect(target_select).to_be_enabled()
             target_select.select_option(args.target)
             expect(page.locator("#segmentButton")).to_be_enabled()
+            if args.source_override and args.source_override != args.target:
+                source_select.select_option(args.target)
+                expect(target_select).to_have_value("")
+                expect(page.locator("#segmentButton")).to_be_disabled()
+                source_select.select_option(args.source_override)
+                target_select.select_option(args.target)
+                expect(page.locator("#segmentButton")).to_be_enabled()
 
             log_step("Clicking Audio segmentation")
             page.locator("#segmentButton").click()
