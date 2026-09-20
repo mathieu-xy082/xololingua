@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - feat/public-deployment
       - "ci/**"
       - "ec/**"
   pull_request:
@@ -16,7 +17,7 @@ permissions:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   PIP_CACHE_DIR: ${{ github.workspace }}/.cache/pip
@@ -73,4 +74,42 @@ jobs:
           PDM_IGNORE_ACTIVE_VENV=1 pdm install -G test --frozen-lockfile
 
       - name: Run checks
-        run: PDM_IGNORE_ACTIVE_VENV=1 pdm run check
+        run: |
+          PDM_IGNORE_ACTIVE_VENV=1 pdm run check
+          bash -n deploy/deploy_release.sh deploy/migrate_layout.sh deploy/setup_automation.sh deploy/ssh_gate.sh
+
+  deploy:
+    name: Deploy tested commit to production
+    needs: check
+    if: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && vars.PRODUCTION_BRANCH != '' && github.ref_name == vars.PRODUCTION_BRANCH }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment: production
+    concurrency:
+      group: xololingua-production
+      cancel-in-progress: false
+
+    steps:
+      - name: Deploy through restricted SSH command
+        shell: bash
+        env:
+          VPS_HOST: ${{ vars.VPS_HOST }}
+          VPS_KNOWN_HOSTS: ${{ vars.VPS_KNOWN_HOSTS }}
+          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          : "${VPS_HOST:?Set the VPS_HOST repository variable}"
+          : "${VPS_KNOWN_HOSTS:?Set the VPS_KNOWN_HOSTS repository variable}"
+          : "${DEPLOY_SSH_PRIVATE_KEY:?Set the DEPLOY_SSH_PRIVATE_KEY production secret}"
+          install -d -m 700 "$RUNNER_TEMP/xololingua-ssh"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > "$RUNNER_TEMP/xololingua-ssh/known_hosts"
+          printf '%s\n' "$DEPLOY_SSH_PRIVATE_KEY" > "$RUNNER_TEMP/xololingua-ssh/id_ed25519"
+          chmod 600 "$RUNNER_TEMP/xololingua-ssh/known_hosts" "$RUNNER_TEMP/xololingua-ssh/id_ed25519"
+          ssh -i "$RUNNER_TEMP/xololingua-ssh/id_ed25519" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=3 \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$RUNNER_TEMP/xololingua-ssh/known_hosts" \
+            "xololingua-deploy@$VPS_HOST" "deploy $GITHUB_SHA"
