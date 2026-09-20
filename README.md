@@ -1,8 +1,8 @@
 # XoloLingua
 
-XoloLingua is a local-first Progressive Web App that creates translated `.srt` subtitles from MP4 videos. The browser provides the workflow and subtitle download, while a Python service extracts and segments audio, identifies the spoken language, transcribes speech, and translates the resulting text.
+XoloLingua is a Progressive Web App that creates translated `.srt` subtitles from MP4 videos. The browser provides the workflow and subtitle download, while a Python service extracts and segments audio, identifies the spoken language, transcribes speech, and translates the resulting text. The Python service can run on the same computer or behind the hosted site's HTTPS domain.
 
-The application is currently under development and has not published its first release. It targets Chrome or Chromium on Ubuntu and can also run on Android through USB port forwarding.
+The application targets Chrome or Chromium on Ubuntu and can also run on Android through USB port forwarding.
 
 ## Features
 
@@ -76,7 +76,9 @@ Local Python service (port 8765)
         +-- SRT generation returned to the browser
 ```
 
-Processing takes place on the machine running the local service. Uploaded media and extracted audio are stored temporarily under `~/.cache/xololingua/tmp/service` by default, or under `$XOLOLINGUA_TMP_DIR/service` when that environment variable is set, rather than sent to a hosted XoloLingua backend.
+Processing takes place on the machine running the Python service. In local development, this is the user's computer. On a hosted site, the video is uploaded to the site server for language identification and may also be sent there for audio extraction and other processing. Uploaded media and extracted audio are stored under `~/.cache/xololingua/tmp/service` by default, or under `$XOLOLINGUA_TMP_DIR/service` when that environment variable is set.
+
+For an initial public Ubuntu deployment with same-origin HTTPS, use [the deployment guide](deploy/README.md). It includes a curated static build, a Caddy reverse proxy, a systemd unit, upload limits, and the CPU capacity limits of a small server.
 
 ### Client-side migration contract
 

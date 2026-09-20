@@ -8,11 +8,12 @@ import threading
 import time
 import unittest
 import urllib.request
+import urllib.error
 from pathlib import Path
 from unittest import mock
 
 import local_service
-from xololingua_service import http_api, runtime, transcription, translation
+from xololingua_service import http_api, jobs, runtime, transcription, translation
 
 
 class ImmediateFuture:
@@ -210,6 +211,46 @@ class PipelineIntegrationTests(unittest.TestCase):
 
         self.assertIn("jobs", payload)
         self.assertTrue(any(job["jobId"] == job_id for job in payload["jobs"]))
+
+    def test_public_mode_hides_other_visitors_jobs(self):
+        with mock.patch.object(http_api, "PUBLIC_MODE", True):
+            with self.assertRaises(urllib.error.HTTPError) as caught:
+                self._get_json("/api/subtitle-jobs")
+        self.assertEqual(caught.exception.code, 404)
+        self.assertIsNone(caught.exception.headers.get("Access-Control-Allow-Origin"))
+
+    def test_public_mode_rejects_processing_when_server_is_busy(self):
+        with mock.patch.object(http_api, "PUBLIC_MODE", True):
+            self.assertTrue(http_api.PUBLIC_PROCESSING_SLOT.acquire(blocking=False))
+            try:
+                with self.assertRaises(urllib.error.HTTPError) as caught:
+                    self._post_json("/api/detect-language", {})
+            finally:
+                http_api.PUBLIC_PROCESSING_SLOT.release()
+        self.assertEqual(caught.exception.code, 429)
+
+    def test_public_audio_response_does_not_expose_server_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            mp4_path = Path(directory) / "sample.mp4"
+            self._make_test_mp4(mp4_path)
+            with mock.patch.object(http_api, "PUBLIC_MODE", True), mock.patch.object(http_api, "public_work_bytes", return_value=0), mock.patch.object(http_api, "allow_public_processing", return_value=True):
+                extracted = self._upload_mp4(mp4_path)
+            self.assertNotIn("audioPath", extracted)
+            self._post_json("/api/release-audio", {"audioId": extracted["audioId"]})
+
+    def test_public_job_queue_has_one_active_slot(self):
+        with mock.patch.object(jobs, "JOBS", {}):
+            self.assertTrue(jobs.try_put_job("a" * 32, {"status": "queued"}, max_active_jobs=1))
+            self.assertFalse(jobs.try_put_job("b" * 32, {"status": "queued"}, max_active_jobs=1))
+            jobs.JOBS["a" * 32]["status"] = "succeeded"
+            self.assertTrue(jobs.try_put_job("b" * 32, {"status": "queued"}, max_active_jobs=1))
+
+    def test_public_processing_rate_limit_expires_after_one_hour(self):
+        with mock.patch.object(http_api, "PUBLIC_REQUEST_TIMES", {}), mock.patch.object(http_api, "PUBLIC_REQUESTS_PER_HOUR", 2):
+            self.assertTrue(http_api.allow_public_processing("visitor", now=100))
+            self.assertTrue(http_api.allow_public_processing("visitor", now=101))
+            self.assertFalse(http_api.allow_public_processing("visitor", now=102))
+            self.assertTrue(http_api.allow_public_processing("visitor", now=3701))
 
     def test_translation_pairs_endpoint_returns_pairs_list(self):
         fake_pairs = [{"source": "ru", "target": "en"}, {"source": "en", "target": "ru"}]

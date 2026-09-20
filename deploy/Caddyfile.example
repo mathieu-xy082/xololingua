@@ -1,0 +1,32 @@
+# Replace xololingua.example.com with the chosen DNS name.
+xololingua.example.com {
+    encode zstd gzip
+
+    # The API receives large MP4 files; the Python service applies the same limit.
+    request_body /api/* {
+        max_size 2GB
+    }
+
+    header {
+        Cross-Origin-Opener-Policy same-origin
+        Cross-Origin-Embedder-Policy require-corp
+        X-Content-Type-Options nosniff
+        Referrer-Policy no-referrer
+    }
+
+    handle /api/* {
+        header Cache-Control no-store
+        reverse_proxy 127.0.0.1:8765 {
+            # Do not trust a visitor-supplied X-Real-IP for per-IP limits.
+            header_up X-Real-IP {remote_host}
+            transport http {
+                max_conns_per_host 16
+            }
+        }
+    }
+
+    handle {
+        root * /srv/xololingua/www
+        file_server
+    }
+}

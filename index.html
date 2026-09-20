@@ -6,16 +6,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#1f6f5b">
   <title>XoloLingua</title>
-  <link rel="manifest" href="manifest.webmanifest?v=2026-09-20-2">
-  <link rel="icon" href="assets/icon.svg?v=2026-09-20-2" type="image/svg+xml">
-  <link rel="stylesheet" href="styles.css?v=2026-09-20-2">
+  <link rel="manifest" href="manifest.webmanifest?v=2026-09-20-3">
+  <link rel="icon" href="assets/icon.svg?v=2026-09-20-3" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css?v=2026-09-20-3">
 </head>
 
 <body>
   <div class="app-shell">
     <header class="topbar">
       <a class="brand" href="/" aria-label="XoloLingua home">
-        <img src="assets/icon.svg?v=2026-09-20-2" alt="" width="40" height="40">
+        <img src="assets/icon.svg?v=2026-09-20-3" alt="" width="40" height="40">
         <span>XoloLingua</span>
       </a>
       <button class="install-button" id="installButton" type="button" hidden>Install</button>
@@ -40,8 +40,8 @@
           </div>
         </dl>
 
-        <div class="service-status" id="serviceStatus" aria-label="Local service status">
-          <p class="eyebrow">Local service</p>
+        <div class="service-status" id="serviceStatus" aria-label="Processing service status">
+          <p class="eyebrow">Processing service</p>
           <dl class="service-facts">
             <div>
               <dt>Transcription</dt>
@@ -96,6 +96,7 @@
           </div>
           <button id="browseButton" type="button">Browse video</button>
         </section>
+        <p class="upload-notice" id="uploadNotice" hidden>On this public site, your video is sent to the server for language identification. Audio processing may also run on the server. Maximum upload size: 2 GB.</p>
 
         <section class="video-card" id="videoCard" hidden>
           <video id="videoPreview" controls preload="metadata"></video>
@@ -243,10 +244,10 @@
     </main>
   </div>
 
-  <script src="node_modules/@ffmpeg/ffmpeg/dist/ffmpeg.min.js?v=2026-09-20-2"></script>
-  <script src="node_modules/onnxruntime-web/dist/ort.min.js?v=2026-09-20-2"></script>
-  <script src="node_modules/@ricky0123/vad-web/dist/bundle.min.js?v=2026-09-20-2"></script>
-  <script src="app.js?v=2026-09-20-2" type="module"></script>
+  <script src="node_modules/@ffmpeg/ffmpeg/dist/ffmpeg.min.js?v=2026-09-20-3"></script>
+  <script src="node_modules/onnxruntime-web/dist/ort.min.js?v=2026-09-20-3"></script>
+  <script src="node_modules/@ricky0123/vad-web/dist/bundle.min.js?v=2026-09-20-3"></script>
+  <script src="app.js?v=2026-09-20-3" type="module"></script>
 </body>
 
 </html>

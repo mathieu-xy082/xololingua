@@ -10,6 +10,7 @@ import { formatSrt, formatSrtTime } from "./frontend/client_srt_formatter.js";
 import { createClientVadSegmenter } from "./frontend/client_vad_segmenter.js";
 import { createAppFfmpegWasmAudioExtractor } from "./frontend/ffmpeg_wasm_runtime.js";
 import { formatPipelineStageRuntime, formatPipelineStageSummary } from "./frontend/pipeline_stage_status.js";
+import { resolveServiceBaseUrl } from "./frontend/service_url.js";
 import { createVadWebRuntimeSegmenter } from "./frontend/vad_web_runtime.js";
 import {
   beginModelDelivery,
@@ -22,10 +23,10 @@ import {
 
 const MAX_DURATION_SECONDS = 2.5 * 60 * 60;
 const SEGMENT_SECONDS = 12;
-const LOCAL_SERVICE_URL = "http://127.0.0.1:8765";
+const SERVICE_BASE_URL = resolveServiceBaseUrl();
 globalThis.__xololinguaDynamicModels = true;
-const APP_ASSET_VERSION = "2026-09-20-2";
-const backendClient = createBackendClient({ baseUrl: LOCAL_SERVICE_URL });
+const APP_ASSET_VERSION = "2026-09-20-3";
+const backendClient = createBackendClient({ baseUrl: SERVICE_BASE_URL });
 const clientPipelineCapabilities = collectClientPipelineCapabilities();
 const appClientAdapters = createAppClientAdapters({
   clientAudioExtractor: globalThis.XOLOLINGUA_CLIENT_AUDIO_EXTRACTOR || createClientAudioExtractor({
@@ -123,6 +124,7 @@ const state = {
 
 const els = {
   dropzone: document.querySelector("#dropzone"),
+  uploadNotice: document.querySelector("#uploadNotice"),
   fileInput: document.querySelector("#fileInput"),
   browseButton: document.querySelector("#browseButton"),
   videoCard: document.querySelector("#videoCard"),
@@ -173,6 +175,7 @@ const els = {
 
 let deferredInstallPrompt = null;
 let _pairsFetched = false;
+if (els.uploadNotice) els.uploadNotice.hidden = SERVICE_BASE_URL !== globalThis.location?.origin;
 populateLanguages();
 bindEvents();
 bindInstallPrompt();
@@ -611,7 +614,7 @@ async function identifyLanguageAdapter(file, onProgress = () => {}, onStatus = (
   onStatus("Uploading video for language detection...");
 
   const payload = await postFormDataJsonWithProgress(
-    `${LOCAL_SERVICE_URL}/api/detect-language`,
+    `${SERVICE_BASE_URL}/api/detect-language`,
     formData,
     (uploadProgress) => {
       const mapped = 5 + Math.round(uploadProgress * 0.3);
@@ -902,7 +905,7 @@ function clampProgress(value) {
 async function cleanupExtractedAudioAdapter(audioId) {
   if (!audioId) return;
 
-  const response = await fetch(`${LOCAL_SERVICE_URL}/api/release-audio`, {
+  const response = await fetch(`${SERVICE_BASE_URL}/api/release-audio`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
