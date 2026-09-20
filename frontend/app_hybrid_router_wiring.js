@@ -33,12 +33,14 @@ export function createAppHybridPipelineRouter({
   capabilityReport,
   clientAdapters = {},
   srtFormatter,
+  allowServerFallback = true,
 } = {}) {
   if (!backendClient) {
     throw new TypeError("createAppHybridPipelineRouter requires a backend client.");
   }
 
   return createHybridPipelineRouter({
+    allowServerFallback,
     capabilityReport: createAppCapabilityReport(capabilityReport, clientAdapters, backendClient),
     clientAdapters,
     serverAdapters: {

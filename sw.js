@@ -1,8 +1,8 @@
-const CACHE_NAME = "xololingua-2026-09-20-5";
+const CACHE_NAME = "xololingua-2026-09-20-6";
 const ASSETS = [
   ".",
-  "styles.css?v=2026-09-20-5",
-  "app.js?v=2026-09-20-5",
+  "styles.css?v=2026-09-20-6",
+  "app.js?v=2026-09-20-6",
   "frontend/service_url.js",
   "frontend/backend_client.js",
   "frontend/app_hybrid_router_wiring.js",
@@ -16,6 +16,7 @@ const ASSETS = [
   "frontend/dynamic_model_resolver.js",
   "frontend/model_delivery_status.js",
   "frontend/client_pipeline_router.js",
+  "frontend/browser_stage_failure.js",
   "frontend/pipeline_stage_contract.js",
   "frontend/client_srt_formatter.js",
   "frontend/client_transcriber.js",
@@ -38,8 +39,8 @@ const ASSETS = [
   "node_modules/onnxruntime-web/dist/ort-wasm.wasm",
   "node_modules/@ricky0123/vad-web/dist/bundle.min.js",
   "node_modules/@ricky0123/vad-web/dist/silero_vad_legacy.onnx",
-  "manifest.webmanifest?v=2026-09-20-5",
-  "assets/icon.svg?v=2026-09-20-5",
+  "manifest.webmanifest?v=2026-09-20-6",
+  "assets/icon.svg?v=2026-09-20-6",
   "assets/babbel_parrot.png"
 ];
 

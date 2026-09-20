@@ -2,9 +2,9 @@
 xololingua.example.com {
     encode zstd gzip
 
-    # The API receives large MP4 files; the Python service applies the same limit.
+    # The public API only receives MP4 files for language identification.
     request_body /api/* {
-        max_size 2GB
+        max_size 421MB
     }
 
     header {

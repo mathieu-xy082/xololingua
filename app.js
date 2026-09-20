@@ -4,6 +4,7 @@ import { createClientAudioExtractor } from "./frontend/client_audio_extractor.js
 import { createClientTranscriber } from "./frontend/client_transcriber.js";
 import { createClientTranslator } from "./frontend/client_translator.js";
 import { BROWSER_ML_CONFIG } from "./frontend/browser_ml_config.js";
+import { BROWSER_MAX_VIDEO_BYTES } from "./frontend/browser_resource_limits.js";
 import { resolveTranscriptionModel, resolveTranslationModel } from "./frontend/dynamic_model_resolver.js";
 import { collectClientPipelineCapabilities } from "./frontend/client_pipeline_capabilities.js";
 import { formatSrt, formatSrtTime } from "./frontend/client_srt_formatter.js";
@@ -26,7 +27,7 @@ const VIDEO_DURATION_POLICY = resolveVideoDurationPolicy();
 const SEGMENT_SECONDS = 12;
 const SERVICE_BASE_URL = resolveServiceBaseUrl();
 globalThis.__xololinguaDynamicModels = true;
-const APP_ASSET_VERSION = "2026-09-20-5";
+const APP_ASSET_VERSION = "2026-09-20-6";
 const backendClient = createBackendClient({ baseUrl: SERVICE_BASE_URL });
 const clientPipelineCapabilities = collectClientPipelineCapabilities();
 const appClientAdapters = createAppClientAdapters({
@@ -77,6 +78,7 @@ const hybridPipelineRouter = createAppHybridPipelineRouter({
   capabilityReport: clientPipelineCapabilities,
   clientAdapters: appClientAdapters,
   srtFormatter: formatSrt,
+  allowServerFallback: !VIDEO_DURATION_POLICY.publicSite,
 });
 
 const languages = [
@@ -217,6 +219,17 @@ function populateLanguages() {
 
 function renderPipelineCapabilitySummary() {
   const summary = clientPipelineCapabilities.demoSummary;
+  if (VIDEO_DURATION_POLICY.publicSite) {
+    els.pwaOfflineScope.textContent = "Language identification uses the server; all other processing must run in your browser.";
+    els.pwaOfflineScope.title = "Browser processing requires enough memory and a supported browser.";
+    els.pipelineBrowserStages.textContent = summary.browserStageLabels.join(", ") || "none available";
+    els.pipelineFallbackStages.textContent = summary.serverFallbackStageLabels.length > 0
+      ? `Unavailable in this browser: ${summary.serverFallbackStageLabels.join(", ")}`
+      : "Disabled on the public site";
+    els.pipelineFallbackEndpoints.replaceChildren();
+    renderModelDeliveryPanel();
+    return;
+  }
   els.pwaOfflineScope.textContent = summary.offlineScopeLabel || "Offline assets available; ML stages may still need Python fallback.";
   els.pwaOfflineScope.title = summary.headline;
   els.pipelineBrowserStages.textContent = summary.browserStageLabels.length > 0
@@ -352,6 +365,12 @@ function loadVideoFile(file) {
     return;
   }
 
+  if (VIDEO_DURATION_POLICY.publicSite && file.size > BROWSER_MAX_VIDEO_BYTES) {
+    els.languageStatus.textContent = "This MP4 exceeds the 400 MiB browser processing limit. Compress or trim it before trying again.";
+    render();
+    return;
+  }
+
   state.videoFile = file;
   state.videoUrl = URL.createObjectURL(file);
   state.metadataReady = false;
@@ -398,12 +417,24 @@ async function identifyLanguage() {
     els.languageStatus.textContent = "Main language identified.";
     setProgress("language", 100);
   } catch (error) {
-    els.languageStatus.textContent = error.message;
+    els.languageStatus.textContent = languageIdentificationFailureMessage(error);
     setProgress("language", 0);
   } finally {
     state.busyStep = "";
     render();
   }
+}
+
+function languageIdentificationFailureMessage(error) {
+  const reason = String(error?.message || "Language identification failed.");
+  if (!VIDEO_DURATION_POLICY.publicSite) return reason;
+  if (/server busy|hourly processing limit/i.test(reason)) {
+    return "Language identification is busy. Retry in a few minutes, or select the source language manually to continue.";
+  }
+  if (/service is not available|transcription engine not available|request failed|failed to fetch/i.test(reason)) {
+    return "Language identification service is unavailable. Check your connection and retry later, or select the source language manually to continue.";
+  }
+  return `${reason} You can select the source language manually to continue.`;
 }
 
 function selectSourceLanguage(language, manuallySelected = false) {
@@ -449,6 +480,10 @@ async function segmentAudio() {
       };
       els.segmentationStatus.textContent = `${formatPipelineStageRuntime({ stage: "audioExtraction", ...extraction })}. Segmenting speech audio...`;
     } catch (extractionError) {
+      if (VIDEO_DURATION_POLICY.publicSite) {
+        failPublicSegmentation(extractionError);
+        return;
+      }
       els.segmentationStatus.textContent = `${extractionError.message} Falling back to prototype segmentation.`;
       const segments = await segmentAudioAdapter(state.duration, (progress) => {
         const scaledProgress = 35 + Math.round(progress * 0.65);
@@ -468,6 +503,10 @@ async function segmentAudio() {
     stageReports.push({ stage: "vad", ...segmentation });
     finishSegmentation(segmentation.payload.segments, stageReports);
   } catch (segmentationError) {
+    if (VIDEO_DURATION_POLICY.publicSite) {
+      failPublicSegmentation(segmentationError);
+      return;
+    }
     els.segmentationStatus.textContent = `${segmentationError.message} Falling back to prototype segmentation.`;
     const segments = await segmentAudioAdapter(state.duration, (progress) => {
       const scaledProgress = 35 + Math.round(progress * 0.65);
@@ -475,6 +514,14 @@ async function segmentAudio() {
     });
     finishSegmentation(segments, stageReports);
   }
+}
+
+function failPublicSegmentation(error) {
+  state.busyStep = "";
+  state.segments = [];
+  els.segmentationStatus.textContent = error.message;
+  setProgress("segmentation", 0);
+  render();
 }
 
 async function generateSubtitles() {
@@ -615,7 +662,7 @@ async function identifyLanguageAdapter(file, onProgress = () => {}, onStatus = (
   try {
     await backendClient.getHealth();
   } catch {
-    throw new Error("Local audio service is not available for language detection.");
+    throw new Error("Language identification service is not available.");
   }
 
   const formData = new FormData();

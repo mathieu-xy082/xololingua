@@ -36,10 +36,13 @@ from .translation import get_supported_pairs, translate_segments, translation_ba
 PUBLIC_PROCESSING_SLOT = BoundedSemaphore(1)
 PUBLIC_RATE_LOCK = Lock()
 PUBLIC_REQUEST_TIMES: dict[str, deque[float]] = {}
-PUBLIC_UPLOAD_PATHS = {"/api/detect-language", "/api/extract-audio", "/api/register-audio"}
-PUBLIC_PROCESSING_PATHS = {
-    "/api/detect-language", "/api/extract-audio", "/api/register-audio",
-    "/api/segment-audio", "/api/transcribe-audio", "/api/translate-segments",
+PUBLIC_MAX_BROWSER_VIDEO_BYTES = 400 * 1024 * 1024
+PUBLIC_MULTIPART_OVERHEAD_BYTES = 1_000_000
+PUBLIC_UPLOAD_PATHS = {"/api/detect-language"}
+PUBLIC_PROCESSING_PATHS = {"/api/detect-language"}
+PUBLIC_DISABLED_PROCESSING_PATHS = {
+    "/api/extract-audio", "/api/register-audio", "/api/segment-audio",
+    "/api/transcribe-audio", "/api/translate-segments", "/api/subtitle-jobs",
 }
 
 
@@ -133,6 +136,12 @@ class LocalServiceHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
+        if PUBLIC_MODE and path in PUBLIC_DISABLED_PROCESSING_PATHS:
+            self.send_error_json(
+                HTTPStatus.FORBIDDEN,
+                "This processing endpoint is disabled on the public site. Run this step in your browser.",
+            )
+            return
         client_ip = self.headers.get("X-Real-IP", self.client_address[0])
         if PUBLIC_MODE:
             try:
@@ -140,12 +149,13 @@ class LocalServiceHandler(BaseHTTPRequestHandler):
             except ValueError:
                 self.send_error_json(HTTPStatus.BAD_REQUEST, "Invalid Content-Length.")
                 return
-            max_bytes = PUBLIC_MAX_UPLOAD_BYTES if path in PUBLIC_UPLOAD_PATHS else PUBLIC_MAX_JSON_BYTES
+            max_bytes = (
+                min(PUBLIC_MAX_UPLOAD_BYTES, PUBLIC_MAX_BROWSER_VIDEO_BYTES + PUBLIC_MULTIPART_OVERHEAD_BYTES)
+                if path in PUBLIC_UPLOAD_PATHS else PUBLIC_MAX_JSON_BYTES
+            )
             if length > max_bytes:
-                self.send_error_json(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "Request body exceeds the public service limit.")
-                return
-            if path == "/api/subtitle-jobs" and not allow_public_processing(client_ip):
-                self.send_error_json(HTTPStatus.TOO_MANY_REQUESTS, "Hourly processing limit reached. Retry later.")
+                message = "Video exceeds the 400 MiB public site limit." if path in PUBLIC_UPLOAD_PATHS else "Request body exceeds the public service limit."
+                self.send_error_json(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, message)
                 return
         if PUBLIC_MODE and path in PUBLIC_PROCESSING_PATHS:
             if not PUBLIC_PROCESSING_SLOT.acquire(blocking=False):

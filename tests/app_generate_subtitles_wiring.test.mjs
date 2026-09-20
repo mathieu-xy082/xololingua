@@ -4,6 +4,12 @@ import { readFile } from "node:fs/promises";
 
 const appSource = await readFile(new URL("../app.js", import.meta.url), "utf8");
 
+test("public app disables server processing fallback and prototype segments", () => {
+  assert.match(appSource, /allowServerFallback: !VIDEO_DURATION_POLICY\.publicSite/);
+  assert.match(appSource, /if \(VIDEO_DURATION_POLICY\.publicSite\) \{\s*failPublicSegmentation\(extractionError\);/);
+  assert.match(appSource, /if \(VIDEO_DURATION_POLICY\.publicSite\) \{\s*failPublicSegmentation\(segmentationError\);/);
+});
+
 test("app subtitle generation routes transcription and translation as separate hybrid stages", () => {
   assert.match(appSource, /hybridPipelineRouter\.runTranscription\(/);
   assert.match(appSource, /hybridPipelineRouter\.runTranslation\(/);

@@ -49,7 +49,7 @@ test("service worker precaches JavaScript modules imported by the PWA shell and 
   const importedModules = [
     ...appSource.matchAll(/import\s+[^;]+from\s+["']\.\/(frontend\/[^"']+)["']/g),
     ...appHybridRouterWiringSource.matchAll(/import\s+[^;]+from\s+["']\.\/(client_pipeline_router\.js)["']/g),
-    ...clientPipelineRouterSource.matchAll(/import\s+[^;]+from\s+["']\.\/(pipeline_stage_contract\.js)["']/g),
+    ...clientPipelineRouterSource.matchAll(/import\s+[^;]+from\s+["']\.\/((?:pipeline_stage_contract|browser_stage_failure)\.js)["']/g),
   ]
     .map((match) => match[1].startsWith("frontend/") ? match[1] : `frontend/${match[1]}`)
     .sort();
@@ -67,7 +67,7 @@ test("service worker precaches the full frontend module graph used by offline as
   const importedModules = new Set([
     ...appSource.matchAll(/import\s+[^;]+from\s+["']\.\/(frontend\/[^"']+)["']/g),
     ...appHybridRouterWiringSource.matchAll(/import\s+[^;]+from\s+["']\.\/(client_pipeline_router\.js)["']/g),
-    ...clientPipelineRouterSource.matchAll(/import\s+[^;]+from\s+["']\.\/(pipeline_stage_contract\.js)["']/g),
+    ...clientPipelineRouterSource.matchAll(/import\s+[^;]+from\s+["']\.\/((?:pipeline_stage_contract|browser_stage_failure)\.js)["']/g),
     ...clientPipelineCapabilitiesSource.matchAll(/import\s+[^;]+from\s+["']\.\/(client_[^"']+\.js)["']/g),
     ...browserMlConfigSource.matchAll(/import\s+[^;]+from\s+["']\.\/(browser_resource_limits\.js)["']/g),
     ...transcriptionWorkerSource.matchAll(/import\s+[^;]+from\s+["']\.\/((?:browser_inference_device|batched_whisper_runtime)\.js)["']/g),

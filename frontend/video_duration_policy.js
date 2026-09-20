@@ -6,6 +6,6 @@ export function resolveVideoDurationPolicy(location = globalThis.location) {
   const hostname = location?.hostname?.toLowerCase();
   const localDevelopment = ["localhost", "127.0.0.1", "[::1]", "::1"].includes(hostname);
   return localDevelopment
-    ? { maxDurationSeconds: DEVELOPMENT_MAX_VIDEO_DURATION_SECONDS, label: "2 h 30 min" }
-    : { maxDurationSeconds: BROWSER_MAX_MEDIA_DURATION_SECONDS, label: "1 h" };
+    ? { maxDurationSeconds: DEVELOPMENT_MAX_VIDEO_DURATION_SECONDS, label: "2 h 30 min", publicSite: false }
+    : { maxDurationSeconds: BROWSER_MAX_MEDIA_DURATION_SECONDS, label: "1 h", publicSite: true };
 }

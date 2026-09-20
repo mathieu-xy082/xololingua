@@ -5,6 +5,7 @@ import {
   normalizeTranslationStageResult,
   normalizeVadStageResult,
 } from "./pipeline_stage_contract.js";
+import { browserStageFailure } from "./browser_stage_failure.js";
 
 const PYTHON_FALLBACK_ENDPOINTS = {
   audioExtraction: ["POST /api/extract-audio"],
@@ -34,10 +35,12 @@ export function createHybridPipelineRouter({
   clientAdapters = {},
   serverAdapters = {},
   srtFormatter,
+  allowServerFallback = true,
 } = {}) {
+  const runConfiguredStage = (options) => runStage({ ...options, allowServerFallback });
   return {
     async runAudioExtraction(file, onProgress = () => {}) {
-      return runStage({
+      return runConfiguredStage({
         stageName: "audioExtraction",
         browserAdapterLabel: "Browser audio extraction",
         serverAdapterLabel: "Python fallback audio extraction",
@@ -50,7 +53,7 @@ export function createHybridPipelineRouter({
     },
 
     async runVadSegmentation(audioId, onProgress = () => {}) {
-      return runStage({
+      return runConfiguredStage({
         stageName: "vad",
         browserAdapterLabel: "Browser VAD segmentation",
         serverAdapterLabel: "Python fallback VAD segmentation",
@@ -64,7 +67,7 @@ export function createHybridPipelineRouter({
     },
 
     async runTranscription(transcriptionRequest, onProgress = () => {}) {
-      return runStage({
+      return runConfiguredStage({
         stageName: "transcription",
         browserAdapterLabel: "Browser transcription",
         serverAdapterLabel: "Python fallback transcription",
@@ -78,7 +81,7 @@ export function createHybridPipelineRouter({
     },
 
     async runTranslation(translationRequest, onProgress = () => {}) {
-      return runStage({
+      return runConfiguredStage({
         stageName: "translation",
         browserAdapterLabel: "Browser translation",
         serverAdapterLabel: "Python fallback translation",
@@ -119,7 +122,7 @@ export function createHybridPipelineRouter({
         onStageComplete = () => {},
       } = {},
     ) {
-      const audioExtraction = await runStage({
+      const audioExtraction = await runConfiguredStage({
         stageName: "audioExtraction",
         browserAdapterLabel: "Browser audio extraction",
         serverAdapterLabel: "Python fallback audio extraction",
@@ -134,7 +137,7 @@ export function createHybridPipelineRouter({
       const audioId = typeof extractedAudio === "string" ? extractedAudio : extractedAudio?.audioId || null;
       const audioForPipeline = audioId || extractedAudio;
 
-      const vad = await runStage({
+      const vad = await runConfiguredStage({
         stageName: "vad",
         browserAdapterLabel: "Browser VAD segmentation",
         serverAdapterLabel: "Python fallback VAD segmentation",
@@ -147,7 +150,7 @@ export function createHybridPipelineRouter({
       });
       onStageComplete(createUserStageReportRow("vad", vad));
 
-      const transcription = await runStage({
+      const transcription = await runConfiguredStage({
         stageName: "transcription",
         browserAdapterLabel: "Browser transcription",
         serverAdapterLabel: "Python fallback transcription",
@@ -161,7 +164,7 @@ export function createHybridPipelineRouter({
       onStageComplete(createUserStageReportRow("transcription", transcription));
 
       const transcriptionSegments = transcription.payload?.segments || transcription.payload;
-      const translation = await runStage({
+      const translation = await runConfiguredStage({
         stageName: "translation",
         browserAdapterLabel: "Browser translation",
         serverAdapterLabel: "Python fallback translation",
@@ -338,18 +341,23 @@ async function runStage({
   capabilityReport,
   clientAdapters,
   serverAdapters,
+  allowServerFallback = true,
 }) {
   const stage = capabilityReport?.stages?.[stageName] || {
     runtime: "server-fallback",
     strategy: "unavailable",
   };
   const useBrowser = stage.runtime === "browser" && !preferServer;
+  if (!useBrowser && !allowServerFallback) {
+    throw browserStageFailure(stageName, stage.browserFailureReason || "This browser cannot run this step locally.");
+  }
   const adapters = useBrowser ? clientAdapters : serverAdapters;
   const adapter = adapters[stageName];
 
   if (typeof adapter !== "function") {
     const label = useBrowser ? browserAdapterLabel : serverAdapterLabel;
-    throw new Error(`${label} adapter is not configured.`);
+    const error = new Error(`${label} adapter is not configured.`);
+    throw allowServerFallback ? error : browserStageFailure(stageName, error);
   }
 
   let payload;
@@ -358,6 +366,9 @@ async function runStage({
   try {
     payload = await adapter(input, onProgress);
   } catch (error) {
+    if (!allowServerFallback && !error?.cancelled) {
+      throw browserStageFailure(stageName, error);
+    }
     if (error?.cancelled || !useBrowser || typeof serverAdapters[stageName] !== "function") {
       throw error;
     }

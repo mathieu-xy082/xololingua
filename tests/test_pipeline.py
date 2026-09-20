@@ -231,16 +231,31 @@ class PipelineIntegrationTests(unittest.TestCase):
                 http_api.PUBLIC_PROCESSING_SLOT.release()
         self.assertEqual(caught.exception.code, 429)
 
-    def test_public_audio_response_does_not_expose_server_path(self):
-        with tempfile.TemporaryDirectory() as directory:
-            mp4_path = Path(directory) / "sample.mp4"
-            self._make_test_mp4(mp4_path)
-            with mock.patch.object(http_api, "PUBLIC_MODE", True), mock.patch.object(http_api, "public_work_bytes", return_value=0), mock.patch.object(http_api, "allow_public_processing", return_value=True):
-                extracted = self._upload_mp4(mp4_path)
-            self.assertNotIn("audioPath", extracted)
-            self._post_json("/api/release-audio", {"audioId": extracted["audioId"]})
+    def test_public_service_rejects_all_server_processing_fallbacks(self):
+        paths = (
+            "/api/extract-audio", "/api/register-audio", "/api/segment-audio",
+            "/api/transcribe-audio", "/api/translate-segments", "/api/subtitle-jobs",
+        )
+        with mock.patch.object(http_api, "PUBLIC_MODE", True):
+            for path in paths:
+                with self.subTest(path=path):
+                    with self.assertRaises(urllib.error.HTTPError) as caught:
+                        self._post_json(path, {})
+                    self.assertEqual(caught.exception.code, 403)
+                    self.assertIn("disabled on the public site", json.loads(caught.exception.read())["error"])
 
-    def test_public_uploads_reject_media_over_one_hour_and_remove_temporary_files(self):
+    def test_public_language_upload_rejects_request_over_browser_size_limit(self):
+        with (
+            mock.patch.object(http_api, "PUBLIC_MODE", True),
+            mock.patch.object(http_api, "PUBLIC_MAX_BROWSER_VIDEO_BYTES", 10),
+            mock.patch.object(http_api, "PUBLIC_MULTIPART_OVERHEAD_BYTES", 0),
+        ):
+            with self.assertRaises(urllib.error.HTTPError) as caught:
+                self._post_multipart_file("/api/detect-language", "video", "sample.mp4", b"long video", "video/mp4")
+        self.assertEqual(caught.exception.code, 413)
+        self.assertIn("400 MiB public site limit", json.loads(caught.exception.read())["error"])
+
+    def test_public_language_upload_rejects_media_over_one_hour_and_removes_temporary_file(self):
         with tempfile.TemporaryDirectory() as directory:
             work_dir = Path(directory)
             video = work_dir / "sample.mp4"
@@ -251,16 +266,13 @@ class PipelineIntegrationTests(unittest.TestCase):
                 mock.patch.object(http_api, "public_work_bytes", return_value=0),
                 mock.patch.object(http_api, "allow_public_processing", return_value=True),
                 mock.patch.object(http_api, "probe_duration", return_value=3600.1),
+                mock.patch.dict(runtime.WHISPER_RUNTIME, {"available": True}),
             ):
                 with self.assertRaises(urllib.error.HTTPError) as video_error:
-                    self._upload_mp4(video)
-                with self.assertRaises(urllib.error.HTTPError) as audio_error:
-                    self._post_multipart_file("/api/register-audio", "audio", "sample.wav", b"test audio", "audio/wav")
+                    self._post_multipart_file("/api/detect-language", "video", video.name, video.read_bytes(), "video/mp4")
 
             self.assertEqual(video_error.exception.code, 400)
             self.assertIn("1 h limit", json.loads(video_error.exception.read())["error"])
-            self.assertEqual(audio_error.exception.code, 400)
-            self.assertIn("1 h limit", json.loads(audio_error.exception.read())["error"])
             self.assertEqual(sorted(path.name for path in work_dir.iterdir()), ["sample.mp4"])
 
     def test_local_service_accepts_over_two_hours_for_development(self):
@@ -280,7 +292,7 @@ class PipelineIntegrationTests(unittest.TestCase):
             self.assertEqual(extracted["durationSeconds"], 7201)
             self.assertEqual(registered["durationSeconds"], 7201)
 
-    def test_public_uploads_accept_exactly_one_hour(self):
+    def test_public_language_upload_accepts_exactly_one_hour(self):
         with tempfile.TemporaryDirectory() as directory:
             work_dir = Path(directory)
             video = work_dir / "sample.mp4"
@@ -291,13 +303,13 @@ class PipelineIntegrationTests(unittest.TestCase):
                 mock.patch.object(http_api, "public_work_bytes", return_value=0),
                 mock.patch.object(http_api, "allow_public_processing", return_value=True),
                 mock.patch.object(http_api, "probe_duration", return_value=3600),
-                mock.patch.object(http_api, "extract_audio", side_effect=lambda _source, destination: destination.write_bytes(b"RIFF")),
+                mock.patch.dict(runtime.WHISPER_RUNTIME, {"available": True}),
+                mock.patch.object(local_service.LocalServiceHandler, "detect_language_from_video", return_value={"languageCode": "ru", "languageProbability": 0.9}),
             ):
-                extracted = self._upload_mp4(video)
-                registered = self._post_multipart_file("/api/register-audio", "audio", "sample.wav", b"test audio", "audio/wav")
+                detected = self._post_multipart_file("/api/detect-language", "video", video.name, video.read_bytes(), "video/mp4")
 
-            self.assertEqual(extracted["durationSeconds"], 3600)
-            self.assertEqual(registered["durationSeconds"], 3600)
+            self.assertEqual(detected["durationSeconds"], 3600)
+            self.assertEqual(detected["languageCode"], "ru")
 
     def test_public_job_queue_has_one_active_slot(self):
         with mock.patch.object(jobs, "JOBS", {}):
