@@ -4,8 +4,7 @@ All notable changes to XoloLingua will be documented in this file.
 
 This project follows Semantic Versioning.
 
-## Unreleased
-
+## [1.2.0] - 2026-09-20 - Merge branche 'ec/optim-asr' into main 
 ### Added
 
 - Added a reproducible WebGPU ASR dtype benchmark for `fp16`, `q4f16`, and `q4`, including quality similarity, timing, cache-purge, and adapter diagnostics.
