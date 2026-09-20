@@ -94,7 +94,7 @@ def extract_audio_clips_parallel(
             future.result()
 
 
-def language_detection_windows(duration: float, sample_count: int = 5, sample_seconds: float = 30.0) -> list[tuple[float, float]]:
+def language_detection_windows(duration: float, sample_count: int = 10, sample_seconds: float = 30.0) -> list[tuple[float, float]]:
     if duration <= 0:
         return []
 

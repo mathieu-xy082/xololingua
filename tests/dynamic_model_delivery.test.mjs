@@ -9,7 +9,15 @@ import { createClientTranslator, detectClientTranslationCapabilities } from "../
 import { resolveTranscriptionModel, resolveTranslationModel } from "../frontend/dynamic_model_resolver.js";
 
 test("dynamic model resolver selects Whisper and an OPUS model from the requested language pair", () => {
-  assert.equal(resolveTranscriptionModel({ sourceLanguage: { code: "fr" } }).modelId, "Xenova/whisper-base");
+  assert.deepEqual(resolveTranscriptionModel({ sourceLanguage: { code: "fr" } }), {
+    stage: "transcription",
+    sourceLanguage: "fr",
+    modelId: "Xenova/whisper-base",
+    task: "automatic-speech-recognition",
+    remote: true,
+    purgeAfterUse: true,
+    dtype: "q4",
+  });
   assert.deepEqual(resolveTranslationModel({ sourceLanguage: { code: "fr" }, targetLanguage: "ru" }), {
     stage: "translation",
     sourceLanguage: "fr",

@@ -8,12 +8,29 @@ export function createWorkerRequestSession({
   if (!workerUrl || typeof environment?.Worker !== "function") return undefined;
 
   const worker = new environment.Worker(workerUrl, { type: "module" });
+  const scheduleTimeout = typeof environment?.setTimeout === "function"
+    ? environment.setTimeout.bind(environment)
+    : globalThis.setTimeout.bind(globalThis);
+  const cancelTimeout = typeof environment?.clearTimeout === "function"
+    ? environment.clearTimeout.bind(environment)
+    : globalThis.clearTimeout.bind(globalThis);
   let activeRequest;
   let closed = false;
 
   const clearActiveRequest = () => {
-    if (activeRequest?.timeoutId) clearTimeout(activeRequest.timeoutId);
+    if (activeRequest?.timeoutId !== undefined) cancelTimeout(activeRequest.timeoutId);
     activeRequest = undefined;
+  };
+
+  const refreshActiveTimeout = () => {
+    if (!activeRequest) return;
+    if (activeRequest.timeoutId !== undefined) cancelTimeout(activeRequest.timeoutId);
+    activeRequest.timeoutId = undefined;
+    if (!Number.isFinite(activeRequest.timeoutMs) || activeRequest.timeoutMs <= 0) return;
+    activeRequest.timeoutId = scheduleTimeout(
+      () => close(new Error(activeRequest?.timeoutMessage || defaultFailureMessage)),
+      activeRequest.timeoutMs,
+    );
   };
 
   const close = (error) => {
@@ -35,6 +52,7 @@ export function createWorkerRequestSession({
     if (!activeRequest) return;
     const message = event?.data || {};
     if (message.type === "progress") {
+      refreshActiveTimeout();
       activeRequest.onProgress(message.event);
       return;
     }
@@ -62,10 +80,17 @@ export function createWorkerRequestSession({
       if (closed) return Promise.reject(new Error(closedMessage));
       if (activeRequest) return Promise.reject(new Error(busyMessage));
       return new Promise((resolve, reject) => {
-        activeRequest = { resultType, onProgress, failureMessage, resolve, reject, timeoutId: undefined };
-        if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
-          activeRequest.timeoutId = setTimeout(() => close(new Error(timeoutMessage)), timeoutMs);
-        }
+        activeRequest = {
+          resultType,
+          onProgress,
+          failureMessage,
+          resolve,
+          reject,
+          timeoutId: undefined,
+          timeoutMs,
+          timeoutMessage,
+        };
+        refreshActiveTimeout();
         try {
           worker.postMessage({ type: requestType, request });
         } catch (error) {

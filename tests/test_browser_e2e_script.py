@@ -43,6 +43,13 @@ class BrowserE2EScriptTests(unittest.TestCase):
         self.assertIn("main", functions)
         self.assertIn("log_step", functions)
 
+    def test_browser_e2e_accepts_manual_source_correction(self):
+        module = self.load_module()
+        args = module.parse_args(["--source-override", "ru", "--stop-after-segmentation"])
+
+        self.assertEqual(args.source_override, "ru")
+        self.assertTrue(args.stop_after_segmentation)
+
     def test_pdm_script_runs_browser_e2e_validator(self):
         pyproject = PYPROJECT.read_text(encoding="utf-8")
         self.assertRegex(

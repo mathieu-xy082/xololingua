@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 from . import runtime as whisper_runtime
 from .jobs import (
     JOBS_EXECUTOR,
+    command_error_summary,
     cancel_subtitle_job,
     job_snapshot,
     list_job_snapshots,
@@ -26,7 +27,7 @@ from .jobs import (
 )
 from .media import extract_audio, extract_audio_clips_parallel, language_detection_windows, normalize_segments, normalize_text_segments, probe_duration, segment_audio
 from .settings import ARGOS_COMMAND, HOST, MAX_DURATION_SECONDS, PORT, WHISPER_CPU_COMPUTE_TYPE, WHISPER_CPU_MODEL, WHISPER_DEVICE_CHOICE, WORK_DIR
-from .transcription import detect_audio_languages, transcribe_segments
+from .transcription import detect_audio_languages, transcribe_segments_with_cpu_fallback
 from .translation import get_supported_pairs, translate_segments, translation_backend_available
 
 class LocalServiceHandler(BaseHTTPRequestHandler):
@@ -421,7 +422,7 @@ class LocalServiceHandler(BaseHTTPRequestHandler):
         segments_payload = payload.get("segments", [])
         try:
             segments = normalize_segments(segments_payload)
-            transcribed_segments = transcribe_segments(audio_path, segments, language_code)
+            transcribed_segments = transcribe_segments_with_cpu_fallback(audio_path, segments, language_code)
             self.send_json({
                 "audioId": audio_id,
                 "languageCode": language_code,
@@ -430,7 +431,9 @@ class LocalServiceHandler(BaseHTTPRequestHandler):
         except ValueError as error:
             self.send_error_json(HTTPStatus.BAD_REQUEST, str(error))
         except subprocess.CalledProcessError as error:
-            self.send_error_json(HTTPStatus.BAD_REQUEST, error.stderr.strip() or "Audio transcription failed.")
+            self.send_error_json(HTTPStatus.SERVICE_UNAVAILABLE, command_error_summary(error))
+        except RuntimeError as error:
+            self.send_error_json(HTTPStatus.SERVICE_UNAVAILABLE, str(error))
 
     def handle_translate_segments(self) -> None:
         if not translation_backend_available():

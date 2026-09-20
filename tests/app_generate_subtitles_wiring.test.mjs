@@ -22,6 +22,7 @@ test("app keeps a readable hybrid pipeline report across segmentation and subtit
 test("app maps direct translation endpoint progress without subtitle-job scaling", () => {
   assert.match(appSource, /typeof job\.translationProgress === "number"/);
   assert.match(appSource, /setSubtitleProgress\(100, job\.translationProgress\)/);
+  assert.match(appSource, /const preparation = typeof job\.translationProgress === "number"/);
 });
 
 test("app reserves visible progress for browser model preparation and uses direct browser ASR progress", () => {

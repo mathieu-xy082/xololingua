@@ -323,7 +323,7 @@ test("client transcriber fails fast when ASR warmup times out", async () => {
       segments: [],
       sourceLanguage: "fr",
     }),
-    /Browser transcription warmup timed out after 1ms\./,
+    /Browser transcription warmup reported no progress for 1ms\./,
   );
   assert.equal(workerInstances.length, 1);
   assert.equal(workerInstances[0].terminated, true);
@@ -389,7 +389,7 @@ test("client transcriber rejects a stalled configured Web Worker with an explici
       segments: [],
       sourceLanguage: "fr",
     }),
-    /Browser transcription worker timed out after 1ms\./,
+    /Browser transcription worker reported no progress for 1ms\./,
   );
   assert.equal(workerInstances.length, 1);
   assert.equal(workerInstances[0].terminated, true);

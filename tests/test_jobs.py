@@ -92,8 +92,8 @@ class SubtitleJobTests(unittest.TestCase):
                         }]):
                             local_service.run_subtitle_job(job_id, Path("/tmp/sample.wav"), [{"index": 1, "start": 0.0, "end": 1.0}], "fr", "en")
 
-        self.assertEqual(transcribe_segments.call_args_list[0].args[5]["device"], "cuda")
-        self.assertEqual(transcribe_segments.call_args_list[1].args[5]["device"], "cpu")
+        self.assertEqual(transcribe_segments.call_args_list[0].kwargs["runtime"]["device"], "cuda")
+        self.assertEqual(transcribe_segments.call_args_list[1].kwargs["runtime"]["device"], "cpu")
         snapshot = local_service.job_snapshot(job_id)
         self.assertEqual(snapshot["status"], "succeeded")
         self.assertEqual(snapshot["segments"][0]["translatedText"], "Hello.")

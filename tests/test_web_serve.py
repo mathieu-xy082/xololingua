@@ -36,6 +36,19 @@ class WebServeTests(unittest.TestCase):
 
         self.assertEqual(module.frontend_url("0.0.0.0", 4173), "http://127.0.0.1:4173")
 
+    def test_webgpu_browser_command_uses_isolated_profile_and_flags(self):
+        module = load_module()
+        command = module.build_webgpu_browser_command(
+            "/opt/brave.com/brave-nightly/brave",
+            Path("/tmp/xololingua-test-profile"),
+            "http://127.0.0.1:4173",
+        )
+        self.assertEqual(command[0], "/opt/brave.com/brave-nightly/brave")
+        self.assertIn("--user-data-dir=/tmp/xololingua-test-profile", command)
+        self.assertIn("--enable-features=Vulkan", command)
+        self.assertIn("--use-angle=vulkan", command)
+        self.assertIn("--enable-unsafe-webgpu", command)
+
 
 if __name__ == "__main__":
     unittest.main()

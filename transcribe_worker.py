@@ -211,7 +211,7 @@ def _transcribe(audio_path: Path, language_code: str, segments: list[dict], runt
 
 
 def _detect_language(audio_path: Path, runtime: dict, sample_seconds: float = 90.0) -> dict:
-    from faster_whisper import WhisperModel
+    from faster_whisper import WhisperModel, decode_audio
     import tempfile, shutil
 
     model = WhisperModel(
@@ -224,22 +224,17 @@ def _detect_language(audio_path: Path, runtime: dict, sample_seconds: float = 90
     sample_path = work_dir / "language_sample.wav"
     try:
         _slice_audio(audio_path, sample_path, 0.0, sample_seconds)
-        transcription_segments, info = model.transcribe(
-            str(sample_path),
-            beam_size=1,
-            vad_filter=False,
-        )
-        next(iter(transcription_segments), None)
+        language, probability, _ = model.detect_language(audio=decode_audio(str(sample_path)))
         return {
-            "languageCode": getattr(info, "language", "") or "",
-            "languageProbability": float(getattr(info, "language_probability", 0.0) or 0.0),
+            "languageCode": language or "",
+            "languageProbability": float(probability or 0.0),
         }
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
 
 
 def _detect_languages(audio_paths: list[Path], runtime: dict) -> list[dict]:
-    from faster_whisper import WhisperModel
+    from faster_whisper import WhisperModel, decode_audio
 
     model = WhisperModel(
         runtime["model"],
@@ -248,18 +243,14 @@ def _detect_languages(audio_paths: list[Path], runtime: dict) -> list[dict]:
     )
 
     results: list[dict] = []
-    for audio_path in audio_paths:
-        transcription_segments, info = model.transcribe(
-            str(audio_path),
-            beam_size=1,
-            vad_filter=False,
-        )
-        next(iter(transcription_segments), None)
+    for index, audio_path in enumerate(audio_paths, start=1):
+        print(f"[whisper] language detection sample {index}/{len(audio_paths)}", file=sys.stderr, flush=True)
+        language, probability, _ = model.detect_language(audio=decode_audio(str(audio_path)))
         results.append(
             {
                 "audioPath": str(audio_path),
-                "languageCode": getattr(info, "language", "") or "",
-                "languageProbability": float(getattr(info, "language_probability", 0.0) or 0.0),
+                "languageCode": language or "",
+                "languageProbability": float(probability or 0.0),
             }
         )
     return results

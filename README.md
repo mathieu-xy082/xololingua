@@ -8,7 +8,7 @@ The application is currently under development and has not published its first r
 
 - Drag-and-drop MP4 selection and video preview.
 - Validation of file type and the 2 h 30 min duration limit.
-- Whisper-based spoken-language identification and transcription, with CUDA support and a CPU fallback.
+- Whisper-based spoken-language identification from 10 clips distributed across long videos, with CUDA support and a CPU fallback. The source language can be selected or corrected manually before generating subtitles.
 - Silence-based audio segmentation with a review of segment timings.
 - Offline translation using locally installed Argos Translate language packages.
 - Asynchronous subtitle jobs with progress reporting and cancellation.
@@ -100,6 +100,14 @@ The production PWA does not require users to prepare model files manually. When 
 - after each ML stage, the worker releases its runtime and clears the corresponding model files from the Transformers.js browser cache.
 
 The first run therefore requires internet access to Hugging Face. If the resolved OPUS-MT repository does not exist, a download fails, or the browser cannot run the model, the hybrid router records the failure and uses the Python fallback. The former packaged-model manifests and manual bootstrap command have been removed; model delivery is entirely driven by the selected language pair.
+
+To benchmark the available Whisper quantizations on the same 30-second WebGPU sample, run:
+
+```bash
+pdm run benchmark-asr-webgpu --video /path/to/video.mp4
+```
+
+The command compares `fp16`, `q4f16`, and `q4`, rejects WASM fallbacks and text similarity regressions, purges each transient model, and writes a ranked JSON report under `~/.cache/xololingua/benchmarks/`.
 
 Remote model responses bypass the browser HTTP cache and are not stored in the PWA shell cache. Temporary Transformers.js caching is enabled only to share files between warmup and inference within one pipeline run, and is purged after use.
 

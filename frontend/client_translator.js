@@ -92,10 +92,38 @@ export function createClientTranslator({
         const route = Array.isArray(model.route) && model.route.length > 0
           ? model.route
           : [{ sourceLanguage: request.sourceLanguage, targetLanguage: request.targetLanguage, modelId: model.modelId }];
+        let lastTranslationProgress = 0;
+        const reportProgress = (event) => {
+          if (!Number.isFinite(event?.translationProgress)) {
+            onProgress(event);
+            return;
+          }
+          lastTranslationProgress = Math.max(lastTranslationProgress, clampPercent(event.translationProgress));
+          onProgress({
+            ...event,
+            progress: lastTranslationProgress,
+            translationProgress: lastTranslationProgress,
+          });
+        };
         const warmups = [];
+        const translationHops = [];
         let currentSegments = request.segments;
         let workerMetadata = null;
         for (const [routeIndex, routeStep] of route.entries()) {
+          if (route.length > 1) {
+            const routeProgress = Math.round((routeIndex / route.length) * 100);
+            reportProgress({
+              stage: "translation-route",
+              progress: routeProgress,
+              translationProgress: routeProgress,
+              routeIndex: routeIndex + 1,
+              routeCount: route.length,
+              modelId: routeStep.modelId,
+              sourceLanguage: routeStep.sourceLanguage,
+              targetLanguage: routeStep.targetLanguage,
+              message: `Translation hop ${routeIndex + 1}/${route.length}: preparing ${routeStep.modelId} (${routeStep.sourceLanguage} → ${routeStep.targetLanguage})...`,
+            });
+          }
           const warmupMetadata = workerSession
             ? await warmupLocalTranslatorWorker({
                 workerSession,
@@ -107,8 +135,11 @@ export function createClientTranslator({
                 remoteModels: model.remoteModels,
                 purgeOnError: model.purgeAfterUse,
                 device: model.device,
-              }, (event) => onProgress(mapRouteProgress(
-                mapClientMlProgress(event, "translation-warmup"), routeIndex, route.length,
+              }, (event) => reportProgress(mapRouteProgress(
+                mapClientMlProgress(event, "translation-warmup"), routeIndex, route.length, {
+                  phase: "preparation",
+                  budgetModelDelivery: model.remoteModels,
+                },
               )))
             : null;
           if (warmupMetadata) warmups.push(warmupMetadata);
@@ -118,6 +149,7 @@ export function createClientTranslator({
             model.purgeAfterUse ? undefined : maxBatchSize,
           );
           const translatedSegments = [];
+          let routeStepMetadata = null;
           for (const [batchIndex, batch] of batches.entries()) {
             const translateRequest = createTranslatorWorkerRequest({
               request: {
@@ -133,19 +165,30 @@ export function createClientTranslator({
             });
             const result = await translate(
               translateRequest,
-              (event) => onProgress(mapRouteProgress(
+              (event) => reportProgress(mapRouteProgress(
                 mapBatchProgress(
                   mapClientMlProgress(event, "translating"),
                   batchIndex,
                   batches.length,
-                ), routeIndex, route.length,
+                ), routeIndex, route.length, {
+                  phase: "inference",
+                  budgetModelDelivery: model.remoteModels,
+                },
               )),
             );
             translatedSegments.push(...(result.segments || []));
             if (result.metadata) {
               workerMetadata = { ...(workerMetadata || {}), ...result.metadata };
+              routeStepMetadata = { ...(routeStepMetadata || {}), ...result.metadata };
             }
           }
+          translationHops.push({
+            sourceLanguage: routeStep.sourceLanguage,
+            targetLanguage: routeStep.targetLanguage,
+            modelId: routeStep.modelId,
+            ...(warmupMetadata ? { warmup: warmupMetadata } : {}),
+            ...(routeStepMetadata || {}),
+          });
           const translatedByIndex = new Map(translatedSegments.map((segment) => [segment.index, segment]));
           currentSegments = currentSegments.map((segment) => ({
             ...segment,
@@ -162,6 +205,8 @@ export function createClientTranslator({
             ...(model.device ? { devicePreference: model.device } : {}),
             ...(warmups.length > 0 ? { warmup: warmups[0] } : {}),
             ...(model.route && warmups.length > 0 ? { warmups } : {}),
+            ...(workerMetadata || {}),
+            ...(route.length > 1 ? aggregateTranslationHopMetadata(translationHops, segmentCount) : {}),
             ...(model.route ? {
               translationRoute: route.map((step) => ({
                 sourceLanguage: step.sourceLanguage,
@@ -170,7 +215,6 @@ export function createClientTranslator({
               })),
               ...(model.pivotLanguage ? { pivotLanguage: model.pivotLanguage } : {}),
             } : {}),
-            ...(workerMetadata || {}),
           } } : {}),
           segments: currentSegments.map((segment) => ({
             index: segment.index,
@@ -245,15 +289,70 @@ function mapBatchProgress(event, batchIndex, batchCount) {
   };
 }
 
-function mapRouteProgress(event, routeIndex, routeCount) {
-  if (routeCount <= 1) return event;
+function mapRouteProgress(event, routeIndex, routeCount, {
+  phase = "inference",
+  budgetModelDelivery = false,
+} = {}) {
+  if (!budgetModelDelivery) {
+    if (routeCount <= 1) return event;
+    const routeWidth = 100 / routeCount;
+    const progress = Math.round((routeIndex * routeWidth) + ((event.progress / 100) * routeWidth));
+    return {
+      ...event,
+      progress,
+      translationProgress: progress,
+      message: event.message
+        ? `[translation hop ${routeIndex + 1}/${routeCount}] ${event.message}`
+        : event.message,
+    };
+  }
+  const modelPreparationWidth = 5;
   const routeWidth = 100 / routeCount;
+  const inferenceWidth = routeWidth - modelPreparationWidth;
+  const localProgress = clampPercent(event.translationProgress ?? event.progress);
+  const routeStart = routeIndex * routeWidth;
+  const progress = phase === "preparation"
+    ? routeStart + ((localProgress / 100) * modelPreparationWidth)
+    : routeStart + modelPreparationWidth + ((localProgress / 100) * inferenceWidth);
+  const roundedProgress = Math.round(progress);
   return {
     ...event,
-    progress: Math.round((routeIndex * routeWidth) + ((event.progress / 100) * routeWidth)),
+    progress: roundedProgress,
+    translationProgress: roundedProgress,
     message: event.message
       ? `[translation hop ${routeIndex + 1}/${routeCount}] ${event.message}`
       : event.message,
+  };
+}
+
+function clampPercent(value) {
+  return Math.max(0, Math.min(100, Number(value) || 0));
+}
+
+function aggregateTranslationHopMetadata(hops, segmentCount) {
+  const metadataHops = hops.filter((hop) => hop && typeof hop === "object");
+  const runtimeHops = metadataHops.filter((hop) => hop.executionDevice || hop.timings || hop.cachePurged !== undefined);
+  const aggregate = { translationHops: metadataHops };
+  if (runtimeHops.length === 0) return aggregate;
+  const runtimeLabels = [...new Set(runtimeHops.map((hop) => hop.executionDeviceLabel).filter(Boolean))];
+  const runtimeDevices = [...new Set(runtimeHops.map((hop) => hop.executionDevice).filter(Boolean))];
+  const fallbackReasons = [...new Set(runtimeHops.map((hop) => hop.deviceFallbackReason).filter(Boolean))];
+  const inferenceMs = runtimeHops.reduce((total, hop) => total + Number(hop.timings?.inferenceMs || 0), 0);
+  const warmupTotalMs = runtimeHops.reduce((total, hop) => total + Number(hop.warmup?.timings?.warmupTotalMs || 0), 0);
+  const filesDeleted = runtimeHops.reduce((total, hop) => total + Number(hop.filesDeleted || 0), 0);
+  return {
+    ...aggregate,
+    ...(runtimeDevices.length > 0 ? { executionDevice: runtimeDevices.join("/") } : {}),
+    ...(runtimeLabels.length > 0 ? { executionDeviceLabel: runtimeLabels.join(" / ") } : {}),
+    ...(fallbackReasons.length > 0 ? { deviceFallbackReason: fallbackReasons.join(" | ") } : {}),
+    cachePurged: runtimeHops.every((hop) => hop.cachePurged === true),
+    filesDeleted,
+    timings: {
+      inferenceMs,
+      segmentCount,
+      hopCount: runtimeHops.length,
+    },
+    warmup: { timings: { warmupTotalMs } },
   };
 }
 
@@ -265,7 +364,7 @@ function createTranslationWorkerClient({ workerSession, maxWorkerResponseMs }) {
     request,
     onProgress,
     timeoutMs: maxWorkerResponseMs,
-    timeoutMessage: `Browser translation worker did not respond within ${maxWorkerResponseMs}ms.`,
+    timeoutMessage: `Browser translation worker reported no progress for ${maxWorkerResponseMs}ms.`,
     failureMessage: "Browser translation worker failed.",
   });
 }
@@ -299,7 +398,7 @@ function warmupLocalTranslatorWorker({
     },
     onProgress,
     timeoutMs: warmupTimeoutMs,
-    timeoutMessage: `Browser translation warmup worker did not respond within ${warmupTimeoutMs}ms.`,
+    timeoutMessage: `Browser translation warmup worker reported no progress for ${warmupTimeoutMs}ms.`,
     failureMessage: "Browser translation warmup failed.",
   });
 }

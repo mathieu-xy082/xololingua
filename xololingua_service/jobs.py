@@ -17,7 +17,6 @@ from . import runtime as whisper_runtime
 from .settings import (
     SUBTITLE_JOB_WORKERS,
     TRANSLATION_WORKERS,
-    WHISPER_CPU_COMPUTE_TYPE,
     WHISPER_CPU_MODEL,
     WHISPER_GPU_COMPUTE_TYPE,
     WHISPER_GPU_MODEL,
@@ -312,7 +311,7 @@ def truncate_message(message: str, max_length: int = 180) -> str:
 
 
 def run_subtitle_job(job_id: str, audio_path: Path, segments: list[dict], source_language: str, target_language: str) -> None:
-    from .transcription import transcribe_segments
+    from .transcription import transcribe_segments_with_cpu_fallback
     from .translation import translate_segments
 
     try:
@@ -340,26 +339,8 @@ def run_subtitle_job(job_id: str, audio_path: Path, segments: list[dict], source
                 message=f"Transcribed {done}/{total} segments.",
             )
 
-        try:
-            transcribed_segments = transcribe_segments(
-                audio_path,
-                segments,
-                source_language,
-                transcription_progress,
-                job_id,
-                selected_runtime,
-            )
-        except subprocess.CalledProcessError as error:
-            if selected_runtime.get("device") != "cuda":
-                raise
+        def on_cpu_fallback(fallback_reason: str) -> None:
             ensure_job_not_cancelled(job_id)
-            fallback_reason = command_error_summary(error)
-            if not whisper_runtime.CPU_WHISPER_RUNTIME.get("available"):
-                raise RuntimeError(
-                    f"GPU transcription failed and CPU fallback is unavailable. "
-                    f"GPU error: {fallback_reason}. "
-                    f"CPU fallback error: {whisper_runtime.CPU_WHISPER_RUNTIME.get('fallbackReason', 'unknown')}"
-                ) from error
             update_job(
                 job_id,
                 progress=1,
@@ -369,18 +350,16 @@ def run_subtitle_job(job_id: str, audio_path: Path, segments: list[dict], source
                 ),
                 error=fallback_reason,
             )
-            cpu_runtime = {
-                **whisper_runtime.CPU_WHISPER_RUNTIME,
-                "fallbackReason": f"Runtime fallback after CUDA failure: {fallback_reason}",
-            }
-            transcribed_segments = transcribe_segments(
-                audio_path,
-                segments,
-                source_language,
-                transcription_progress,
-                job_id,
-                cpu_runtime,
-            )
+
+        transcribed_segments = transcribe_segments_with_cpu_fallback(
+            audio_path,
+            segments,
+            source_language,
+            transcription_progress,
+            job_id,
+            selected_runtime,
+            on_cpu_fallback,
+        )
         ensure_job_not_cancelled(job_id)
         update_job(
             job_id,
@@ -421,13 +400,14 @@ def run_subtitle_job(job_id: str, audio_path: Path, segments: list[dict], source
         if is_job_cancelled(job_id):
             mark_job_cancelled(job_id)
             return
+        detail = command_error_summary(error) if isinstance(error, subprocess.CalledProcessError) else str(error)
         update_job(
             job_id,
             status="failed",
             stage="failed",
             progress=0,
-            message=str(error),
-            error=str(error),
+            message=detail,
+            error=detail,
         )
     finally:
         cleanup_job_runtime(job_id)

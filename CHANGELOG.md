@@ -4,6 +4,35 @@ All notable changes to XoloLingua will be documented in this file.
 
 This project follows Semantic Versioning.
 
+## Unreleased
+
+### Added
+
+- Added a reproducible WebGPU ASR dtype benchmark for `fp16`, `q4f16`, and `q4`, including quality similarity, timing, cache-purge, and adapter diagnostics.
+- Added a logged CUDA warmup with NVIDIA wake-up and retried Whisper validation before selecting the CPU fallback.
+- Added an explicit log confirming that the faster-whisper mini inference completed successfully on CUDA.
+- Added device-aware ASR scheduling: sequential WebGPU inference and adaptive 4/2/1 batching for WASM CPU.
+- Added timestamp-preserving Whisper WebGPU decoding over overlapping 30-second windows, official overlap decoding, VAD timestamp realignment, and an automated 1/2/4 internal-batch capability benchmark.
+- Added a source-language selector so users can correct automatic language identification before generating subtitles.
+
+### Changed
+
+- Increased language identification from five to ten evenly spaced 30-second samples across long videos.
+- Switched Whisper language identification to its dedicated detection API, avoiding unnecessary GPU transcript decoding and recording the sample number when detection fails.
+
+### Fixed
+
+- Changed browser-worker inference limits from absolute deadlines to inactivity timeouts refreshed by progress, preventing healthy long-form WebGPU transcription from being discarded after five minutes.
+- Allocated fixed five-percent model-preparation budgets per translation hop and kept the remaining progress monotonic across direct and English-pivot inference.
+- Released Whisper input tensors, token timestamps, attention tensors, and KV caches after every long-form WebGPU window to prevent accumulated GPU resources from invalidating the browser compute context.
+- Made bounded pivot translation hops explicit in progress and diagnostics, including both model identifiers and aggregate timing/cache-purge metadata.
+- Invalidated the PWA cache after device-aware ASR worker changes so browsers load the current GPU/CPU scheduling logic.
+- Updated `pdm run web` to launch the default Chromium-family browser with Vulkan/WebGPU flags in a dedicated XoloLingua profile.
+- Added CPU retry handling when CUDA becomes unavailable during language detection after a successful startup probe.
+- Kept production WebGPU decoding at the validated batch size of 1 because the current Whisper ONNX/WebGPU sessions invalidate the GPU context at batch sizes 2 and 4.
+- Routed server-only extracted audio directly to Python VAD, preventing browser segmentation errors on long videos that use Python audio extraction.
+- Applied GPU-to-CPU transcription retry to both direct transcription and subtitle jobs, with concise errors if the CPU retry also fails.
+
 ## 1.1.0 - 2026-08-16
 
 ### Added

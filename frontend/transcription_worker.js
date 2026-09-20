@@ -1,5 +1,9 @@
-import { env, ModelRegistry, pipeline } from "../node_modules/@huggingface/transformers/dist/transformers.min.js";
+import { cat, env, ModelRegistry, pipeline } from "../node_modules/@huggingface/transformers/dist/transformers.min.js";
 import { createRuntimeMetadata, loadPipelineWithDeviceFallback } from "./browser_inference_device.js";
+import {
+  alignWhisperWordsToVadSegments,
+  transcribeWhisperInBatches,
+} from "./batched_whisper_runtime.js";
 
 const DEFAULT_MODEL_ID = "Xenova/whisper-base";
 const DEFAULT_SAMPLE_RATE = 16_000;
@@ -17,6 +21,7 @@ env.fetch = (input, init = {}) => transformersFetch(input, withTransientRemoteCa
 let recognizerPromise;
 let recognizerModelId;
 let recognizerDevicePreference;
+let recognizerDtype;
 let recognizerRuntime;
 
 self.onmessage = async (event) => {
@@ -39,6 +44,7 @@ self.onmessage = async (event) => {
       const metadata = await releaseRecognizer(
         request.modelId || recognizerModelId || DEFAULT_MODEL_ID,
         request.purgeCache !== false,
+        request.dtype || recognizerDtype || "q4",
       );
       self.postMessage({ type: "dispose-complete", metadata });
       return;
@@ -47,7 +53,7 @@ self.onmessage = async (event) => {
     throw new Error(`Unsupported transcription worker message type: ${message.type || "unknown"}.`);
   } catch (error) {
     if (message.request?.purgeAfterUse || message.request?.purgeOnError) {
-      await releaseRecognizer(message.request.modelId || DEFAULT_MODEL_ID, true);
+      await releaseRecognizer(message.request.modelId || DEFAULT_MODEL_ID, true, message.request.dtype || recognizerDtype || "q4");
     }
     self.postMessage({
       type: "error",
@@ -56,7 +62,7 @@ self.onmessage = async (event) => {
   }
 };
 
-async function warmupRecognizer({ modelId = DEFAULT_MODEL_ID, sampleSeconds = 1, sourceLanguage = "auto", remoteModels = false, device = "auto" } = {}) {
+async function warmupRecognizer({ modelId = DEFAULT_MODEL_ID, dtype = "q4", sampleSeconds = 1, sourceLanguage = "auto", remoteModels = false, device = "auto" } = {}) {
   const warmupStartedAt = nowMs();
   configureModelSource(remoteModels);
   self.postMessage({ type: "progress", event: { stage: "asr-warmup", progress: 5, message: "Loading ASR model..." } });
@@ -64,7 +70,7 @@ async function warmupRecognizer({ modelId = DEFAULT_MODEL_ID, sampleSeconds = 1,
   const stopModelHeartbeat = startModelPreparationHeartbeat("Whisper");
   let recognizer;
   try {
-    recognizer = await getRecognizer(modelId, device);
+    recognizer = await getRecognizer(modelId, device, dtype);
   } finally {
     stopModelHeartbeat();
   }
@@ -86,6 +92,7 @@ async function warmupRecognizer({ modelId = DEFAULT_MODEL_ID, sampleSeconds = 1,
   });
   return {
     modelId,
+    dtype,
     warmed: true,
     sampleSeconds,
     localModelPath: env.localModelPath,
@@ -97,8 +104,9 @@ async function warmupRecognizer({ modelId = DEFAULT_MODEL_ID, sampleSeconds = 1,
 async function transcribeAudio(request = {}) {
   const requestStartedAt = nowMs();
   const modelId = request.modelId || DEFAULT_MODEL_ID;
+  const dtype = request.dtype || "q4";
   configureModelSource(request.remoteModels);
-  const recognizer = await getRecognizer(modelId, request.device || "auto");
+  const recognizer = await getRecognizer(modelId, request.device || "auto", dtype);
   const inputStartedAt = nowMs();
   const audioInput = await resolveAudioInput(request);
   const inputPreparationMs = elapsedMs(inputStartedAt);
@@ -106,7 +114,15 @@ async function transcribeAudio(request = {}) {
   const vadSegments = Array.isArray(request.segments) ? request.segments : [];
   const sampleRate = Number(request.audio?.sampleRate || request.audio?.sampleRateHz || DEFAULT_SAMPLE_RATE);
   const transcription = audioInput instanceof Float32Array && vadSegments.length > 0
-    ? await transcribeVadSegments({ recognizer, audioInput, sampleRate, segments: vadSegments, sourceLanguage })
+    ? await transcribeVadSegments({
+        recognizer,
+        audioInput,
+        sampleRate,
+        segments: vadSegments,
+        sourceLanguage,
+        internalBatching: request.internalBatching !== false,
+        initialBatchSize: request.internalBatchSize || 1,
+      })
     : await transcribeWholeAudio({ recognizer, audioInput, request, sourceLanguage });
 
   const result = {
@@ -123,7 +139,7 @@ async function transcribeAudio(request = {}) {
   };
   if (request.purgeAfterUse) {
     const cleanupStartedAt = nowMs();
-    const releaseMetadata = await releaseRecognizer(modelId, true);
+    const releaseMetadata = await releaseRecognizer(modelId, true, dtype);
     result.metadata = {
       ...result.metadata,
       ...releaseMetadata,
@@ -139,8 +155,30 @@ async function transcribeAudio(request = {}) {
   return result;
 }
 
-async function transcribeVadSegments({ recognizer, audioInput, sampleRate, segments, sourceLanguage }) {
+async function transcribeVadSegments({
+  recognizer,
+  audioInput,
+  sampleRate,
+  segments,
+  sourceLanguage,
+  internalBatching,
+  initialBatchSize,
+}) {
   const transcriptionStartedAt = nowMs();
+  const executionDevice = recognizerRuntime?.device || "wasm";
+  const isWebGpu = executionDevice === "webgpu";
+  if (isWebGpu) {
+    return internalBatching
+      ? transcribeWebGpuVadSegments({
+          recognizer,
+          audioInput,
+          sampleRate,
+          segments,
+          sourceLanguage,
+          initialBatchSize,
+        })
+      : transcribeWebGpuSequentialLongForm({ recognizer, audioInput, sampleRate, segments, sourceLanguage });
+  }
   const transcribed = [];
   const segmentTimings = [];
   let totalInferenceMs = 0;
@@ -148,7 +186,11 @@ async function transcribeVadSegments({ recognizer, audioInput, sampleRate, segme
   let totalAudioSeconds = 0;
   let batchSize = 4;
   let offset = 0;
-  reportTranscriptionProgress(1, `Transcribing speech segments (batch ${batchSize})...`);
+  reportTranscriptionProgress(
+    1,
+    `Transcribing speech segments (WASM CPU, batch ${batchSize})...`,
+    { executionDevice, batchMode: "adaptive" },
+  );
   while (offset < segments.length) {
     const batch = segments.slice(offset, offset + batchSize);
     let results;
@@ -159,8 +201,8 @@ async function transcribeVadSegments({ recognizer, audioInput, sampleRate, segme
       batchSize = batchSize === 4 ? 2 : 1;
       reportTranscriptionProgress(
         Math.round((offset / Math.max(1, segments.length)) * 100),
-        `GPU memory constrained; retrying ASR with batch ${batchSize}...`,
-        { batchSize },
+        `ASR runtime memory constrained; retrying with batch ${batchSize}...`,
+        { batchSize, executionDevice, batchMode: "adaptive" },
       );
       continue;
     }
@@ -187,12 +229,15 @@ async function transcribeVadSegments({ recognizer, audioInput, sampleRate, segme
     reportTranscriptionProgress(
       Math.round((completed / Math.max(1, segments.length)) * 100),
       completed < segments.length
-        ? `Transcribed ${completed}/${segments.length} speech segments (batch ${batchSize}); processing segment ${completed + 1}...`
-        : `Transcribed all ${segments.length} speech segments in ${formatSeconds(totalInferenceMs)} (${calculateRealtimeFactor(totalInferenceMs, totalAudioSeconds).toFixed(2)}× realtime).`,
+        ? `Transcribed ${completed}/${segments.length} speech segments (WASM CPU, batch ${batchSize}); processing segment ${completed + 1}...`
+        : `Transcribed all ${segments.length} speech segments (WASM CPU, batch ${batchSize}) in ${formatSeconds(totalInferenceMs)} (${calculateRealtimeFactor(totalInferenceMs, totalAudioSeconds).toFixed(2)}× realtime).`,
       {
         completedSegments: completed,
         segmentCount: segments.length,
         batchSize,
+        executionDevice,
+        batchMode: "adaptive",
+        maxInFlight: batchSize,
         totalInferenceMs: roundMetric(totalInferenceMs),
         totalAudioSeconds: roundMetric(totalAudioSeconds),
       },
@@ -203,6 +248,9 @@ async function transcribeVadSegments({ recognizer, audioInput, sampleRate, segme
     timings: {
       mode: "vad-segments",
       batchSize,
+      executionDevice,
+      batchMode: "adaptive",
+      maxInFlight: batchSize,
       segmentCount: segments.length,
       audioSeconds: roundMetric(totalAudioSeconds),
       preparationMs: roundMetric(totalPreparationMs),
@@ -212,6 +260,140 @@ async function transcribeVadSegments({ recognizer, audioInput, sampleRate, segme
       segments: segmentTimings,
     },
   };
+}
+
+async function transcribeWebGpuVadSegments({
+  recognizer,
+  audioInput,
+  sampleRate,
+  segments,
+  sourceLanguage,
+  initialBatchSize,
+}) {
+  const requestedBatchSize = [4, 2, 1].find((size) => Number(initialBatchSize) >= size) || 1;
+  reportTranscriptionProgress(
+    1,
+    requestedBatchSize > 1
+      ? `Transcribing full audio with experimental internal Whisper batching (WebGPU, batch ${requestedBatchSize})...`
+      : "Transcribing overlapping Whisper windows with timestamp-preserving WebGPU decoding...",
+    {
+      executionDevice: "webgpu",
+      batchMode: requestedBatchSize > 1 ? "internal-experimental" : "direct-windowed",
+      batchSize: requestedBatchSize,
+    },
+  );
+  try {
+    const result = await transcribeWhisperInBatches({
+      recognizer,
+      audioInput,
+      sampleRate,
+      vadSegments: segments,
+      sourceLanguage,
+      initialBatchSize: requestedBatchSize,
+      concatenateTensors: cat,
+      onProgress: (event) => {
+        const progress = Math.max(1, Math.round((event.completedWindows / Math.max(1, event.windowCount)) * 100));
+        if (event.downgradedFrom) {
+          reportTranscriptionProgress(
+            progress,
+            `WebGPU memory constrained; retrying internal Whisper batching at batch ${event.batchSize}...`,
+            { ...event, executionDevice: "webgpu", batchMode: "internal-adaptive" },
+          );
+          return;
+        }
+        reportTranscriptionProgress(
+          progress,
+          event.completedWindows < event.windowCount
+            ? `Transcribed ${event.completedWindows}/${event.windowCount} Whisper windows (WebGPU internal batch ${event.generatedBatchSize}); processing next batch...`
+            : `Decoded all ${event.windowCount} Whisper windows with WebGPU internal batching.`,
+          { ...event, executionDevice: "webgpu", batchMode: "internal-adaptive" },
+        );
+      },
+    });
+    const metrics = {
+      ...result.metrics,
+      executionDevice: "webgpu",
+      batchMode: result.metrics.effectiveBatchSize > 1 ? "internal-adaptive" : "direct-windowed",
+      segmentCount: segments.length,
+    };
+    reportTranscriptionProgress(
+      100,
+      metrics.effectiveBatchSize > 1
+        ? `Speech transcription complete with WebGPU internal batching in ${formatSeconds(metrics.inferenceMs)} (${metrics.realtimeFactor.toFixed(2)}× realtime; ${metrics.generationCallCount} batches for ${metrics.windowCount} windows).`
+        : `Speech transcription complete with timestamp-preserving WebGPU window decoding in ${formatSeconds(metrics.inferenceMs)} (${metrics.realtimeFactor.toFixed(2)}× realtime).`,
+      metrics,
+    );
+    return { segments: result.segments, timings: metrics };
+  } catch (batchError) {
+    const fallbackReason = batchError instanceof Error ? batchError.message : String(batchError);
+    if (/invalidated the GPU context/i.test(fallbackReason)) throw batchError;
+    return transcribeWebGpuSequentialLongForm({
+      recognizer,
+      audioInput,
+      sampleRate,
+      segments,
+      sourceLanguage,
+      fallbackReason,
+    });
+  }
+}
+
+async function transcribeWebGpuSequentialLongForm({
+  recognizer,
+  audioInput,
+  sampleRate,
+  segments,
+  sourceLanguage,
+  fallbackReason = "",
+}) {
+  const isFallback = Boolean(fallbackReason);
+  const batchMode = isFallback ? "sequential-fallback" : "sequential-reference";
+  reportTranscriptionProgress(
+    1,
+    isFallback
+      ? "Internal Whisper batching is unavailable; retrying with the standard WebGPU sequential decoder..."
+      : "Running the standard WebGPU sequential Whisper decoder...",
+    { executionDevice: "webgpu", batchMode, fallbackReason },
+  );
+  const transcriptionStartedAt = nowMs();
+  const inferenceStartedAt = nowMs();
+  let output;
+  try {
+    output = await recognizer(
+      audioInput,
+      createWhisperOptions({ sourceLanguage, returnTimestamps: "word" }),
+    );
+  } catch (sequentialError) {
+    if (!fallbackReason) throw sequentialError;
+    const sequentialReason = sequentialError instanceof Error ? sequentialError.message : String(sequentialError);
+    throw new Error(
+      `Internal Whisper batching failed: ${fallbackReason}. Standard WebGPU sequential fallback also failed: ${sequentialReason}`,
+      { cause: sequentialError },
+    );
+  }
+  const inferenceMs = elapsedMs(inferenceStartedAt);
+  const alignment = alignWhisperWordsToVadSegments(output?.chunks || [], segments);
+  const audioSeconds = audioInput.length / sampleRate;
+  const metrics = {
+    mode: `webgpu-${batchMode}`,
+    executionDevice: "webgpu",
+    batchMode,
+    batchSize: 1,
+    segmentCount: segments.length,
+    audioSeconds: roundMetric(audioSeconds),
+    preparationMs: 0,
+    inferenceMs,
+    transcriptionWallMs: elapsedMs(transcriptionStartedAt),
+    realtimeFactor: calculateRealtimeFactor(inferenceMs, audioSeconds),
+    fallbackReason,
+    ...alignment.metrics,
+  };
+  reportTranscriptionProgress(
+    100,
+    `Speech transcription complete with standard WebGPU sequential decoding in ${formatSeconds(inferenceMs)} (${metrics.realtimeFactor.toFixed(2)}× realtime).`,
+    metrics,
+  );
+  return { segments: alignment.segments, timings: metrics };
 }
 
 async function transcribeVadBatch({ recognizer, audioInput, sampleRate, segments, sourceLanguage, offset }) {
@@ -367,15 +549,16 @@ function extractWhisperText(output) {
   return String(output?.text || "").trim();
 }
 
-async function getRecognizer(modelId, devicePreference = "auto") {
-  if (!recognizerPromise || recognizerModelId !== modelId || recognizerDevicePreference !== devicePreference) {
+async function getRecognizer(modelId, devicePreference = "auto", dtype = "q4") {
+  if (!recognizerPromise || recognizerModelId !== modelId || recognizerDevicePreference !== devicePreference || recognizerDtype !== dtype) {
     recognizerModelId = modelId;
     recognizerDevicePreference = devicePreference;
+    recognizerDtype = dtype;
     recognizerPromise = loadPipelineWithDeviceFallback({
       createPipeline: pipeline,
       task: "automatic-speech-recognition",
       modelId,
-      dtype: "q4",
+      dtype,
       devicePreference,
       environment: self,
       pipelineOptions: {
@@ -402,7 +585,7 @@ function withTransientRemoteCache(input, init) {
   return url.startsWith(env.remoteHost) ? { ...init, cache: "no-store" } : init;
 }
 
-async function releaseRecognizer(modelId, purgeCache) {
+async function releaseRecognizer(modelId, purgeCache, dtype = recognizerDtype || "q4") {
   const pending = recognizerPromise;
   let recognizer = null;
   try {
@@ -416,12 +599,13 @@ async function releaseRecognizer(modelId, purgeCache) {
   recognizerPromise = undefined;
   recognizerModelId = undefined;
   recognizerDevicePreference = undefined;
+  recognizerDtype = undefined;
   const runtimeMetadata = createRuntimeMetadata(recognizerRuntime);
   recognizerRuntime = undefined;
   if (purgeCache && typeof ModelRegistry?.clear_pipeline_cache === "function") {
     let report;
     try {
-      report = await ModelRegistry.clear_pipeline_cache("automatic-speech-recognition", modelId, { dtype: "q4" });
+      report = await ModelRegistry.clear_pipeline_cache("automatic-speech-recognition", modelId, { dtype });
     } catch (error) {
       return { ...runtimeMetadata, cachePurged: false, filesDeleted: 0, purgeError: error?.message || String(error) };
     }
