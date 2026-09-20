@@ -7,7 +7,7 @@ The application targets Chrome or Chromium on Ubuntu and can also run on Android
 ## Features
 
 - Drag-and-drop MP4 selection and video preview.
-- Validation of file type and the 2 h 30 min duration limit.
+- Validation of file type and video duration: 1 hour on the public site, 2 h 30 min in local development.
 - Whisper-based spoken-language identification from 10 clips distributed across long videos, with CUDA support and a CPU fallback. The source language can be selected or corrected manually before generating subtitles.
 - Silence-based audio segmentation with a review of segment timings.
 - Offline translation using locally installed Argos Translate language packages.
@@ -113,7 +113,7 @@ The command compares `fp16`, `q4f16`, and `q4`, rejects WASM fallbacks and text 
 
 Remote model responses bypass the browser HTTP cache and are not stored in the PWA shell cache. Temporary Transformers.js caching is enabled only to share files between warmup and inference within one pipeline run, and is purged after use.
 
-The browser extraction, VAD, transcription, and translation stages share a one-hour video-duration ceiling. The browser extraction path also limits MP4 inputs to 400 MiB, and the VAD/transcription paths limit extracted audio to 250 MiB. A stage that exceeds a browser limit uses the Python service. The app still accepts videos up to 2 h 30 min through the service. See [the browser memory budget](docs/browser-duration-memory-budget.md) for the byte calculations and important limits of these estimates. The ffmpeg.wasm extractor checks video size before loading the runtime and again after `fetchFile`; it probes video duration with a 10-second metadata timeout and cleans up the virtual filesystem after extraction. It can release the WASM runtime after a run when `releaseAfterRun` is enabled.
+The browser extraction, VAD, transcription, and translation stages share a one-hour video-duration ceiling. The public site also rejects videos and uploaded WAV files over one hour in both the interface and Python API. Local development and tests keep the 2 h 30 min application limit. The browser extraction path limits MP4 inputs to 400 MiB, and the VAD/transcription paths limit extracted audio to 250 MiB. A browser stage that exceeds a byte limit uses the Python service. See [the browser memory budget](docs/browser-duration-memory-budget.md) for the byte calculations and important limits of these estimates. The ffmpeg.wasm extractor checks video size before loading the runtime and again after `fetchFile`; it probes video duration with a 10-second metadata timeout and cleans up the virtual filesystem after extraction. It can release the WASM runtime after a run when `releaseAfterRun` is enabled.
 
 ## Build and Run Locally
 

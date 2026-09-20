@@ -12,6 +12,7 @@ import { createAppFfmpegWasmAudioExtractor } from "./frontend/ffmpeg_wasm_runtim
 import { formatPipelineStageRuntime, formatPipelineStageSummary } from "./frontend/pipeline_stage_status.js";
 import { resolveServiceBaseUrl } from "./frontend/service_url.js";
 import { createVadWebRuntimeSegmenter } from "./frontend/vad_web_runtime.js";
+import { resolveVideoDurationPolicy } from "./frontend/video_duration_policy.js";
 import {
   beginModelDelivery,
   createModelDeliveryTracker,
@@ -21,11 +22,11 @@ import {
   updateModelDelivery,
 } from "./frontend/model_delivery_status.js";
 
-const MAX_DURATION_SECONDS = 2.5 * 60 * 60;
+const VIDEO_DURATION_POLICY = resolveVideoDurationPolicy();
 const SEGMENT_SECONDS = 12;
 const SERVICE_BASE_URL = resolveServiceBaseUrl();
 globalThis.__xololinguaDynamicModels = true;
-const APP_ASSET_VERSION = "2026-09-20-4";
+const APP_ASSET_VERSION = "2026-09-20-5";
 const backendClient = createBackendClient({ baseUrl: SERVICE_BASE_URL });
 const clientPipelineCapabilities = collectClientPipelineCapabilities();
 const appClientAdapters = createAppClientAdapters({
@@ -128,6 +129,7 @@ const state = {
 const els = {
   dropzone: document.querySelector("#dropzone"),
   uploadNotice: document.querySelector("#uploadNotice"),
+  maxDurationLabel: document.querySelector("#maxDurationLabel"),
   fileInput: document.querySelector("#fileInput"),
   browseButton: document.querySelector("#browseButton"),
   videoCard: document.querySelector("#videoCard"),
@@ -179,6 +181,7 @@ const els = {
 let deferredInstallPrompt = null;
 let _pairsFetched = false;
 if (els.uploadNotice) els.uploadNotice.hidden = SERVICE_BASE_URL !== globalThis.location?.origin;
+els.maxDurationLabel.textContent = VIDEO_DURATION_POLICY.label;
 populateLanguages();
 bindEvents();
 bindInstallPrompt();
@@ -360,16 +363,14 @@ function loadVideoFile(file) {
 
 function validateDuration() {
   if (!Number.isFinite(state.duration) || state.duration <= 0) {
+    resetOutput();
     els.languageStatus.textContent = "The video duration could not be read.";
-    state.videoFile = null;
-    state.metadataReady = false;
     return;
   }
 
-  if (state.duration > MAX_DURATION_SECONDS) {
-    els.languageStatus.textContent = "This video exceeds the 2 h 30 min limit.";
-    state.videoFile = null;
-    state.metadataReady = false;
+  if (state.duration > VIDEO_DURATION_POLICY.maxDurationSeconds) {
+    resetOutput();
+    els.languageStatus.textContent = `This video exceeds the ${VIDEO_DURATION_POLICY.label} limit.`;
     return;
   }
 

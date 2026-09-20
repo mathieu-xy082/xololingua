@@ -1,6 +1,6 @@
 # Public Ubuntu deployment
 
-This example targets one Ubuntu 24.04 server with 2 vCPU, 8 GiB RAM, no GPU, and one HTTPS domain. It is an initial public service with one processing request and one subtitle job at a time. CPU transcription of long videos can take a long time; excess work receives HTTP 429. Uploaded MP4 requests are limited to 2 GB. A separate capacity and abuse review is needed before promoting this to a high-traffic service.
+This example targets one Ubuntu 24.04 server with 2 vCPU, 8 GiB RAM, no GPU, and one HTTPS domain. It is an initial public service with one processing request and one subtitle job at a time. CPU transcription can take a long time; excess work receives HTTP 429. Public video and WAV uploads are limited to 1 hour of media. Uploaded MP4 requests are also limited to 2 GB. A separate capacity and abuse review is needed before promoting this to a high-traffic service.
 
 ## Prepare the server
 
@@ -15,6 +15,7 @@ This example targets one Ubuntu 24.04 server with 2 vCPU, 8 GiB RAM, no GPU, and
 ## Limits and operations
 
 - `XOLOLINGUA_PUBLIC_MODE=1` disables the global job listing and cross-origin API access. It limits processing to one active request, subtitle generation to one active job, and expensive requests to 12 per IP per hour. Caddy sets `X-Real-IP` itself so visitors cannot choose their own rate-limit identity. Visitors sharing one public IP also share that allowance.
+- Public mode rejects videos and registered WAV files longer than 3,600 seconds after probing the uploaded media and removes the rejected temporary file. The site UI checks the same limit before uploading. Local development keeps the 9,000-second limit for long-video tests.
 - Caddy and Python both cap a request body at about 2 GB. Keep `max_size 2GB` and `XOLOLINGUA_PUBLIC_MAX_UPLOAD_BYTES=2000000000` close if the limit changes; the lower limit applies. The Python service also caps its media directory at 10 GB with 1 GB of headroom for processing. It removes abandoned generated media older than 24 hours on the next upload, while preserving audio used by an active job. Allow room for temporary upload files, installed models, and OS updates within the 68 GiB free disk.
 - The app keeps up to 20 completed job snapshots in process memory. A server restart clears in-memory jobs, so visitors lose progress on any running job. Monitor `/var/lib/xololingua/tmp/service` and RAM.
 - `journalctl -u xololingua -f` shows Python errors; `journalctl -u caddy -f` shows HTTPS and reverse-proxy errors. A 429 means the configured CPU capacity or hourly request allowance was reached. A 413 means the MP4 exceeded the public upload limit.

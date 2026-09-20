@@ -88,16 +88,18 @@ class PipelineIntegrationTests(unittest.TestCase):
             return json.loads(r.read())
 
     def _upload_mp4(self, mp4_path):
+        with open(mp4_path, "rb") as file:
+            return self._post_multipart_file("/api/extract-audio", "video", mp4_path.name, file.read(), "video/mp4")
+
+    def _post_multipart_file(self, path, field_name, filename, data, content_type):
         boundary = "XOLO_TEST_BOUNDARY"
-        with open(mp4_path, "rb") as f:
-            data = f.read()
         body = (
             f"--{boundary}\r\n"
-            f'Content-Disposition: form-data; name="video"; filename="{mp4_path.name}"\r\n'
-            f"Content-Type: video/mp4\r\n\r\n"
+            f'Content-Disposition: form-data; name="{field_name}"; filename="{filename}"\r\n'
+            f"Content-Type: {content_type}\r\n\r\n"
         ).encode() + data + f"\r\n--{boundary}--\r\n".encode()
         req = urllib.request.Request(
-            self._url("/api/extract-audio"),
+            self._url(path),
             data=body,
             headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
             method="POST",
@@ -237,6 +239,65 @@ class PipelineIntegrationTests(unittest.TestCase):
                 extracted = self._upload_mp4(mp4_path)
             self.assertNotIn("audioPath", extracted)
             self._post_json("/api/release-audio", {"audioId": extracted["audioId"]})
+
+    def test_public_uploads_reject_media_over_one_hour_and_remove_temporary_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work_dir = Path(directory)
+            video = work_dir / "sample.mp4"
+            video.write_bytes(b"test video")
+            with (
+                mock.patch.object(http_api, "WORK_DIR", work_dir),
+                mock.patch.object(http_api, "PUBLIC_MODE", True),
+                mock.patch.object(http_api, "public_work_bytes", return_value=0),
+                mock.patch.object(http_api, "allow_public_processing", return_value=True),
+                mock.patch.object(http_api, "probe_duration", return_value=3600.1),
+            ):
+                with self.assertRaises(urllib.error.HTTPError) as video_error:
+                    self._upload_mp4(video)
+                with self.assertRaises(urllib.error.HTTPError) as audio_error:
+                    self._post_multipart_file("/api/register-audio", "audio", "sample.wav", b"test audio", "audio/wav")
+
+            self.assertEqual(video_error.exception.code, 400)
+            self.assertIn("1 h limit", json.loads(video_error.exception.read())["error"])
+            self.assertEqual(audio_error.exception.code, 400)
+            self.assertIn("1 h limit", json.loads(audio_error.exception.read())["error"])
+            self.assertEqual(sorted(path.name for path in work_dir.iterdir()), ["sample.mp4"])
+
+    def test_local_service_accepts_over_two_hours_for_development(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work_dir = Path(directory)
+            video = work_dir / "sample.mp4"
+            video.write_bytes(b"test video")
+            with (
+                mock.patch.object(http_api, "WORK_DIR", work_dir),
+                mock.patch.object(http_api, "PUBLIC_MODE", False),
+                mock.patch.object(http_api, "probe_duration", return_value=7201),
+                mock.patch.object(http_api, "extract_audio", side_effect=lambda _source, destination: destination.write_bytes(b"RIFF")),
+            ):
+                extracted = self._upload_mp4(video)
+                registered = self._post_multipart_file("/api/register-audio", "audio", "sample.wav", b"test audio", "audio/wav")
+
+            self.assertEqual(extracted["durationSeconds"], 7201)
+            self.assertEqual(registered["durationSeconds"], 7201)
+
+    def test_public_uploads_accept_exactly_one_hour(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work_dir = Path(directory)
+            video = work_dir / "sample.mp4"
+            video.write_bytes(b"test video")
+            with (
+                mock.patch.object(http_api, "WORK_DIR", work_dir),
+                mock.patch.object(http_api, "PUBLIC_MODE", True),
+                mock.patch.object(http_api, "public_work_bytes", return_value=0),
+                mock.patch.object(http_api, "allow_public_processing", return_value=True),
+                mock.patch.object(http_api, "probe_duration", return_value=3600),
+                mock.patch.object(http_api, "extract_audio", side_effect=lambda _source, destination: destination.write_bytes(b"RIFF")),
+            ):
+                extracted = self._upload_mp4(video)
+                registered = self._post_multipart_file("/api/register-audio", "audio", "sample.wav", b"test audio", "audio/wav")
+
+            self.assertEqual(extracted["durationSeconds"], 3600)
+            self.assertEqual(registered["durationSeconds"], 3600)
 
     def test_public_job_queue_has_one_active_slot(self):
         with mock.patch.object(jobs, "JOBS", {}):

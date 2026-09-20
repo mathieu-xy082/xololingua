@@ -1,6 +1,6 @@
 # Durée et mémoire du pipeline navigateur
 
-La durée maximale de traitement **dans le navigateur** est de 3 600 secondes (1 heure) pour l'extraction, la segmentation VAD, la transcription et la traduction. La limite d'acceptation de la vidéo par l'application reste de 2 h 30 : au-delà d'une heure, les étapes de calcul passent au service Python, tandis que la création du SRT reste dans le navigateur. L'identification de la langue utilise déjà le service Python.
+La durée maximale de traitement **dans le navigateur** est de 3 600 secondes (1 heure) pour l'extraction, la segmentation VAD, la transcription et la traduction. Le site public limite aussi **l'acceptation** des vidéos et des WAV envoyés à 1 heure, avec une validation dans l'interface et dans l'API. En développement local, l'application et le service gardent une limite de 2 h 30 pour les tests sur les vidéos longues. L'identification de la langue utilise déjà le service Python.
 
 ## Chiffrage des données audio
 
@@ -15,7 +15,7 @@ L'extraction produit un WAV mono à 16 000 échantillons/s sur 16 bits. Pour une
 
 Les copies indiquées sont un **budget de représentation**, pas un pic mesuré : leur durée de vie et leur partage effectifs dépendent du navigateur, de ffmpeg.wasm et du ramasse-miettes. Les moteurs WASM, les modèles ASR/VAD/traduction, WebGPU, le décodage vidéo de l'aperçu et les autres onglets ajoutent de la mémoire. Aucune durée ne peut donc garantir qu'un appareil donné terminera localement ; une erreur de traitement déclenche normalement le repli Python.
 
-La vidéo de référence `Маша_и_МедведьТОП10.mp4` dure **4 258,3 s (70 min 58 s)** et pèse **231,8 MiB** d'après `ffprobe` et `stat` locaux. À débit moyen identique, une heure représenterait environ **196 MiB de MP4**, sous la borne de 400 MiB. Cette vidéo complète dépasse la borne de durée et doit donc utiliser le service Python pour les étapes concernées, quelle que soit sa taille de fichier.
+La vidéo de référence `Маша_и_МедведьТОП10.mp4` dure **4 258,3 s (70 min 58 s)** et pèse **231,8 MiB** d'après `ffprobe` et `stat` locaux. À débit moyen identique, une heure représenterait environ **196 MiB de MP4**, sous la borne de 400 MiB. Cette vidéo complète sera refusée par le site public ; elle reste utilisable en développement local, où les étapes dépassant une heure passent au service Python.
 
 ## Gardes appliquées
 

@@ -29,7 +29,7 @@ from .jobs import (
     try_put_job,
 )
 from .media import extract_audio, extract_audio_clips_parallel, language_detection_windows, normalize_segments, normalize_text_segments, probe_duration, segment_audio
-from .settings import ARGOS_COMMAND, HOST, MAX_DURATION_SECONDS, PORT, PUBLIC_MAX_JSON_BYTES, PUBLIC_MAX_UPLOAD_BYTES, PUBLIC_MAX_WORK_BYTES, PUBLIC_MODE, PUBLIC_REQUESTS_PER_HOUR, WHISPER_CPU_COMPUTE_TYPE, WHISPER_CPU_MODEL, WHISPER_DEVICE_CHOICE, WORK_DIR
+from .settings import ARGOS_COMMAND, HOST, MAX_DURATION_SECONDS, PORT, PUBLIC_MAX_DURATION_SECONDS, PUBLIC_MAX_JSON_BYTES, PUBLIC_MAX_UPLOAD_BYTES, PUBLIC_MAX_WORK_BYTES, PUBLIC_MODE, PUBLIC_REQUESTS_PER_HOUR, WHISPER_CPU_COMPUTE_TYPE, WHISPER_CPU_MODEL, WHISPER_DEVICE_CHOICE, WORK_DIR
 from .transcription import detect_audio_languages, transcribe_segments_with_cpu_fallback
 from .translation import get_supported_pairs, translate_segments, translation_backend_available
 
@@ -311,9 +311,9 @@ class LocalServiceHandler(BaseHTTPRequestHandler):
         if duration <= 0:
             upload_path.unlink(missing_ok=True)
             raise ValueError("Could not read video duration.")
-        if duration > MAX_DURATION_SECONDS:
+        if duration > (PUBLIC_MAX_DURATION_SECONDS if PUBLIC_MODE else MAX_DURATION_SECONDS):
             upload_path.unlink(missing_ok=True)
-            raise ValueError("Video exceeds the 2 h 30 min limit.")
+            raise ValueError("Video exceeds the 1 h limit." if PUBLIC_MODE else "Video exceeds the 2 h 30 min limit.")
 
         return {
             "requestId": request_id,
@@ -361,9 +361,9 @@ class LocalServiceHandler(BaseHTTPRequestHandler):
         if duration <= 0:
             audio_path.unlink(missing_ok=True)
             raise ValueError("Could not read audio duration.")
-        if duration > MAX_DURATION_SECONDS:
+        if duration > (PUBLIC_MAX_DURATION_SECONDS if PUBLIC_MODE else MAX_DURATION_SECONDS):
             audio_path.unlink(missing_ok=True)
-            raise ValueError("Audio exceeds the 2 h 30 min limit.")
+            raise ValueError("Audio exceeds the 1 h limit." if PUBLIC_MODE else "Audio exceeds the 2 h 30 min limit.")
 
         result = {
             "audioId": request_id,
