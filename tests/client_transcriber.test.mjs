@@ -495,7 +495,7 @@ test("client transcriber rejects audio beyond the configured browser size limit"
         pcm: new Float32Array([0.1, -0.1]),
         sampleRate: 16000,
         channelCount: 1,
-        sizeBytes: 8,
+        audioSizeBytes: 8,
       },
       segments: [],
       sourceLanguage: "auto",

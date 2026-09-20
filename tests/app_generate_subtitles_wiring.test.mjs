@@ -47,7 +47,8 @@ test("app attempts browser VAD before registering audio for a Python fallback", 
 });
 
 test("app carries canonical audio extraction metadata into segmentation status details", () => {
-  assert.match(appSource, /state\.extractedAudio = \{ \.\.\.extraction\.payload, \.\.\.extraction\.metadata \};/);
+  assert.match(appSource, /state\.extractedAudio = \{[\s\S]*?\.\.\.extraction\.payload,[\s\S]*?\.\.\.extraction\.metadata,/);
+  assert.match(appSource, /durationSeconds: Number\.isFinite\(extraction\.payload\.durationSeconds\)/);
   assert.match(appSource, /formatBytes\(state\.extractedAudio\.audioSizeBytes\)/);
 });
 

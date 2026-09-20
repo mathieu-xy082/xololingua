@@ -20,11 +20,24 @@ export function createClientVadSegmenter({
   environment = globalThis,
   vadWebSegmenter,
   vadProfile = BACKEND_COMPATIBLE_VAD_PROFILE.name,
+  maxDurationSeconds,
+  maxAudioBytes,
 } = {}) {
   return {
     capabilities: detectClientVadCapabilities(environment),
 
     async segmentAudio(audio, onProgress = () => {}) {
+      if (Number.isFinite(maxDurationSeconds)
+        && Number.isFinite(audio?.durationSeconds)
+        && audio.durationSeconds > maxDurationSeconds) {
+        throw new Error(`Browser VAD limit exceeded: audio duration ${audio.durationSeconds}s is greater than the ${maxDurationSeconds}s limit.`);
+      }
+      const audioSizeBytes = audio?.audioSizeBytes ?? audio?.sizeBytes ?? audio?.audioBlob?.size;
+      if (Number.isFinite(maxAudioBytes)
+        && Number.isFinite(audioSizeBytes)
+        && audioSizeBytes > maxAudioBytes) {
+        throw new Error(`Browser VAD limit exceeded: audio size ${audioSizeBytes} bytes is greater than the ${maxAudioBytes} bytes limit.`);
+      }
       const segmenter = resolveVadSegmenter({ environment, vadWebSegmenter, vadProfile });
       if (typeof segmenter === "function") {
         onProgress(0);

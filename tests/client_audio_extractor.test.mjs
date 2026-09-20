@@ -105,10 +105,16 @@ test("ffmpeg wasm audio extractor allows one-hour browser videos by default whil
     fetchFile: async () => new Uint8Array([1, 2, 3]),
   });
 
-  const result = await extractor({ name: "one-hour.mp4", size: 800 * 1024 * 1024, durationSeconds: 3600 });
+  const result = await extractor({ name: "one-hour.mp4", size: 400 * 1024 * 1024, durationSeconds: 3600 });
 
   assert.equal(result.audioFileName, "one-hour.wav");
+  assert.equal(result.durationSeconds, 3600);
   assert.ok(operations.some(([operation]) => operation === "run"));
+
+  await assert.rejects(
+    () => extractor({ name: "too-large.mp4", size: 400 * 1024 * 1024 + 1, durationSeconds: 3600 }),
+    /limited to input files up to 400 MiB/,
+  );
 
   const shortDemoExtractor = createFfmpegWasmAudioExtractor({
     ffmpeg: {},

@@ -25,7 +25,7 @@ const MAX_DURATION_SECONDS = 2.5 * 60 * 60;
 const SEGMENT_SECONDS = 12;
 const SERVICE_BASE_URL = resolveServiceBaseUrl();
 globalThis.__xololinguaDynamicModels = true;
-const APP_ASSET_VERSION = "2026-09-20-3";
+const APP_ASSET_VERSION = "2026-09-20-4";
 const backendClient = createBackendClient({ baseUrl: SERVICE_BASE_URL });
 const clientPipelineCapabilities = collectClientPipelineCapabilities();
 const appClientAdapters = createAppClientAdapters({
@@ -33,6 +33,8 @@ const appClientAdapters = createAppClientAdapters({
     ffmpegWasmExtractor: createAppFfmpegWasmAudioExtractor(),
   }),
   clientVadSegmenter: globalThis.XOLOLINGUA_CLIENT_VAD_SEGMENTER || createClientVadSegmenter({
+    maxDurationSeconds: BROWSER_ML_CONFIG.vad.maxAudioSeconds,
+    maxAudioBytes: BROWSER_ML_CONFIG.vad.maxAudioBytes,
     vadWebSegmenter: createVadWebRuntimeSegmenter({
       vadProfile: "backend-compatible",
       workerUrl: "frontend/vad_worker.js",
@@ -61,6 +63,7 @@ const appClientAdapters = createAppClientAdapters({
     devicePreference: BROWSER_ML_CONFIG.devicePreference,
     warmupTimeoutMs: BROWSER_ML_CONFIG.modelDownloadTimeoutMs,
     warmupSampleText: BROWSER_ML_CONFIG.translation.warmupSampleText,
+    maxDurationSeconds: BROWSER_ML_CONFIG.translation.maxMediaSeconds,
     maxSegments: BROWSER_ML_CONFIG.translation.maxSegments,
     maxBatchSize: Math.max(1, Math.floor(
       BROWSER_ML_CONFIG.translation.maxCharactersPerBatch / 400,
@@ -436,7 +439,13 @@ async function segmentAudio() {
         setProgress("segmentation", progress);
       });
       stageReports.push({ stage: "audioExtraction", ...extraction });
-      state.extractedAudio = { ...extraction.payload, ...extraction.metadata };
+      state.extractedAudio = {
+        ...extraction.payload,
+        ...extraction.metadata,
+        durationSeconds: Number.isFinite(extraction.payload.durationSeconds)
+          ? extraction.payload.durationSeconds
+          : state.duration,
+      };
       els.segmentationStatus.textContent = `${formatPipelineStageRuntime({ stage: "audioExtraction", ...extraction })}. Segmenting speech audio...`;
     } catch (extractionError) {
       els.segmentationStatus.textContent = `${extractionError.message} Falling back to prototype segmentation.`;

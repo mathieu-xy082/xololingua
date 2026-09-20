@@ -387,6 +387,35 @@ test("hybrid pipeline router preserves browser model purge metadata", async () =
   });
 });
 
+test("hybrid pipeline router sends server-only audio directly to Python transcription", async () => {
+  let browserCalled = false;
+  const router = createHybridPipelineRouter({
+    capabilityReport: {
+      stages: { transcription: { runtime: "browser", strategy: "remote-transformers.js" } },
+    },
+    clientAdapters: {
+      transcription: async () => {
+        browserCalled = true;
+        throw new Error("Browser model should not load for server-only audio");
+      },
+    },
+    serverAdapters: {
+      transcription: async () => ({ segments: [{ index: 1, text: "Bonjour" }] }),
+    },
+  });
+
+  const result = await router.runTranscription({
+    audioId: "audio-123",
+    audio: { audioId: "audio-123", durationSeconds: 3601 },
+    segments: [{ index: 1, start: 0, end: 1 }],
+    sourceLanguage: "fr",
+  });
+
+  assert.equal(browserCalled, false);
+  assert.equal(result.runtime, "server-fallback");
+  assert.equal(result.strategy, "python-backend");
+});
+
 test("hybrid pipeline router exposes canonical fallback reasons when browser transcription fails", async () => {
   const router = createHybridPipelineRouter({
     capabilityReport: {
@@ -852,7 +881,7 @@ test("hybrid pipeline router includes browser failure reasons in fallback stage 
       },
     },
     clientAdapters: {
-      audioExtraction: async () => ({ audioId: "audio-123" }),
+      audioExtraction: async () => ({ audioId: "audio-123", audioBlob: new Blob(["wav"]) }),
       transcription: async () => {
         throw new Error("Transformers worker model is unavailable");
       },

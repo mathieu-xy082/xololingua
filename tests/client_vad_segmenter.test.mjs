@@ -51,6 +51,24 @@ test("client VAD segmenter delegates PCM audio to an injected vad-web segmenter"
   ]);
 });
 
+test("client VAD rejects media over one hour before decoding its WAV", async () => {
+  let decoderCalled = false;
+  const segmenter = createClientVadSegmenter({
+    environment: {},
+    vadWebSegmenter: async () => {
+      decoderCalled = true;
+      return { segments: [] };
+    },
+    maxDurationSeconds: 3600,
+  });
+
+  await assert.rejects(
+    () => segmenter.segmentAudio({ durationSeconds: 3600.01, audioBlob: new Blob(["wav"]) }),
+    /Browser VAD limit exceeded: audio duration 3600\.01s is greater than the 3600s limit/,
+  );
+  assert.equal(decoderCalled, false);
+});
+
 test("client VAD segmenter returns canonical browser VAD stage envelopes", async () => {
   const segmenter = createClientVadSegmenter({
     environment: {},

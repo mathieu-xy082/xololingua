@@ -540,6 +540,29 @@ test("client translator rejects segment batches beyond the configured browser li
   assert.equal(workerCalled, false);
 });
 
+test("client translator routes videos over one hour away from browser models", async () => {
+  let workerCalled = false;
+  const translator = createClientTranslator({
+    environment: {},
+    localTranslatorWorker: async () => {
+      workerCalled = true;
+      return { segments: [] };
+    },
+    maxDurationSeconds: 3600,
+  });
+
+  await assert.rejects(
+    () => translator.translateSegments({
+      extractedAudio: { durationSeconds: 3601 },
+      segments: [{ index: 1, start: 0, end: 1, text: "Bonjour" }],
+      sourceLanguage: "fr",
+      targetLanguage: "en",
+    }),
+    /Browser translation limit exceeded: video duration 3601s is greater than the 3600s limit/,
+  );
+  assert.equal(workerCalled, false);
+});
+
 test("client translator sends long translation inputs through bounded worker batches", async () => {
   const calls = [];
   const translator = createClientTranslator({

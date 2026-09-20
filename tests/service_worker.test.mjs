@@ -22,6 +22,7 @@ const clientPipelineCapabilitiesSource = await readFile(
   new URL("../frontend/client_pipeline_capabilities.js", import.meta.url),
   "utf8",
 );
+const browserMlConfigSource = await readFile(new URL("../frontend/browser_ml_config.js", import.meta.url), "utf8");
 const clientTranscriberSource = await readFile(new URL("../frontend/client_transcriber.js", import.meta.url), "utf8");
 const clientTranslatorSource = await readFile(new URL("../frontend/client_translator.js", import.meta.url), "utf8");
 const transcriptionWorkerSource = await readFile(new URL("../frontend/transcription_worker.js", import.meta.url), "utf8");
@@ -68,6 +69,7 @@ test("service worker precaches the full frontend module graph used by offline as
     ...appHybridRouterWiringSource.matchAll(/import\s+[^;]+from\s+["']\.\/(client_pipeline_router\.js)["']/g),
     ...clientPipelineRouterSource.matchAll(/import\s+[^;]+from\s+["']\.\/(pipeline_stage_contract\.js)["']/g),
     ...clientPipelineCapabilitiesSource.matchAll(/import\s+[^;]+from\s+["']\.\/(client_[^"']+\.js)["']/g),
+    ...browserMlConfigSource.matchAll(/import\s+[^;]+from\s+["']\.\/(browser_resource_limits\.js)["']/g),
     ...transcriptionWorkerSource.matchAll(/import\s+[^;]+from\s+["']\.\/((?:browser_inference_device|batched_whisper_runtime)\.js)["']/g),
     ...translationWorkerSource.matchAll(/import\s+[^;]+from\s+["']\.\/(browser_inference_device\.js)["']/g),
     ...clientTranscriberSource.matchAll(/import\s+[^;]+from\s+["']\.\/(worker_request_session\.js)["']/g),
