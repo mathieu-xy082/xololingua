@@ -4,8 +4,7 @@ All notable changes to XoloLingua will be documented in this file.
 
 This project follows Semantic Versioning.
 
-## [Unreleased]
-
+## [1.4.0] - 2026-09-21 - Merge branche 'feat/browser-language-detection' in main
 ### Added
 
 - Added browser language identification with `Xenova/whisper-base`, ten evenly distributed audio samples, language-token probabilities, vote aggregation, and confidence reporting.
