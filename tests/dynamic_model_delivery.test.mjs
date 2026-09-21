@@ -30,6 +30,18 @@ test("dynamic model resolver selects Whisper and an OPUS model from the requeste
   });
 });
 
+test("dynamic model resolver accepts explicit Whisper automatic language detection", () => {
+  assert.deepEqual(resolveTranscriptionModel({ sourceLanguage: "auto" }), {
+    stage: "transcription",
+    sourceLanguage: "auto",
+    modelId: "Xenova/whisper-base",
+    task: "automatic-speech-recognition",
+    remote: true,
+    purgeAfterUse: true,
+    dtype: "q4",
+  });
+});
+
 test("dynamic model resolver rejects unsafe or identical language pairs", () => {
   assert.throws(() => resolveTranslationModel({ sourceLanguage: "fr", targetLanguage: "fr" }), /different source and target/);
   assert.throws(() => resolveTranslationModel({ sourceLanguage: "fr/../../", targetLanguage: "ru" }), /Unsupported language code/);

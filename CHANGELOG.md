@@ -18,6 +18,10 @@ This project follows Semantic Versioning.
 - Updated the public capability report, processing status, privacy notice, PWA cache, deployment guide, and memory documentation for the complete browser media pipeline.
 - Reduced the public Caddy API request-body limit from 421 MB to 3 MB now that no public endpoint accepts media.
 
+### Fixed
+
+- Accepted Whisper's explicit `auto` source-language mode when resolving the browser language-identification model.
+
 ### Security
 
 - Disabled `POST /api/detect-language` with HTTP 403 in public mode and removed the obsolete public upload concurrency, rate, and temporary-media quota machinery.

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { createClientLanguageDetector } from "../frontend/client_language_detector.js";
+import { resolveTranscriptionModel } from "../frontend/dynamic_model_resolver.js";
 
 test("client language detector samples PCM and reports a browser result", async () => {
   const requests = [];
@@ -10,6 +11,7 @@ test("client language detector samples PCM and reports a browser result", async 
     environment: {},
     sampleCount: 2,
     sampleSeconds: 1,
+    modelResolver: resolveTranscriptionModel,
     detectorWorker: async (request, onProgress) => {
       requests.push(request);
       onProgress({ stage: "detecting-language", progress: 50 });
@@ -29,6 +31,8 @@ test("client language detector samples PCM and reports a browser result", async 
 
   assert.equal(requests.length, 1);
   assert.equal(requests[0].samples.length, 2);
+  assert.equal(requests[0].modelId, "Xenova/whisper-base");
+  assert.equal(requests[0].remoteModels, true);
   assert.deepEqual(requests[0].samples.map((sample) => sample.pcm.length), [10, 10]);
   assert.equal(result.languageCode, "ru");
   assert.equal(result.lowConfidence, false);

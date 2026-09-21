@@ -26,9 +26,14 @@ export function normalizeLanguageCode(language) {
 }
 
 export function resolveTranscriptionModel({ sourceLanguage } = {}) {
+  const requestedLanguage = typeof sourceLanguage === "string"
+    ? sourceLanguage.trim().toLowerCase()
+    : sourceLanguage;
   return Object.freeze({
     stage: "transcription",
-    sourceLanguage: sourceLanguage ? normalizeLanguageCode(sourceLanguage) : "auto",
+    sourceLanguage: !requestedLanguage || requestedLanguage === "auto"
+      ? "auto"
+      : normalizeLanguageCode(sourceLanguage),
     modelId: "Xenova/whisper-base",
     task: "automatic-speech-recognition",
     ...TRANSIENT_MODEL_POLICY,
