@@ -24,10 +24,12 @@ test("dynamic ML stages stay browser-routable with on-demand delivery", () => {
   });
 
   assert.equal(report.stages.transcription.runtime, "browser");
+  assert.equal(report.stages.languageDetection.runtime, "browser");
+  assert.equal(report.stages.languageDetection.modelRetention, "retain-until-transcription");
   assert.equal(report.stages.translation.runtime, "browser");
   assert.equal(report.stages.transcription.modelDelivery, "on-demand");
   assert.equal(report.stages.translation.modelRetention, "purge-after-use");
-  assert.deepEqual(report.offlineAvailability.onlineRequiredStages, ["transcription", "translation"]);
+  assert.deepEqual(report.offlineAvailability.onlineRequiredStages, ["languageDetection", "transcription", "translation"]);
 });
 
 test("PWA explains automatic transient delivery instead of exposing manual setup", () => {

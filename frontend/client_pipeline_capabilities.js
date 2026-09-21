@@ -1,10 +1,12 @@
 import { detectClientAudioExtractionCapabilities } from "./client_audio_extractor.js";
+import { detectClientLanguageCapabilities } from "./client_language_detector.js";
 import { detectVadWebRuntimeCapabilities } from "./vad_web_runtime.js";
 import { detectClientTranscriptionCapabilities } from "./client_transcriber.js";
 import { detectClientTranslationCapabilities } from "./client_translator.js";
 
 const PIPELINE_STAGE_ORDER = [
   "audioExtraction",
+  "languageDetection",
   "vad",
   "transcription",
   "translation",
@@ -12,6 +14,7 @@ const PIPELINE_STAGE_ORDER = [
 
 const PIPELINE_STAGE_LABELS = {
   audioExtraction: "Audio extraction",
+  languageDetection: "Language identification",
   vad: "VAD / segmentation",
   transcription: "Transcription",
   translation: "Translation",
@@ -19,6 +22,7 @@ const PIPELINE_STAGE_LABELS = {
 
 const PYTHON_FALLBACK_ENDPOINTS = {
   audioExtraction: ["POST /api/extract-audio"],
+  languageDetection: ["POST /api/detect-language"],
   vad: ["POST /api/segment-audio"],
   transcription: ["POST /api/transcribe-audio", "POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
   translation: ["POST /api/translate-segments", "POST /api/subtitle-jobs", "GET /api/subtitle-jobs/{jobId}"],
@@ -27,6 +31,7 @@ const PYTHON_FALLBACK_ENDPOINTS = {
 export function collectClientPipelineCapabilities(environment = globalThis) {
   return createClientPipelineCapabilityReport({
     audioExtraction: detectClientAudioExtractionCapabilities(environment),
+    languageDetection: describeModelDelivery(detectClientLanguageCapabilities(environment)),
     vad: detectVadWebRuntimeCapabilities(environment),
     transcription: describeModelDelivery(detectClientTranscriptionCapabilities(environment)),
     translation: describeModelDelivery(detectClientTranslationCapabilities(environment)),
@@ -78,7 +83,7 @@ function describeModelDelivery(capabilities) {
     return {
       ...capabilities,
       modelDelivery: "on-demand",
-      modelRetention: "purge-after-use",
+      modelRetention: capabilities.modelRetention || "purge-after-use",
     };
   }
   return capabilities;

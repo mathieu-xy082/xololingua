@@ -1,6 +1,7 @@
 import { createBackendClient } from "./frontend/backend_client.js";
 import { createAppClientAdapters, createAppHybridPipelineRouter } from "./frontend/app_hybrid_router_wiring.js";
 import { createClientAudioExtractor } from "./frontend/client_audio_extractor.js";
+import { createClientLanguageDetector } from "./frontend/client_language_detector.js";
 import { createClientTranscriber } from "./frontend/client_transcriber.js";
 import { createClientTranslator } from "./frontend/client_translator.js";
 import { BROWSER_ML_CONFIG } from "./frontend/browser_ml_config.js";
@@ -27,12 +28,25 @@ const VIDEO_DURATION_POLICY = resolveVideoDurationPolicy();
 const SEGMENT_SECONDS = 12;
 const SERVICE_BASE_URL = resolveServiceBaseUrl();
 globalThis.__xololinguaDynamicModels = true;
-const APP_ASSET_VERSION = "2026-09-20-6";
+const APP_ASSET_VERSION = "2026-09-21-3";
+const TRANSCRIPTION_WORKER_URL = `frontend/transcription_worker.js?v=${APP_ASSET_VERSION}`;
 const backendClient = createBackendClient({ baseUrl: SERVICE_BASE_URL });
 const clientPipelineCapabilities = collectClientPipelineCapabilities();
 const appClientAdapters = createAppClientAdapters({
   clientAudioExtractor: globalThis.XOLOLINGUA_CLIENT_AUDIO_EXTRACTOR || createClientAudioExtractor({
     ffmpegWasmExtractor: createAppFfmpegWasmAudioExtractor(),
+  }),
+  clientLanguageDetector: globalThis.XOLOLINGUA_CLIENT_LANGUAGE_DETECTOR || createClientLanguageDetector({
+    workerUrl: TRANSCRIPTION_WORKER_URL,
+    modelId: BROWSER_ML_CONFIG.languageDetection.defaultModelId,
+    modelResolver: resolveTranscriptionModel,
+    remoteModels: true,
+    dtype: "q4",
+    devicePreference: BROWSER_ML_CONFIG.devicePreference,
+    sampleCount: BROWSER_ML_CONFIG.languageDetection.sampleCount,
+    sampleSeconds: BROWSER_ML_CONFIG.languageDetection.sampleSeconds,
+    confidenceThreshold: BROWSER_ML_CONFIG.languageDetection.confidenceThreshold,
+    maxWorkerResponseMs: BROWSER_ML_CONFIG.languageDetection.inferenceTimeoutMs,
   }),
   clientVadSegmenter: globalThis.XOLOLINGUA_CLIENT_VAD_SEGMENTER || createClientVadSegmenter({
     maxDurationSeconds: BROWSER_ML_CONFIG.vad.maxAudioSeconds,
@@ -43,7 +57,7 @@ const appClientAdapters = createAppClientAdapters({
     }),
   }),
   clientTranscriber: globalThis.XOLOLINGUA_CLIENT_TRANSCRIBER || createClientTranscriber({
-    workerUrl: "frontend/transcription_worker.js",
+    workerUrl: TRANSCRIPTION_WORKER_URL,
     modelId: BROWSER_ML_CONFIG.transcription.defaultModelId,
     modelResolver: resolveTranscriptionModel,
     remoteModels: true,
@@ -116,6 +130,7 @@ const state = {
   targetLanguage: "",
   languageProgress: 0,
   extractedAudio: null,
+  audioExtractionReport: null,
   segments: [],
   pipelineStageReports: [],
   srtUrl: "",
@@ -220,7 +235,7 @@ function populateLanguages() {
 function renderPipelineCapabilitySummary() {
   const summary = clientPipelineCapabilities.demoSummary;
   if (VIDEO_DURATION_POLICY.publicSite) {
-    els.pwaOfflineScope.textContent = "Language identification uses the server; all other processing must run in your browser.";
+    els.pwaOfflineScope.textContent = "All media processing runs in your browser; model files are downloaded on demand.";
     els.pwaOfflineScope.title = "Browser processing requires enough memory and a supported browser.";
     els.pipelineBrowserStages.textContent = summary.browserStageLabels.join(", ") || "none available";
     els.pipelineFallbackStages.textContent = summary.serverFallbackStageLabels.length > 0
@@ -258,6 +273,7 @@ function renderModelDeliveryPanel() {
 
 async function fetchTranslationPairs() {
   if (_pairsFetched) return;
+  if (VIDEO_DURATION_POLICY.publicSite) return;
   try {
     const pairs = await backendClient.getTranslationPairs();
     for (const { source, target } of pairs) {
@@ -271,6 +287,14 @@ async function fetchTranslationPairs() {
 }
 
 async function fetchServiceStatus() {
+  if (VIDEO_DURATION_POLICY.publicSite) {
+    els.serviceWhisperBackend.textContent = "Transformers.js";
+    els.serviceWhisperModel.textContent = BROWSER_ML_CONFIG.transcription.defaultModelId;
+    els.serviceWhisperDevice.textContent = clientPipelineCapabilities.stages.languageDetection.webGpu
+      ? "WebGPU / local WASM fallback"
+      : "Local WASM CPU";
+    return;
+  }
   try {
     const health = await backendClient.getHealth();
     const backend = health.whisperBackend || "whisper-cli";
@@ -406,15 +430,37 @@ async function identifyLanguage() {
   render();
 
   try {
-    const detected = await identifyLanguageAdapter(
-      state.videoFile,
-      (progress) => setProgress("language", progress),
-      (message) => {
-        els.languageStatus.textContent = message;
-      },
+    if (!state.extractedAudio) {
+      els.languageStatus.textContent = "Extracting audio in your browser...";
+      const extraction = await hybridPipelineRouter.runAudioExtraction(state.videoFile, (progress) => {
+        setProgress("language", Math.round(Number(progress || 0) * 0.3));
+      });
+      state.audioExtractionReport = { stage: "audioExtraction", ...extraction };
+      state.extractedAudio = {
+        ...extraction.payload,
+        ...extraction.metadata,
+        durationSeconds: Number.isFinite(extraction.payload.durationSeconds)
+          ? extraction.payload.durationSeconds
+          : state.duration,
+      };
+    }
+
+    const detected = await appClientAdapters.languageDetection(
+      { audio: state.extractedAudio },
+      (event) => updateLanguageDetectionProgress(event),
     );
-    selectSourceLanguage(detected.language);
-    els.languageStatus.textContent = "Main language identified.";
+    const language = getLanguage(detected.languageCode);
+    if (!language) {
+      throw new Error(`Detected unsupported language code: ${detected.languageCode || "unknown"}.`);
+    }
+    selectSourceLanguage(language);
+    const confidence = Number.isFinite(detected.confidence)
+      ? `, ${Math.round(detected.confidence * 100)}% confidence`
+      : "";
+    const device = detected.executionDeviceLabel || detected.executionDevice || "browser";
+    els.languageStatus.textContent = detected.lowConfidence
+      ? `Likely ${language.name} (${device}${confidence}). Confidence is low; correct the source language below if needed.`
+      : `Main language identified as ${language.name} (${device}${confidence}).`;
     setProgress("language", 100);
   } catch (error) {
     els.languageStatus.textContent = languageIdentificationFailureMessage(error);
@@ -428,13 +474,33 @@ async function identifyLanguage() {
 function languageIdentificationFailureMessage(error) {
   const reason = String(error?.message || "Language identification failed.");
   if (!VIDEO_DURATION_POLICY.publicSite) return reason;
-  if (/server busy|hourly processing limit/i.test(reason)) {
-    return "Language identification is busy. Retry in a few minutes, or select the source language manually to continue.";
+  if (/memory|allocation|out of bounds|out of memory/i.test(reason)) {
+    return "The browser ran out of memory during language identification. Close other tabs or use a shorter video, then retry. You can also select the source language manually.";
   }
-  if (/service is not available|transcription engine not available|request failed|failed to fetch/i.test(reason)) {
-    return "Language identification service is unavailable. Check your connection and retry later, or select the source language manually to continue.";
+  if (/fetch|download|network|model/i.test(reason)) {
+    return "The Whisper model could not be loaded. Check your connection and retry, or select the source language manually.";
+  }
+  if (/webgpu|wasm|worker|device lost/i.test(reason)) {
+    return "Browser inference failed on both WebGPU and local WASM CPU. Update Chrome or Chromium, then retry, or select the source language manually.";
   }
   return `${reason} You can select the source language manually to continue.`;
+}
+
+function updateLanguageDetectionProgress(event = {}) {
+  const progress = Math.max(0, Math.min(100, Number(event.progress || 0)));
+  const stage = event.stage || "detecting-language";
+  if (stage === "decoding-language-audio") {
+    setProgress("language", 30 + Math.round(progress * 0.08));
+  } else if (stage === "preparing-language-samples") {
+    setProgress("language", 38 + Math.round(progress * 0.04));
+  } else if (stage === "loading-language-model" || stage === "loading-model") {
+    setProgress("language", 42 + Math.round(progress * 0.28));
+  } else if (stage === "detecting-language") {
+    setProgress("language", 70 + Math.round(progress * 0.28));
+  } else if (stage === "aggregating-language") {
+    setProgress("language", 99);
+  }
+  if (event.message) els.languageStatus.textContent = event.message;
 }
 
 function selectSourceLanguage(language, manuallySelected = false) {
@@ -464,13 +530,14 @@ async function segmentAudio() {
   setProgress("segmentation", 0);
   render();
 
-  const stageReports = [];
+  const stageReports = state.audioExtractionReport ? [state.audioExtractionReport] : [];
   if (!state.extractedAudio) {
     try {
       const extraction = await hybridPipelineRouter.runAudioExtraction(state.videoFile, (progress) => {
         setProgress("segmentation", progress);
       });
       stageReports.push({ stage: "audioExtraction", ...extraction });
+      state.audioExtractionReport = { stage: "audioExtraction", ...extraction };
       state.extractedAudio = {
         ...extraction.payload,
         ...extraction.metadata,
@@ -658,46 +725,6 @@ async function cancelSubtitleJobAdapter(jobId) {
   return backendClient.cancelSubtitleJob(jobId);
 }
 
-async function identifyLanguageAdapter(file, onProgress = () => {}, onStatus = () => {}) {
-  try {
-    await backendClient.getHealth();
-  } catch {
-    throw new Error("Language identification service is not available.");
-  }
-
-  const formData = new FormData();
-  formData.append("video", file, file.name);
-  onProgress(5);
-  onStatus("Uploading video for language detection...");
-
-  const payload = await postFormDataJsonWithProgress(
-    `${SERVICE_BASE_URL}/api/detect-language`,
-    formData,
-    (uploadProgress) => {
-      const mapped = 5 + Math.round(uploadProgress * 0.3);
-      onProgress(mapped);
-      onStatus("Uploading video for language detection...");
-    },
-    (progress) => {
-      onProgress(progress);
-      if (progress < 55) {
-        onStatus("Extracting language samples...");
-      } else if (progress < 85) {
-        onStatus("Detecting language across samples...");
-      } else {
-        onStatus("Aggregating detection votes...");
-      }
-    },
-  );
-
-  const language = getLanguage(payload.languageCode);
-  if (!language) {
-    throw new Error(`Detected unsupported language code: ${payload.languageCode || "unknown"}.`);
-  }
-
-  return { language };
-}
-
 async function segmentAudioAdapter(duration, onProgress) {
   const segmentCount = Math.max(1, Math.ceil(duration / SEGMENT_SECONDS));
   const segments = [];
@@ -799,6 +826,10 @@ function canGenerate() {
 
 function resetOutput() {
   const audioId = state.extractedAudio?.audioId || "";
+  if (state.busyStep === "language") appClientAdapters.cancel?.();
+  if (state.videoFile || state.extractedAudio) {
+    appClientAdapters.purgeLanguageCache?.().catch(() => {});
+  }
   cancelActiveSubtitleJobSilently();
   releaseExtractedAudioSilently(audioId);
   if (state.videoUrl) URL.revokeObjectURL(state.videoUrl);
@@ -811,6 +842,7 @@ function resetOutput() {
   state.targetLanguage = "";
   state.languageProgress = 0;
   state.extractedAudio = null;
+  state.audioExtractionReport = null;
   state.pipelineStageReports = [];
   state.busyStep = "";
   els.videoPreview.removeAttribute("src");
@@ -978,83 +1010,6 @@ async function cleanupExtractedAudioAdapter(audioId) {
 function releaseExtractedAudioSilently(audioId) {
   if (!audioId) return;
   cleanupExtractedAudioAdapter(audioId).catch(() => {});
-}
-
-function postFormDataJsonWithProgress(url, formData, onUploadProgress = () => {}, onServerProgress = () => {}) {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    let finished = false;
-    let simulatedProgress = 35;
-    let progressTimer = 0;
-
-    const stopTimer = () => {
-      if (progressTimer) {
-        window.clearInterval(progressTimer);
-        progressTimer = 0;
-      }
-    };
-
-    const fail = (error) => {
-      stopTimer();
-      if (finished) return;
-      finished = true;
-      reject(error);
-    };
-
-    xhr.open("POST", url, true);
-    xhr.responseType = "json";
-
-    xhr.upload.addEventListener("progress", (event) => {
-      if (!event.lengthComputable || event.total <= 0) return;
-      const ratio = event.loaded / event.total;
-      onUploadProgress(Math.max(0, Math.min(100, Math.round(ratio * 100))));
-    });
-
-    xhr.upload.addEventListener("load", () => {
-      simulatedProgress = Math.max(simulatedProgress, 35);
-      onServerProgress(simulatedProgress);
-      progressTimer = window.setInterval(() => {
-        simulatedProgress = Math.min(92, simulatedProgress + (simulatedProgress < 70 ? 6 : 3));
-        onServerProgress(simulatedProgress);
-      }, 700);
-    });
-
-    xhr.addEventListener("error", () => fail(new Error("Language detection request failed.")));
-    xhr.addEventListener("abort", () => fail(new Error("Language detection request was cancelled.")));
-    xhr.addEventListener("load", () => {
-      stopTimer();
-      if (finished) return;
-      finished = true;
-
-      let responseText = "";
-      try {
-        responseText = xhr.responseText || "";
-      } catch {
-        responseText = "";
-      }
-      const payload = xhr.response && typeof xhr.response === "object"
-        ? xhr.response
-        : safeJsonParse(responseText);
-
-      if (xhr.status < 200 || xhr.status >= 300) {
-        reject(new Error(payload?.error || "Language detection failed."));
-        return;
-      }
-
-      onServerProgress(100);
-      resolve(payload);
-    });
-
-    xhr.send(formData);
-  });
-}
-
-function safeJsonParse(text) {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
 }
 
 function renderSegmentReview() {

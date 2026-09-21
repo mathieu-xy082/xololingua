@@ -56,3 +56,29 @@ test("worker request timeout measures inactivity and is refreshed by progress", 
   await assert.rejects(pending, /worker idle timeout/);
   assert.equal(worker.terminated, true);
 });
+
+test("worker request transfers selected audio buffers without cloning them", async () => {
+  const calls = [];
+  class FakeWorker {
+    postMessage(message, transfer) {
+      calls.push({ message, transfer });
+      queueMicrotask(() => this.onmessage({ data: { type: "language-result", result: { languageCode: "fr" } } }));
+    }
+    terminate() {}
+  }
+  const session = createWorkerRequestSession({ environment: { Worker: FakeWorker }, workerUrl: "/worker.js" });
+  const buffer = new Float32Array([0.1, 0.2]).buffer;
+
+  const result = await session.request({
+    requestType: "detect-language",
+    resultType: "language-result",
+    request: { samples: 1 },
+    transfer: [buffer],
+  });
+
+  assert.deepEqual(result, { languageCode: "fr" });
+  assert.deepEqual(calls, [{
+    message: { type: "detect-language", request: { samples: 1 } },
+    transfer: [buffer],
+  }]);
+});

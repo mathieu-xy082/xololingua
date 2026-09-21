@@ -8,7 +8,13 @@ Déplacer l'identification automatique de la langue du service Python public ver
 
 Branche proposée : `feat/browser-language-detection`.
 
-## État actuel
+## État de réalisation au 21 septembre 2026
+
+Les jalons d'implémentation sont terminés sur `feat/browser-language-detection` : prédiction du premier token Whisper, échantillonnage et agrégation, worker WebGPU avec redémarrage WASM, intégration du parcours, réutilisation du WAV, fermeture de l'API publique et mise à jour du déploiement. Les tests automatisés couvrent ces contrats.
+
+La validation sur matériel réel reste à effectuer avant le déploiement : vidéo russe de référence sur WebGPU, parcours WASM forcé, plusieurs langues, silence, faible confiance et mesure mémoire sur une vidéo proche d'une heure. Le benchmark comparant des fenêtres de 10, 15 et 30 secondes reste également ouvert ; la valeur de référence demeure 30 secondes.
+
+## État initial
 
 - Le bouton d'identification envoie le MP4 à `POST /api/detect-language`.
 - Le service Python extrait dix fenêtres de 30 secondes réparties dans la vidéo.

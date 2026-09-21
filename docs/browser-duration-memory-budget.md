@@ -1,6 +1,6 @@
 # Durée et mémoire du pipeline navigateur
 
-La durée maximale de traitement **dans le navigateur** est de 3 600 secondes (1 heure) pour l'extraction, la segmentation VAD, la transcription et la traduction. Le site public limite aussi **l'acceptation** des vidéos à 1 heure et des MP4 à 400 MiB. Le service Python public ne traite que l'identification de la langue ; les autres endpoints de traitement répondent 403. En développement local, l'application et le service gardent une limite de 2 h 30 pour les tests sur les vidéos longues et les replis Python.
+La durée maximale de traitement **dans le navigateur** est de 3 600 secondes (1 heure) pour l'identification de la langue, l'extraction, la segmentation VAD, la transcription et la traduction. Le site public limite aussi **l'acceptation** des vidéos à 1 heure et des MP4 à 400 MiB. Tous les endpoints Python de traitement public répondent 403. En développement local, l'application et le service gardent une limite de 2 h 30 pour les tests sur les vidéos longues et les traitements Python de diagnostic.
 
 ## Chiffrage des données audio
 

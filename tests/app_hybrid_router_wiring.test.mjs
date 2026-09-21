@@ -8,9 +8,33 @@ test("app.js passes global browser ML stage adapters into the hybrid router", as
   const appSource = await readFile(new URL("../app.js", import.meta.url), "utf8");
 
   assert.match(appSource, /clientAudioExtractor:\s*globalThis\.XOLOLINGUA_CLIENT_AUDIO_EXTRACTOR/);
+  assert.match(appSource, /clientLanguageDetector:\s*globalThis\.XOLOLINGUA_CLIENT_LANGUAGE_DETECTOR/);
   assert.match(appSource, /clientTranscriber:\s*globalThis\.XOLOLINGUA_CLIENT_TRANSCRIBER/);
   assert.match(appSource, /clientTranslator:\s*globalThis\.XOLOLINGUA_CLIENT_TRANSLATOR/);
   assert.match(appSource, /cancelGenerateButton\.disabled = state\.subtitleCancelRequested/);
+});
+
+test("app client adapters expose browser language detection and cache cleanup", async () => {
+  const calls = [];
+  const adapters = createAppClientAdapters({
+    clientLanguageDetector: {
+      detectLanguage: async ({ audio }, onProgress) => {
+        calls.push(["detect", audio.audioFileName]);
+        onProgress({ stage: "detecting-language", progress: 100 });
+        return { languageCode: "ru", confidence: 0.9 };
+      },
+      purgeCache: async () => calls.push(["purge"]),
+    },
+  });
+
+  const result = await adapters.languageDetection(
+    { audio: { audioFileName: "video.wav" } },
+    () => {},
+  );
+  await adapters.purgeLanguageCache();
+
+  assert.deepEqual(result, { languageCode: "ru", confidence: 0.9 });
+  assert.deepEqual(calls, [["detect", "video.wav"], ["purge"]]);
 });
 
 test("app client adapters expose cancellation for browser ML stages", () => {

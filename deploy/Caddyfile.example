@@ -2,9 +2,9 @@
 xololingua.example.com {
     encode zstd gzip
 
-    # The public API only receives MP4 files for language identification.
+    # Public API requests are metadata and small JSON bodies only.
     request_body /api/* {
-        max_size 421MB
+        max_size 3MB
     }
 
     header {
@@ -17,7 +17,6 @@ xololingua.example.com {
     handle /api/* {
         header Cache-Control no-store
         reverse_proxy 127.0.0.1:8765 {
-            # Do not trust a visitor-supplied X-Real-IP for per-IP limits.
             header_up X-Real-IP {remote_host}
             transport http {
                 max_conns_per_host 16

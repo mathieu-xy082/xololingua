@@ -4,6 +4,8 @@ import {
   alignWhisperWordsToVadSegments,
   transcribeWhisperInBatches,
 } from "./batched_whisper_runtime.js";
+import { aggregateLanguageDetections } from "./browser_language_detection.js";
+import { detectWhisperLanguageSample } from "./whisper_language_detector.js";
 
 const DEFAULT_MODEL_ID = "Xenova/whisper-base";
 const DEFAULT_SAMPLE_RATE = 16_000;
@@ -39,6 +41,12 @@ self.onmessage = async (event) => {
       return;
     }
 
+    if (message.type === "detect-language") {
+      const result = await detectLanguage(message.request || {});
+      self.postMessage({ type: "language-result", result });
+      return;
+    }
+
     if (message.type === "dispose") {
       const request = message.request || {};
       const metadata = await releaseRecognizer(
@@ -61,6 +69,53 @@ self.onmessage = async (event) => {
     });
   }
 };
+
+async function detectLanguage(request = {}) {
+  const modelId = request.modelId || DEFAULT_MODEL_ID;
+  const dtype = request.dtype || "q4";
+  const samples = Array.isArray(request.samples) ? request.samples : [];
+  if (samples.length === 0) throw new Error("Browser language detection received no audio samples.");
+
+  configureModelSource(request.remoteModels);
+  self.postMessage({
+    type: "progress",
+    event: { stage: "loading-language-model", progress: 2, message: "Loading Whisper for language detection..." },
+  });
+  let result;
+  try {
+    const recognizer = await getRecognizer(modelId, request.device || "auto", dtype);
+    const detections = [];
+    for (let index = 0; index < samples.length; index += 1) {
+      self.postMessage({
+        type: "progress",
+        event: {
+          stage: "detecting-language",
+          progress: Math.round((index / samples.length) * 100),
+          message: `Analyzing language sample ${index + 1}/${samples.length}...`,
+          sampleIndex: index + 1,
+          sampleCount: samples.length,
+        },
+      });
+      detections.push(await detectWhisperLanguageSample(recognizer, samples[index]?.pcm));
+    }
+    const aggregate = aggregateLanguageDetections(detections);
+    result = {
+      ...aggregate,
+      ...createRuntimeMetadata(recognizerRuntime),
+      detections,
+      modelId,
+      dtype,
+    };
+    self.postMessage({
+      type: "progress",
+      event: { stage: "aggregating-language", progress: 100, message: "Language votes aggregated." },
+    });
+    return result;
+  } finally {
+    const cleanup = await releaseRecognizer(modelId, false, dtype);
+    if (result) result.cacheRetained = !cleanup.cachePurged;
+  }
+}
 
 async function warmupRecognizer({ modelId = DEFAULT_MODEL_ID, dtype = "q4", sampleSeconds = 1, sourceLanguage = "auto", remoteModels = false, device = "auto" } = {}) {
   const warmupStartedAt = nowMs();

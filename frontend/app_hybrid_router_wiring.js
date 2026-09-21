@@ -2,6 +2,7 @@ import { createHybridPipelineRouter } from "./client_pipeline_router.js";
 
 export function createAppClientAdapters({
   clientAudioExtractor,
+  clientLanguageDetector,
   clientVadSegmenter,
   clientTranscriber,
   clientTranslator,
@@ -9,6 +10,12 @@ export function createAppClientAdapters({
   const adapters = {};
   if (typeof clientAudioExtractor?.extractAudio === "function") {
     adapters.audioExtraction = (file, onProgress) => clientAudioExtractor.extractAudio(file, onProgress);
+  }
+  if (typeof clientLanguageDetector?.detectLanguage === "function") {
+    adapters.languageDetection = (request, onProgress) => clientLanguageDetector.detectLanguage(request, onProgress);
+  }
+  if (typeof clientLanguageDetector?.purgeCache === "function") {
+    adapters.purgeLanguageCache = () => clientLanguageDetector.purgeCache();
   }
   if (typeof clientVadSegmenter?.segmentAudio === "function") {
     adapters.vad = (audio, onProgress) => clientVadSegmenter.segmentAudio(audio, onProgress);
@@ -19,7 +26,7 @@ export function createAppClientAdapters({
   if (typeof clientTranslator?.translateSegments === "function") {
     adapters.translation = (request, onProgress) => clientTranslator.translateSegments(request, onProgress);
   }
-  const cancelers = [clientTranscriber, clientTranslator]
+  const cancelers = [clientLanguageDetector, clientTranscriber, clientTranslator]
     .filter((client) => typeof client?.cancel === "function")
     .map((client) => client.cancel.bind(client));
   if (cancelers.length > 0) {
@@ -122,6 +129,7 @@ function createAppStageReport(stageName, stage, clientAdapters, backendClient) {
 function getAppStageLabel(stageName) {
   return {
     audioExtraction: "audio extraction",
+    languageDetection: "language identification",
     vad: "VAD / segmentation",
     transcription: "transcription",
     translation: "translation",

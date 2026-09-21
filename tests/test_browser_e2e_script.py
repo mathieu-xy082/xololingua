@@ -158,6 +158,16 @@ class BrowserE2EScriptTests(unittest.TestCase):
 
         self.assertTrue(args.require_browser_audio)
 
+    def test_browser_e2e_exposes_browser_language_guard(self):
+        module = self.load_module()
+        args = module.parse_args(["--require-browser-language"])
+
+        self.assertTrue(args.require_browser_language)
+        module.assert_browser_language_runtime("Main language identified as Russian (WebGPU (NVIDIA), 94% confidence).")
+        module.assert_browser_language_runtime("Main language identified as French (WASM CPU, 80% confidence).")
+        with self.assertRaisesRegex(AssertionError, "Expected browser language identification"):
+            module.assert_browser_language_runtime("Main language identified by Python service.")
+
     def test_browser_e2e_asserts_browser_audio_runtime_from_pipeline_status(self):
         module = self.load_module()
 
@@ -201,6 +211,7 @@ class BrowserE2EScriptTests(unittest.TestCase):
         self.assertNotIn("models/Xenova", script)
         self.assertIn("XOLOLINGUA_CLIENT_TRANSCRIBER", script)
         self.assertIn("XOLOLINGUA_CLIENT_TRANSLATOR", script)
+        self.assertIn("XOLOLINGUA_CLIENT_LANGUAGE_DETECTOR", script)
 
     def test_pdm_script_exposes_real_browser_models_gate_without_deterministic_injection(self):
         pyproject = PYPROJECT.read_text(encoding="utf-8")
@@ -214,6 +225,7 @@ class BrowserE2EScriptTests(unittest.TestCase):
         self.assertIn("--source fr", command)
         self.assertIn("--target ru", command)
         self.assertIn("--require-browser-transcription", command)
+        self.assertIn("--require-browser-language", command)
         self.assertIn("--require-browser-translation", command)
         self.assertIn("--compare-backend-srt", command)
         self.assertNotIn("--inject-backend-reference-browser-ml", command)

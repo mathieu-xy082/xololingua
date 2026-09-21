@@ -24,8 +24,10 @@ const clientPipelineCapabilitiesSource = await readFile(
 );
 const browserMlConfigSource = await readFile(new URL("../frontend/browser_ml_config.js", import.meta.url), "utf8");
 const clientTranscriberSource = await readFile(new URL("../frontend/client_transcriber.js", import.meta.url), "utf8");
+const clientLanguageDetectorSource = await readFile(new URL("../frontend/client_language_detector.js", import.meta.url), "utf8");
 const clientTranslatorSource = await readFile(new URL("../frontend/client_translator.js", import.meta.url), "utf8");
 const transcriptionWorkerSource = await readFile(new URL("../frontend/transcription_worker.js", import.meta.url), "utf8");
+const whisperLanguageDetectorSource = await readFile(new URL("../frontend/whisper_language_detector.js", import.meta.url), "utf8");
 const translationWorkerSource = await readFile(new URL("../frontend/translation_worker.js", import.meta.url), "utf8");
 
 test("service worker never caches API responses, including subtitle job results", () => {
@@ -70,15 +72,18 @@ test("service worker precaches the full frontend module graph used by offline as
     ...clientPipelineRouterSource.matchAll(/import\s+[^;]+from\s+["']\.\/((?:pipeline_stage_contract|browser_stage_failure)\.js)["']/g),
     ...clientPipelineCapabilitiesSource.matchAll(/import\s+[^;]+from\s+["']\.\/(client_[^"']+\.js)["']/g),
     ...browserMlConfigSource.matchAll(/import\s+[^;]+from\s+["']\.\/(browser_resource_limits\.js)["']/g),
-    ...transcriptionWorkerSource.matchAll(/import\s+[^;]+from\s+["']\.\/((?:browser_inference_device|batched_whisper_runtime)\.js)["']/g),
+    ...transcriptionWorkerSource.matchAll(/import\s+[^;]+from\s+["']\.\/((?:browser_inference_device|browser_language_detection|whisper_language_detector|batched_whisper_runtime)\.js)["']/g),
     ...translationWorkerSource.matchAll(/import\s+[^;]+from\s+["']\.\/(browser_inference_device\.js)["']/g),
-    ...clientTranscriberSource.matchAll(/import\s+[^;]+from\s+["']\.\/(worker_request_session\.js)["']/g),
+    ...clientTranscriberSource.matchAll(/import\s+[^;]+from\s+["']\.\/((?:browser_audio_pcm|client_ml_progress|worker_request_session)\.js)["']/g),
+    ...clientLanguageDetectorSource.matchAll(/import\s+[^;]+from\s+["']\.\/((?:browser_audio_pcm|browser_language_detection|client_ml_progress|worker_request_session)\.js)["']/g),
+    ...whisperLanguageDetectorSource.matchAll(/import\s+[^;]+from\s+["']\.\/(browser_language_detection\.js)["']/g),
     ...clientTranslatorSource.matchAll(/import\s+[^;]+from\s+["']\.\/(worker_request_session\.js)["']/g),
     ...appSource.matchAll(/workerUrl:\s*["'](frontend\/[^"']+\.js)["']/g),
+    ...appSource.matchAll(/const\s+\w+_WORKER_URL\s*=\s*`(frontend\/[^`?]+\.js)(?:\?[^`]*)?`/g),
   ]
     .map((match) => match[1].startsWith("frontend/") ? match[1] : `frontend/${match[1]}`));
   const cachedAssets = new Set(
-    [...serviceWorkerSource.matchAll(/["'](frontend\/[^"']+\.js)["']/g)]
+    [...serviceWorkerSource.matchAll(/["'](frontend\/[^"'?]+\.js)(?:\?[^"']*)?["']/g)]
       .map((match) => match[1]),
   );
 
@@ -181,4 +186,12 @@ test("PWA asset cache version changes with the app shell version", () => {
   assert.match(indexSource, new RegExp(`styles\\.css\\?v=${appAssetVersion}`));
   assert.match(serviceWorkerSource, new RegExp(`app\\.js\\?v=${appAssetVersion}`));
   assert.match(serviceWorkerSource, new RegExp(`styles\\.css\\?v=${appAssetVersion}`));
+  assert.match(serviceWorkerSource, new RegExp(`transcription_worker\\.js\\?v=${appAssetVersion}`));
+});
+
+test("service worker refreshes JavaScript online before using its offline cache", () => {
+  assert.match(serviceWorkerSource, /if \(url\.pathname\.endsWith\(["']\.js["']\)\)/);
+  const scriptBranch = serviceWorkerSource.indexOf('url.pathname.endsWith(".js")');
+  const cacheFirstBranch = serviceWorkerSource.lastIndexOf("caches.match(event.request)");
+  assert.ok(scriptBranch >= 0 && scriptBranch < cacheFirstBranch);
 });
