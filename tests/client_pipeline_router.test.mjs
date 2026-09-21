@@ -3,6 +3,55 @@ import assert from "node:assert/strict";
 
 import { createHybridPipelineRouter } from "../frontend/client_pipeline_router.js";
 
+test("public router blocks every Python processing fallback and explains browser failures", async () => {
+  const serverCalls = [];
+  const cases = [
+    ["audioExtraction", "runAudioExtraction", { name: "clip.mp4" }],
+    ["vad", "runVadSegmentation", { audioBlob: new Blob(["wav"]) }],
+    ["transcription", "runTranscription", { audio: { audioBlob: new Blob(["wav"]) }, segments: [] }],
+    ["translation", "runTranslation", { segments: [] }],
+  ];
+  for (const [stage, method, input] of cases) {
+    const router = createHybridPipelineRouter({
+      allowServerFallback: false,
+      capabilityReport: { stages: { [stage]: { runtime: "browser", strategy: "browser" } } },
+      clientAdapters: { [stage]: async () => { throw new Error("Browser out of memory"); } },
+      serverAdapters: { [stage]: async () => { serverCalls.push(stage); } },
+    });
+    await assert.rejects(router[method](input), (error) => {
+      assert.match(error.message, /Browser out of memory/);
+      assert.match(error.message, /Close other browser tabs/);
+      assert.match(error.message, /Server processing is unavailable on the public site/);
+      return true;
+    });
+  }
+  assert.deepEqual(serverCalls, []);
+});
+
+test("public router rejects unavailable browser stages without calling the server", async () => {
+  let serverCalled = false;
+  const router = createHybridPipelineRouter({
+    allowServerFallback: false,
+    capabilityReport: { stages: { audioExtraction: { runtime: "server-fallback", strategy: "unavailable" } } },
+    serverAdapters: { audioExtraction: async () => { serverCalled = true; } },
+  });
+  await assert.rejects(router.runAudioExtraction({ name: "clip.mp4" }), /could not finish in this browser/);
+  assert.equal(serverCalled, false);
+});
+
+test("public extraction error offers a smaller MP4 when the browser size limit is exceeded", async () => {
+  const router = createHybridPipelineRouter({
+    allowServerFallback: false,
+    capabilityReport: { stages: { audioExtraction: { runtime: "browser", strategy: "ffmpeg.wasm" } } },
+    clientAdapters: { audioExtraction: async () => { throw new Error("Browser ffmpeg.wasm extraction is limited to input files up to 400 MiB. Use the Python fallback for larger videos."); } },
+  });
+  await assert.rejects(router.runAudioExtraction({ name: "large.mp4" }), (error) => {
+    assert.match(error.message, /Choose or compress an MP4 to 400 MiB or less/);
+    assert.doesNotMatch(error.message, /Use the Python fallback/);
+    return true;
+  });
+});
+
 test("hybrid pipeline router runs browser audio extraction when the stage is browser-ready", async () => {
   const calls = [];
   const router = createHybridPipelineRouter({
@@ -385,6 +434,35 @@ test("hybrid pipeline router preserves browser model purge metadata", async () =
     cachePurged: true,
     filesDeleted: 7,
   });
+});
+
+test("hybrid pipeline router sends server-only audio directly to Python transcription", async () => {
+  let browserCalled = false;
+  const router = createHybridPipelineRouter({
+    capabilityReport: {
+      stages: { transcription: { runtime: "browser", strategy: "remote-transformers.js" } },
+    },
+    clientAdapters: {
+      transcription: async () => {
+        browserCalled = true;
+        throw new Error("Browser model should not load for server-only audio");
+      },
+    },
+    serverAdapters: {
+      transcription: async () => ({ segments: [{ index: 1, text: "Bonjour" }] }),
+    },
+  });
+
+  const result = await router.runTranscription({
+    audioId: "audio-123",
+    audio: { audioId: "audio-123", durationSeconds: 3601 },
+    segments: [{ index: 1, start: 0, end: 1 }],
+    sourceLanguage: "fr",
+  });
+
+  assert.equal(browserCalled, false);
+  assert.equal(result.runtime, "server-fallback");
+  assert.equal(result.strategy, "python-backend");
 });
 
 test("hybrid pipeline router exposes canonical fallback reasons when browser transcription fails", async () => {
@@ -852,7 +930,7 @@ test("hybrid pipeline router includes browser failure reasons in fallback stage 
       },
     },
     clientAdapters: {
-      audioExtraction: async () => ({ audioId: "audio-123" }),
+      audioExtraction: async () => ({ audioId: "audio-123", audioBlob: new Blob(["wav"]) }),
       transcription: async () => {
         throw new Error("Transformers worker model is unavailable");
       },

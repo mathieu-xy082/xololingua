@@ -8,11 +8,12 @@ import threading
 import time
 import unittest
 import urllib.request
+import urllib.error
 from pathlib import Path
 from unittest import mock
 
 import local_service
-from xololingua_service import http_api, runtime, transcription, translation
+from xololingua_service import http_api, jobs, runtime, transcription, translation
 
 
 class ImmediateFuture:
@@ -87,16 +88,18 @@ class PipelineIntegrationTests(unittest.TestCase):
             return json.loads(r.read())
 
     def _upload_mp4(self, mp4_path):
+        with open(mp4_path, "rb") as file:
+            return self._post_multipart_file("/api/extract-audio", "video", mp4_path.name, file.read(), "video/mp4")
+
+    def _post_multipart_file(self, path, field_name, filename, data, content_type):
         boundary = "XOLO_TEST_BOUNDARY"
-        with open(mp4_path, "rb") as f:
-            data = f.read()
         body = (
             f"--{boundary}\r\n"
-            f'Content-Disposition: form-data; name="video"; filename="{mp4_path.name}"\r\n'
-            f"Content-Type: video/mp4\r\n\r\n"
+            f'Content-Disposition: form-data; name="{field_name}"; filename="{filename}"\r\n'
+            f"Content-Type: {content_type}\r\n\r\n"
         ).encode() + data + f"\r\n--{boundary}--\r\n".encode()
         req = urllib.request.Request(
-            self._url("/api/extract-audio"),
+            self._url(path),
             data=body,
             headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
             method="POST",
@@ -210,6 +213,117 @@ class PipelineIntegrationTests(unittest.TestCase):
 
         self.assertIn("jobs", payload)
         self.assertTrue(any(job["jobId"] == job_id for job in payload["jobs"]))
+
+    def test_public_mode_hides_other_visitors_jobs(self):
+        with mock.patch.object(http_api, "PUBLIC_MODE", True):
+            with self.assertRaises(urllib.error.HTTPError) as caught:
+                self._get_json("/api/subtitle-jobs")
+        self.assertEqual(caught.exception.code, 404)
+        self.assertIsNone(caught.exception.headers.get("Access-Control-Allow-Origin"))
+
+    def test_public_mode_rejects_processing_when_server_is_busy(self):
+        with mock.patch.object(http_api, "PUBLIC_MODE", True):
+            self.assertTrue(http_api.PUBLIC_PROCESSING_SLOT.acquire(blocking=False))
+            try:
+                with self.assertRaises(urllib.error.HTTPError) as caught:
+                    self._post_json("/api/detect-language", {})
+            finally:
+                http_api.PUBLIC_PROCESSING_SLOT.release()
+        self.assertEqual(caught.exception.code, 429)
+
+    def test_public_service_rejects_all_server_processing_fallbacks(self):
+        paths = (
+            "/api/extract-audio", "/api/register-audio", "/api/segment-audio",
+            "/api/transcribe-audio", "/api/translate-segments", "/api/subtitle-jobs",
+        )
+        with mock.patch.object(http_api, "PUBLIC_MODE", True):
+            for path in paths:
+                with self.subTest(path=path):
+                    with self.assertRaises(urllib.error.HTTPError) as caught:
+                        self._post_json(path, {})
+                    self.assertEqual(caught.exception.code, 403)
+                    self.assertIn("disabled on the public site", json.loads(caught.exception.read())["error"])
+
+    def test_public_language_upload_rejects_request_over_browser_size_limit(self):
+        with (
+            mock.patch.object(http_api, "PUBLIC_MODE", True),
+            mock.patch.object(http_api, "PUBLIC_MAX_BROWSER_VIDEO_BYTES", 10),
+            mock.patch.object(http_api, "PUBLIC_MULTIPART_OVERHEAD_BYTES", 0),
+        ):
+            with self.assertRaises(urllib.error.HTTPError) as caught:
+                self._post_multipart_file("/api/detect-language", "video", "sample.mp4", b"long video", "video/mp4")
+        self.assertEqual(caught.exception.code, 413)
+        self.assertIn("400 MiB public site limit", json.loads(caught.exception.read())["error"])
+
+    def test_public_language_upload_rejects_media_over_one_hour_and_removes_temporary_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work_dir = Path(directory)
+            video = work_dir / "sample.mp4"
+            video.write_bytes(b"test video")
+            with (
+                mock.patch.object(http_api, "WORK_DIR", work_dir),
+                mock.patch.object(http_api, "PUBLIC_MODE", True),
+                mock.patch.object(http_api, "public_work_bytes", return_value=0),
+                mock.patch.object(http_api, "allow_public_processing", return_value=True),
+                mock.patch.object(http_api, "probe_duration", return_value=3600.1),
+                mock.patch.dict(runtime.WHISPER_RUNTIME, {"available": True}),
+            ):
+                with self.assertRaises(urllib.error.HTTPError) as video_error:
+                    self._post_multipart_file("/api/detect-language", "video", video.name, video.read_bytes(), "video/mp4")
+
+            self.assertEqual(video_error.exception.code, 400)
+            self.assertIn("1 h limit", json.loads(video_error.exception.read())["error"])
+            self.assertEqual(sorted(path.name for path in work_dir.iterdir()), ["sample.mp4"])
+
+    def test_local_service_accepts_over_two_hours_for_development(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work_dir = Path(directory)
+            video = work_dir / "sample.mp4"
+            video.write_bytes(b"test video")
+            with (
+                mock.patch.object(http_api, "WORK_DIR", work_dir),
+                mock.patch.object(http_api, "PUBLIC_MODE", False),
+                mock.patch.object(http_api, "probe_duration", return_value=7201),
+                mock.patch.object(http_api, "extract_audio", side_effect=lambda _source, destination: destination.write_bytes(b"RIFF")),
+            ):
+                extracted = self._upload_mp4(video)
+                registered = self._post_multipart_file("/api/register-audio", "audio", "sample.wav", b"test audio", "audio/wav")
+
+            self.assertEqual(extracted["durationSeconds"], 7201)
+            self.assertEqual(registered["durationSeconds"], 7201)
+
+    def test_public_language_upload_accepts_exactly_one_hour(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work_dir = Path(directory)
+            video = work_dir / "sample.mp4"
+            video.write_bytes(b"test video")
+            with (
+                mock.patch.object(http_api, "WORK_DIR", work_dir),
+                mock.patch.object(http_api, "PUBLIC_MODE", True),
+                mock.patch.object(http_api, "public_work_bytes", return_value=0),
+                mock.patch.object(http_api, "allow_public_processing", return_value=True),
+                mock.patch.object(http_api, "probe_duration", return_value=3600),
+                mock.patch.dict(runtime.WHISPER_RUNTIME, {"available": True}),
+                mock.patch.object(local_service.LocalServiceHandler, "detect_language_from_video", return_value={"languageCode": "ru", "languageProbability": 0.9}),
+            ):
+                detected = self._post_multipart_file("/api/detect-language", "video", video.name, video.read_bytes(), "video/mp4")
+
+            self.assertEqual(detected["durationSeconds"], 3600)
+            self.assertEqual(detected["languageCode"], "ru")
+
+    def test_public_job_queue_has_one_active_slot(self):
+        with mock.patch.object(jobs, "JOBS", {}):
+            self.assertTrue(jobs.try_put_job("a" * 32, {"status": "queued"}, max_active_jobs=1))
+            self.assertFalse(jobs.try_put_job("b" * 32, {"status": "queued"}, max_active_jobs=1))
+            jobs.JOBS["a" * 32]["status"] = "succeeded"
+            self.assertTrue(jobs.try_put_job("b" * 32, {"status": "queued"}, max_active_jobs=1))
+
+    def test_public_processing_rate_limit_expires_after_one_hour(self):
+        with mock.patch.object(http_api, "PUBLIC_REQUEST_TIMES", {}), mock.patch.object(http_api, "PUBLIC_REQUESTS_PER_HOUR", 2):
+            self.assertTrue(http_api.allow_public_processing("visitor", now=100))
+            self.assertTrue(http_api.allow_public_processing("visitor", now=101))
+            self.assertFalse(http_api.allow_public_processing("visitor", now=102))
+            self.assertTrue(http_api.allow_public_processing("visitor", now=3701))
 
     def test_translation_pairs_endpoint_returns_pairs_list(self):
         fake_pairs = [{"source": "ru", "target": "en"}, {"source": "en", "target": "ru"}]

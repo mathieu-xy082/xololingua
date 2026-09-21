@@ -1,0 +1,26 @@
+[Unit]
+Description=XoloLingua Python processing service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=xololingua
+Group=xololingua
+WorkingDirectory=/opt/xololingua/app
+StateDirectory=xololingua
+Environment=HOME=/var/lib/xololingua
+Environment=HF_HOME=/var/lib/xololingua/cache/huggingface
+Environment=XOLOLINGUA_TMP_DIR=/var/lib/xololingua/tmp
+Environment=XOLOLINGUA_PUBLIC_MODE=1
+Environment=XOLOLINGUA_WHISPER_DEVICE=cpu
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/xololingua/app/.venv/bin/python local_service.py
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

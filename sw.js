@@ -1,18 +1,22 @@
-const CACHE_NAME = "xololingua-2026-09-20-2";
+const CACHE_NAME = "xololingua-2026-09-20-6";
 const ASSETS = [
   ".",
-  "styles.css?v=2026-09-20-2",
-  "app.js?v=2026-09-20-2",
+  "styles.css?v=2026-09-20-6",
+  "app.js?v=2026-09-20-6",
+  "frontend/service_url.js",
   "frontend/backend_client.js",
   "frontend/app_hybrid_router_wiring.js",
   "frontend/client_audio_extractor.js",
   "frontend/ffmpeg_wasm_runtime.js",
   "frontend/client_pipeline_capabilities.js",
   "frontend/browser_ml_config.js",
+  "frontend/browser_resource_limits.js",
+  "frontend/video_duration_policy.js",
   "frontend/browser_inference_device.js",
   "frontend/dynamic_model_resolver.js",
   "frontend/model_delivery_status.js",
   "frontend/client_pipeline_router.js",
+  "frontend/browser_stage_failure.js",
   "frontend/pipeline_stage_contract.js",
   "frontend/client_srt_formatter.js",
   "frontend/client_transcriber.js",
@@ -35,8 +39,8 @@ const ASSETS = [
   "node_modules/onnxruntime-web/dist/ort-wasm.wasm",
   "node_modules/@ricky0123/vad-web/dist/bundle.min.js",
   "node_modules/@ricky0123/vad-web/dist/silero_vad_legacy.onnx",
-  "manifest.webmanifest?v=2026-09-20-2",
-  "assets/icon.svg?v=2026-09-20-2",
+  "manifest.webmanifest?v=2026-09-20-6",
+  "assets/icon.svg?v=2026-09-20-6",
   "assets/babbel_parrot.png"
 ];
 
@@ -60,6 +64,7 @@ self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;
+  if (url.pathname.startsWith("/api/")) return;
   if (event.request.mode === "navigate" || event.request.destination === "document") {
     event.respondWith(
       fetch(event.request).then((response) => {

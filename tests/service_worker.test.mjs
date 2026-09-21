@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import vm from "node:vm";
 
 const appSource = await readFile(new URL("../app.js", import.meta.url), "utf8");
 const indexSource = await readFile(new URL("../index.html", import.meta.url), "utf8");
@@ -21,16 +22,34 @@ const clientPipelineCapabilitiesSource = await readFile(
   new URL("../frontend/client_pipeline_capabilities.js", import.meta.url),
   "utf8",
 );
+const browserMlConfigSource = await readFile(new URL("../frontend/browser_ml_config.js", import.meta.url), "utf8");
 const clientTranscriberSource = await readFile(new URL("../frontend/client_transcriber.js", import.meta.url), "utf8");
 const clientTranslatorSource = await readFile(new URL("../frontend/client_translator.js", import.meta.url), "utf8");
 const transcriptionWorkerSource = await readFile(new URL("../frontend/transcription_worker.js", import.meta.url), "utf8");
 const translationWorkerSource = await readFile(new URL("../frontend/translation_worker.js", import.meta.url), "utf8");
 
+test("service worker never caches API responses, including subtitle job results", () => {
+  const listeners = new Map();
+  const self = {
+    location: { origin: "https://xololingua.example" },
+    addEventListener(name, handler) { listeners.set(name, handler); },
+  };
+  vm.runInNewContext(serviceWorkerSource, { self, URL });
+  for (const path of ["/api/health", "/api/subtitle-jobs/" + "1".repeat(32)]) {
+    let intercepted = false;
+    listeners.get("fetch")({
+      request: { method: "GET", url: `https://xololingua.example${path}`, mode: "cors", destination: "" },
+      respondWith() { intercepted = true; },
+    });
+    assert.equal(intercepted, false, path);
+  }
+});
+
 test("service worker precaches JavaScript modules imported by the PWA shell and app wiring", () => {
   const importedModules = [
     ...appSource.matchAll(/import\s+[^;]+from\s+["']\.\/(frontend\/[^"']+)["']/g),
     ...appHybridRouterWiringSource.matchAll(/import\s+[^;]+from\s+["']\.\/(client_pipeline_router\.js)["']/g),
-    ...clientPipelineRouterSource.matchAll(/import\s+[^;]+from\s+["']\.\/(pipeline_stage_contract\.js)["']/g),
+    ...clientPipelineRouterSource.matchAll(/import\s+[^;]+from\s+["']\.\/((?:pipeline_stage_contract|browser_stage_failure)\.js)["']/g),
   ]
     .map((match) => match[1].startsWith("frontend/") ? match[1] : `frontend/${match[1]}`)
     .sort();
@@ -48,8 +67,9 @@ test("service worker precaches the full frontend module graph used by offline as
   const importedModules = new Set([
     ...appSource.matchAll(/import\s+[^;]+from\s+["']\.\/(frontend\/[^"']+)["']/g),
     ...appHybridRouterWiringSource.matchAll(/import\s+[^;]+from\s+["']\.\/(client_pipeline_router\.js)["']/g),
-    ...clientPipelineRouterSource.matchAll(/import\s+[^;]+from\s+["']\.\/(pipeline_stage_contract\.js)["']/g),
+    ...clientPipelineRouterSource.matchAll(/import\s+[^;]+from\s+["']\.\/((?:pipeline_stage_contract|browser_stage_failure)\.js)["']/g),
     ...clientPipelineCapabilitiesSource.matchAll(/import\s+[^;]+from\s+["']\.\/(client_[^"']+\.js)["']/g),
+    ...browserMlConfigSource.matchAll(/import\s+[^;]+from\s+["']\.\/(browser_resource_limits\.js)["']/g),
     ...transcriptionWorkerSource.matchAll(/import\s+[^;]+from\s+["']\.\/((?:browser_inference_device|batched_whisper_runtime)\.js)["']/g),
     ...translationWorkerSource.matchAll(/import\s+[^;]+from\s+["']\.\/(browser_inference_device\.js)["']/g),
     ...clientTranscriberSource.matchAll(/import\s+[^;]+from\s+["']\.\/(worker_request_session\.js)["']/g),
@@ -129,7 +149,7 @@ test("PWA shell loads vad-web and ONNX Runtime browser assets before the module 
 test("PWA shell reads service metadata through the backend client boundary", () => {
   assert.match(appSource, /backendClient\.getHealth\(\)/);
   assert.match(appSource, /backendClient\.getTranslationPairs\(\)/);
-  assert.doesNotMatch(appSource, /fetch\(`\$\{LOCAL_SERVICE_URL\}\/api\/(?:health|translation-pairs)`\)/);
+  assert.doesNotMatch(appSource, /fetch\(`\$\{SERVICE_BASE_URL\}\/api\/(?:health|translation-pairs)`\)/);
 });
 
 test("PWA shell displays honest offline asset and Python fallback metadata", () => {

@@ -1,3 +1,8 @@
+import {
+  BROWSER_MAX_MEDIA_DURATION_SECONDS,
+  BROWSER_MAX_VIDEO_BYTES,
+} from "./browser_resource_limits.js";
+
 export function detectClientAudioExtractionCapabilities(environment = globalThis) {
   const webCodecs = typeof environment.VideoDecoder === "function"
     && typeof environment.AudioDecoder === "function"
@@ -13,8 +18,6 @@ export function detectClientAudioExtractionCapabilities(environment = globalThis
   };
 }
 
-const DEFAULT_BROWSER_EXTRACTION_MAX_DURATION_SECONDS = 60 * 60;
-const DEFAULT_BROWSER_EXTRACTION_MAX_INPUT_BYTES = 800 * 1024 * 1024;
 const DEFAULT_BROWSER_METADATA_TIMEOUT_MS = 10_000;
 const FFMPEG_INPUT_NAME = "input.mp4";
 const FFMPEG_OUTPUT_NAME = "output.wav";
@@ -76,8 +79,8 @@ export function createFfmpegWasmAudioExtractor({
   ffmpeg,
   fetchFile,
   durationProbe,
-  maxDurationSeconds = DEFAULT_BROWSER_EXTRACTION_MAX_DURATION_SECONDS,
-  maxInputBytes = DEFAULT_BROWSER_EXTRACTION_MAX_INPUT_BYTES,
+  maxDurationSeconds = BROWSER_MAX_MEDIA_DURATION_SECONDS,
+  maxInputBytes = BROWSER_MAX_VIDEO_BYTES,
   releaseAfterRun = false,
 } = {}) {
   return async function extractWithFfmpegWasm(file, onProgress = () => {}) {
@@ -206,6 +209,7 @@ export function createFfmpegWasmAudioExtractor({
         audioBlob,
         audioFileName: makeWavFileName(file?.name || "audio.mp4"),
         audioSizeBytes: outputBytes.byteLength,
+        durationSeconds: durationSeconds ?? null,
         mimeType: "audio/wav",
         sampleRate: 16000,
         channelCount: 1,

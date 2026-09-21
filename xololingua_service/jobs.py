@@ -39,6 +39,23 @@ def put_job(job_id: str, values: dict) -> None:
         JOBS[job_id] = values
 
 
+def try_put_job(job_id: str, values: dict, max_active_jobs: int) -> bool:
+    """Reserve a bounded queue slot atomically for an Internet-facing service."""
+    with JOBS_LOCK:
+        completed = sorted(
+            (job for job in JOBS.values() if job.get("status") in TERMINAL_JOB_STATUSES),
+            key=lambda job: job.get("updatedAt", 0),
+            reverse=True,
+        )
+        for old_job in completed[20:]:
+            JOBS.pop(old_job["jobId"], None)
+        active = sum(job.get("status") not in TERMINAL_JOB_STATUSES for job in JOBS.values())
+        if active >= max_active_jobs:
+            return False
+        JOBS[job_id] = values
+        return True
+
+
 def register_job_future(job_id: str, future: object) -> None:
     with JOBS_LOCK:
         JOB_FUTURES[job_id] = future

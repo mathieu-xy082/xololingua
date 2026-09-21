@@ -8,6 +8,7 @@ __pycache__/
 tmp/
 .DS_Store
 node_modules/
+dist/
 .hermes/
 .models/
 models/Xenova/

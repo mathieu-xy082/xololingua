@@ -4,6 +4,12 @@ import { readFile } from "node:fs/promises";
 
 const appSource = await readFile(new URL("../app.js", import.meta.url), "utf8");
 
+test("public app disables server processing fallback and prototype segments", () => {
+  assert.match(appSource, /allowServerFallback: !VIDEO_DURATION_POLICY\.publicSite/);
+  assert.match(appSource, /if \(VIDEO_DURATION_POLICY\.publicSite\) \{\s*failPublicSegmentation\(extractionError\);/);
+  assert.match(appSource, /if \(VIDEO_DURATION_POLICY\.publicSite\) \{\s*failPublicSegmentation\(segmentationError\);/);
+});
+
 test("app subtitle generation routes transcription and translation as separate hybrid stages", () => {
   assert.match(appSource, /hybridPipelineRouter\.runTranscription\(/);
   assert.match(appSource, /hybridPipelineRouter\.runTranslation\(/);
@@ -47,7 +53,8 @@ test("app attempts browser VAD before registering audio for a Python fallback", 
 });
 
 test("app carries canonical audio extraction metadata into segmentation status details", () => {
-  assert.match(appSource, /state\.extractedAudio = \{ \.\.\.extraction\.payload, \.\.\.extraction\.metadata \};/);
+  assert.match(appSource, /state\.extractedAudio = \{[\s\S]*?\.\.\.extraction\.payload,[\s\S]*?\.\.\.extraction\.metadata,/);
+  assert.match(appSource, /durationSeconds: Number\.isFinite\(extraction\.payload\.durationSeconds\)/);
   assert.match(appSource, /formatBytes\(state\.extractedAudio\.audioSizeBytes\)/);
 });
 

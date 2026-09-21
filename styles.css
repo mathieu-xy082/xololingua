@@ -259,6 +259,12 @@ dd {
   background: rgba(31, 111, 91, 0.09);
 }
 
+.upload-notice {
+  margin: 10px 0 20px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 .dropzone input {
   position: absolute;
   width: 1px;

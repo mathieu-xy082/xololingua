@@ -31,6 +31,7 @@ export function createClientTranslator({
   warmupTimeoutMs,
   warmupSampleText,
   cloudTranslator,
+  maxDurationSeconds,
   maxSegments,
   maxBatchSize,
   maxWorkerResponseMs,
@@ -48,6 +49,12 @@ export function createClientTranslator({
     cancel,
 
     async translateSegments(request, onProgress = () => {}) {
+      const durationSeconds = request?.extractedAudio?.durationSeconds ?? request?.durationSeconds;
+      if (Number.isFinite(maxDurationSeconds)
+        && Number.isFinite(durationSeconds)
+        && durationSeconds > maxDurationSeconds) {
+        throw new Error(`Browser translation limit exceeded: video duration ${durationSeconds}s is greater than the ${maxDurationSeconds}s limit.`);
+      }
       const model = resolveModelRequest({ request, modelId, modelResolver, remoteModels, purgeAfterUse, devicePreference });
       if (model.browserAvailable === false) {
         throw new Error(model.unavailableReason || `No browser translation model is available for ${request.sourceLanguage} → ${request.targetLanguage}.`);

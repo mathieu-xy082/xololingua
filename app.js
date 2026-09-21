@@ -4,13 +4,16 @@ import { createClientAudioExtractor } from "./frontend/client_audio_extractor.js
 import { createClientTranscriber } from "./frontend/client_transcriber.js";
 import { createClientTranslator } from "./frontend/client_translator.js";
 import { BROWSER_ML_CONFIG } from "./frontend/browser_ml_config.js";
+import { BROWSER_MAX_VIDEO_BYTES } from "./frontend/browser_resource_limits.js";
 import { resolveTranscriptionModel, resolveTranslationModel } from "./frontend/dynamic_model_resolver.js";
 import { collectClientPipelineCapabilities } from "./frontend/client_pipeline_capabilities.js";
 import { formatSrt, formatSrtTime } from "./frontend/client_srt_formatter.js";
 import { createClientVadSegmenter } from "./frontend/client_vad_segmenter.js";
 import { createAppFfmpegWasmAudioExtractor } from "./frontend/ffmpeg_wasm_runtime.js";
 import { formatPipelineStageRuntime, formatPipelineStageSummary } from "./frontend/pipeline_stage_status.js";
+import { resolveServiceBaseUrl } from "./frontend/service_url.js";
 import { createVadWebRuntimeSegmenter } from "./frontend/vad_web_runtime.js";
+import { resolveVideoDurationPolicy } from "./frontend/video_duration_policy.js";
 import {
   beginModelDelivery,
   createModelDeliveryTracker,
@@ -20,18 +23,20 @@ import {
   updateModelDelivery,
 } from "./frontend/model_delivery_status.js";
 
-const MAX_DURATION_SECONDS = 2.5 * 60 * 60;
+const VIDEO_DURATION_POLICY = resolveVideoDurationPolicy();
 const SEGMENT_SECONDS = 12;
-const LOCAL_SERVICE_URL = "http://127.0.0.1:8765";
+const SERVICE_BASE_URL = resolveServiceBaseUrl();
 globalThis.__xololinguaDynamicModels = true;
-const APP_ASSET_VERSION = "2026-09-20-2";
-const backendClient = createBackendClient({ baseUrl: LOCAL_SERVICE_URL });
+const APP_ASSET_VERSION = "2026-09-20-6";
+const backendClient = createBackendClient({ baseUrl: SERVICE_BASE_URL });
 const clientPipelineCapabilities = collectClientPipelineCapabilities();
 const appClientAdapters = createAppClientAdapters({
   clientAudioExtractor: globalThis.XOLOLINGUA_CLIENT_AUDIO_EXTRACTOR || createClientAudioExtractor({
     ffmpegWasmExtractor: createAppFfmpegWasmAudioExtractor(),
   }),
   clientVadSegmenter: globalThis.XOLOLINGUA_CLIENT_VAD_SEGMENTER || createClientVadSegmenter({
+    maxDurationSeconds: BROWSER_ML_CONFIG.vad.maxAudioSeconds,
+    maxAudioBytes: BROWSER_ML_CONFIG.vad.maxAudioBytes,
     vadWebSegmenter: createVadWebRuntimeSegmenter({
       vadProfile: "backend-compatible",
       workerUrl: "frontend/vad_worker.js",
@@ -60,6 +65,7 @@ const appClientAdapters = createAppClientAdapters({
     devicePreference: BROWSER_ML_CONFIG.devicePreference,
     warmupTimeoutMs: BROWSER_ML_CONFIG.modelDownloadTimeoutMs,
     warmupSampleText: BROWSER_ML_CONFIG.translation.warmupSampleText,
+    maxDurationSeconds: BROWSER_ML_CONFIG.translation.maxMediaSeconds,
     maxSegments: BROWSER_ML_CONFIG.translation.maxSegments,
     maxBatchSize: Math.max(1, Math.floor(
       BROWSER_ML_CONFIG.translation.maxCharactersPerBatch / 400,
@@ -72,6 +78,7 @@ const hybridPipelineRouter = createAppHybridPipelineRouter({
   capabilityReport: clientPipelineCapabilities,
   clientAdapters: appClientAdapters,
   srtFormatter: formatSrt,
+  allowServerFallback: !VIDEO_DURATION_POLICY.publicSite,
 });
 
 const languages = [
@@ -123,6 +130,8 @@ const state = {
 
 const els = {
   dropzone: document.querySelector("#dropzone"),
+  uploadNotice: document.querySelector("#uploadNotice"),
+  maxDurationLabel: document.querySelector("#maxDurationLabel"),
   fileInput: document.querySelector("#fileInput"),
   browseButton: document.querySelector("#browseButton"),
   videoCard: document.querySelector("#videoCard"),
@@ -173,6 +182,8 @@ const els = {
 
 let deferredInstallPrompt = null;
 let _pairsFetched = false;
+if (els.uploadNotice) els.uploadNotice.hidden = SERVICE_BASE_URL !== globalThis.location?.origin;
+els.maxDurationLabel.textContent = VIDEO_DURATION_POLICY.label;
 populateLanguages();
 bindEvents();
 bindInstallPrompt();
@@ -208,6 +219,17 @@ function populateLanguages() {
 
 function renderPipelineCapabilitySummary() {
   const summary = clientPipelineCapabilities.demoSummary;
+  if (VIDEO_DURATION_POLICY.publicSite) {
+    els.pwaOfflineScope.textContent = "Language identification uses the server; all other processing must run in your browser.";
+    els.pwaOfflineScope.title = "Browser processing requires enough memory and a supported browser.";
+    els.pipelineBrowserStages.textContent = summary.browserStageLabels.join(", ") || "none available";
+    els.pipelineFallbackStages.textContent = summary.serverFallbackStageLabels.length > 0
+      ? `Unavailable in this browser: ${summary.serverFallbackStageLabels.join(", ")}`
+      : "Disabled on the public site";
+    els.pipelineFallbackEndpoints.replaceChildren();
+    renderModelDeliveryPanel();
+    return;
+  }
   els.pwaOfflineScope.textContent = summary.offlineScopeLabel || "Offline assets available; ML stages may still need Python fallback.";
   els.pwaOfflineScope.title = summary.headline;
   els.pipelineBrowserStages.textContent = summary.browserStageLabels.length > 0
@@ -343,6 +365,12 @@ function loadVideoFile(file) {
     return;
   }
 
+  if (VIDEO_DURATION_POLICY.publicSite && file.size > BROWSER_MAX_VIDEO_BYTES) {
+    els.languageStatus.textContent = "This MP4 exceeds the 400 MiB browser processing limit. Compress or trim it before trying again.";
+    render();
+    return;
+  }
+
   state.videoFile = file;
   state.videoUrl = URL.createObjectURL(file);
   state.metadataReady = false;
@@ -354,16 +382,14 @@ function loadVideoFile(file) {
 
 function validateDuration() {
   if (!Number.isFinite(state.duration) || state.duration <= 0) {
+    resetOutput();
     els.languageStatus.textContent = "The video duration could not be read.";
-    state.videoFile = null;
-    state.metadataReady = false;
     return;
   }
 
-  if (state.duration > MAX_DURATION_SECONDS) {
-    els.languageStatus.textContent = "This video exceeds the 2 h 30 min limit.";
-    state.videoFile = null;
-    state.metadataReady = false;
+  if (state.duration > VIDEO_DURATION_POLICY.maxDurationSeconds) {
+    resetOutput();
+    els.languageStatus.textContent = `This video exceeds the ${VIDEO_DURATION_POLICY.label} limit.`;
     return;
   }
 
@@ -391,12 +417,24 @@ async function identifyLanguage() {
     els.languageStatus.textContent = "Main language identified.";
     setProgress("language", 100);
   } catch (error) {
-    els.languageStatus.textContent = error.message;
+    els.languageStatus.textContent = languageIdentificationFailureMessage(error);
     setProgress("language", 0);
   } finally {
     state.busyStep = "";
     render();
   }
+}
+
+function languageIdentificationFailureMessage(error) {
+  const reason = String(error?.message || "Language identification failed.");
+  if (!VIDEO_DURATION_POLICY.publicSite) return reason;
+  if (/server busy|hourly processing limit/i.test(reason)) {
+    return "Language identification is busy. Retry in a few minutes, or select the source language manually to continue.";
+  }
+  if (/service is not available|transcription engine not available|request failed|failed to fetch/i.test(reason)) {
+    return "Language identification service is unavailable. Check your connection and retry later, or select the source language manually to continue.";
+  }
+  return `${reason} You can select the source language manually to continue.`;
 }
 
 function selectSourceLanguage(language, manuallySelected = false) {
@@ -433,9 +471,19 @@ async function segmentAudio() {
         setProgress("segmentation", progress);
       });
       stageReports.push({ stage: "audioExtraction", ...extraction });
-      state.extractedAudio = { ...extraction.payload, ...extraction.metadata };
+      state.extractedAudio = {
+        ...extraction.payload,
+        ...extraction.metadata,
+        durationSeconds: Number.isFinite(extraction.payload.durationSeconds)
+          ? extraction.payload.durationSeconds
+          : state.duration,
+      };
       els.segmentationStatus.textContent = `${formatPipelineStageRuntime({ stage: "audioExtraction", ...extraction })}. Segmenting speech audio...`;
     } catch (extractionError) {
+      if (VIDEO_DURATION_POLICY.publicSite) {
+        failPublicSegmentation(extractionError);
+        return;
+      }
       els.segmentationStatus.textContent = `${extractionError.message} Falling back to prototype segmentation.`;
       const segments = await segmentAudioAdapter(state.duration, (progress) => {
         const scaledProgress = 35 + Math.round(progress * 0.65);
@@ -455,6 +503,10 @@ async function segmentAudio() {
     stageReports.push({ stage: "vad", ...segmentation });
     finishSegmentation(segmentation.payload.segments, stageReports);
   } catch (segmentationError) {
+    if (VIDEO_DURATION_POLICY.publicSite) {
+      failPublicSegmentation(segmentationError);
+      return;
+    }
     els.segmentationStatus.textContent = `${segmentationError.message} Falling back to prototype segmentation.`;
     const segments = await segmentAudioAdapter(state.duration, (progress) => {
       const scaledProgress = 35 + Math.round(progress * 0.65);
@@ -462,6 +514,14 @@ async function segmentAudio() {
     });
     finishSegmentation(segments, stageReports);
   }
+}
+
+function failPublicSegmentation(error) {
+  state.busyStep = "";
+  state.segments = [];
+  els.segmentationStatus.textContent = error.message;
+  setProgress("segmentation", 0);
+  render();
 }
 
 async function generateSubtitles() {
@@ -602,7 +662,7 @@ async function identifyLanguageAdapter(file, onProgress = () => {}, onStatus = (
   try {
     await backendClient.getHealth();
   } catch {
-    throw new Error("Local audio service is not available for language detection.");
+    throw new Error("Language identification service is not available.");
   }
 
   const formData = new FormData();
@@ -611,7 +671,7 @@ async function identifyLanguageAdapter(file, onProgress = () => {}, onStatus = (
   onStatus("Uploading video for language detection...");
 
   const payload = await postFormDataJsonWithProgress(
-    `${LOCAL_SERVICE_URL}/api/detect-language`,
+    `${SERVICE_BASE_URL}/api/detect-language`,
     formData,
     (uploadProgress) => {
       const mapped = 5 + Math.round(uploadProgress * 0.3);
@@ -902,7 +962,7 @@ function clampProgress(value) {
 async function cleanupExtractedAudioAdapter(audioId) {
   if (!audioId) return;
 
-  const response = await fetch(`${LOCAL_SERVICE_URL}/api/release-audio`, {
+  const response = await fetch(`${SERVICE_BASE_URL}/api/release-audio`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"

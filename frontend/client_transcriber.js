@@ -108,13 +108,14 @@ export function createClientTranscriber({
         throw new Error(`Browser transcription limit exceeded: audio duration ${request.audio.durationSeconds}s is greater than the ${maxDurationSeconds}s limit.`);
       }
 
+      const audioSizeBytes = request?.audio?.audioSizeBytes ?? request?.audio?.sizeBytes ?? request?.audio?.audioBlob?.size;
       if (
         Number.isFinite(maxAudioBytes)
-        && Number.isFinite(request?.audio?.sizeBytes)
-        && request.audio.sizeBytes > maxAudioBytes
+        && Number.isFinite(audioSizeBytes)
+        && audioSizeBytes > maxAudioBytes
       ) {
         const byteLabel = maxAudioBytes === 1 ? "byte" : "bytes";
-        throw new Error(`Browser transcription limit exceeded: audio size ${request.audio.sizeBytes} bytes is greater than the ${maxAudioBytes} ${byteLabel} limit.`);
+        throw new Error(`Browser transcription limit exceeded: audio size ${audioSizeBytes} bytes is greater than the ${maxAudioBytes} ${byteLabel} limit.`);
       }
 
       const segmentCount = request?.segments?.length || 0;

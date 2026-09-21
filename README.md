@@ -1,17 +1,17 @@
 # XoloLingua
 
-XoloLingua is a local-first Progressive Web App that creates translated `.srt` subtitles from MP4 videos. The browser provides the workflow and subtitle download, while a Python service extracts and segments audio, identifies the spoken language, transcribes speech, and translates the resulting text.
+XoloLingua is a Progressive Web App that creates translated `.srt` subtitles from MP4 videos. On the public site, the Python service identifies the spoken language and the visitor's browser extracts audio, segments speech, transcribes, translates, and creates the SRT. Local development also supports Python processing fallbacks.
 
-The application is currently under development and has not published its first release. It targets Chrome or Chromium on Ubuntu and can also run on Android through USB port forwarding.
+The application targets Chrome or Chromium on Ubuntu and can also run on Android through USB port forwarding.
 
 ## Features
 
 - Drag-and-drop MP4 selection and video preview.
-- Validation of file type and the 2 h 30 min duration limit.
+- Validation of file type and video duration: 1 hour on the public site, 2 h 30 min in local development.
 - Whisper-based spoken-language identification from 10 clips distributed across long videos, with CUDA support and a CPU fallback. The source language can be selected or corrected manually before generating subtitles.
 - Silence-based audio segmentation with a review of segment timings.
-- Offline translation using locally installed Argos Translate language packages.
-- Asynchronous subtitle jobs with progress reporting and cancellation.
+- Browser translation with on-demand OPUS-MT models; local development can use installed Argos packages.
+- Browser subtitle progress and cancellation; local Python fallbacks support asynchronous jobs.
 - Downloadable, translated SRT output.
 - Installable and cacheable PWA shell.
 
@@ -64,7 +64,7 @@ The application is currently under development and has not published its first r
 ## Architecture
 
 ```text
-Chrome / Chromium (PWA, port 4173)
+Chrome / Chromium (local PWA, port 4173)
         |
         | HTTP / JSON and MP4 upload
         v
@@ -73,10 +73,14 @@ Local Python service (port 8765)
         +-- FFmpeg: audio extraction and segmentation
         +-- faster-whisper: language detection and transcription
         +-- Argos Translate: offline segment translation
-        +-- SRT generation returned to the browser
+        +-- local processing fallback
 ```
 
-Processing takes place on the machine running the local service. Uploaded media and extracted audio are stored temporarily under `~/.cache/xololingua/tmp/service` by default, or under `$XOLOLINGUA_TMP_DIR/service` when that environment variable is set, rather than sent to a hosted XoloLingua backend.
+On the public site, Caddy serves the PWA and proxies the language-identification request to the loopback Python service. The browser runs the other processing stages and generates the SRT.
+
+In local development, Python processing runs on the developer's computer. On the hosted site, the video is uploaded to the VPS for language identification only; the remaining processing runs in the visitor's browser, using WebGPU or local WASM CPU where available. Uploaded media is stored temporarily under `~/.cache/xololingua/tmp/service` by default, or under `$XOLOLINGUA_TMP_DIR/service` when that environment variable is set.
+
+For an initial public Ubuntu deployment with same-origin HTTPS, use [the deployment guide](deploy/README.md). It includes a curated static build, a Caddy reverse proxy, a systemd unit, upload limits, and the CPU capacity limits of a small server.
 
 ### Client-side migration contract
 
@@ -86,6 +90,8 @@ The frontend keeps explicit capability probes for each migration stage and aggre
 - `vad`: browser VAD path, otherwise Python segmentation fallback.
 - `transcription`: browser transformers.js path, otherwise Python faster-whisper fallback.
 - `translation`: browser local/cloud translator path, otherwise Python Argos fallback.
+
+The hosted app disables the Python fallback for all four stages and displays a reason and suggested next step when browser processing fails. Public API requests to those fallback endpoints return HTTP 403. Language identification continues to use the Python service. Local development retains the hybrid fallback behavior.
 
 The aggregate report labels the current flow as `client-side` only when every stage has a browser runtime. Any unavailable stage produces `hybrid-fallback` with a concrete list of `serverFallbackStages`, so milestone demos can state exactly which parts still rely on the Python service. The report also exposes a `demoSummary` with readable stage labels, `serverFallbackEndpoints`, and ordered `stageRows` that pair each stage with its browser or Python fallback runtime; for example `Hybrid PWA: 2 browser stages, 2 Python fallback stages` plus `POST /api/segment-audio` for segmentation fallback, to keep the July milestone presentation aligned with the tested contract.
 
@@ -99,7 +105,7 @@ The production PWA does not require users to prepare model files manually. When 
 - each ML worker requests a high-performance WebGPU adapter and reports the selected engine (`WebGPU (...)` or `WASM CPU`) in the model panel;
 - after each ML stage, the worker releases its runtime and clears the corresponding model files from the Transformers.js browser cache.
 
-The first run therefore requires internet access to Hugging Face. If the resolved OPUS-MT repository does not exist, a download fails, or the browser cannot run the model, the hybrid router records the failure and uses the Python fallback. The former packaged-model manifests and manual bootstrap command have been removed; model delivery is entirely driven by the selected language pair.
+The first run therefore requires internet access to Hugging Face. If the resolved OPUS-MT repository does not exist, a download fails, or the browser cannot run the model, the hosted app displays the failure and a suggested action. Local development can use the Python fallback. The former packaged-model manifests and manual bootstrap command have been removed; model delivery is entirely driven by the selected language pair.
 
 To benchmark the available Whisper quantizations on the same 30-second WebGPU sample, run:
 
@@ -111,7 +117,7 @@ The command compares `fp16`, `q4f16`, and `q4`, rejects WASM fallbacks and text 
 
 Remote model responses bypass the browser HTTP cache and are not stored in the PWA shell cache. Temporary Transformers.js caching is enabled only to share files between warmup and inference within one pipeline run, and is purged after use.
 
-The ffmpeg.wasm audio-extraction prototype keeps explicit browser memory and duration guards: normal client-side operation accepts videos up to 1 hour or 800 MiB by default, while CI/demo runs can still pass shorter per-extractor overrides (for example 60 seconds) to keep validation fast. It rejects inputs before loading the WASM runtime when `File.size` metadata is available, then rechecks the fetched byte buffer before writing into the ffmpeg.wasm virtual filesystem, releasing the runtime when `releaseAfterRun` is enabled, so streams or synthetic file-like inputs cannot bypass the browser memory guard. Browser metadata probing fails explicitly after 10 seconds by default so stalled video headers do not leave object URLs or extraction promises hanging. The extractor exposes an opt-in `releaseAfterRun` mode that terminates/exits the ffmpeg.wasm runtime after virtual filesystem cleanup, which is useful for demo flows that process one short clip at a time and need to return the WASM heap promptly. If ffmpeg.wasm cannot transcode a selected file, the browser error keeps the original failure as its cause while directing users to the Python fallback. Larger media or unsupported codecs should use the explicit Python `/api/extract-audio` fallback until a streaming/WebCodecs path is available.
+The browser extraction, VAD, transcription, and translation stages share a one-hour video-duration ceiling. The public site rejects videos over one hour and MP4 files over 400 MiB before upload; the Python language-identification API also rejects videos over one hour. Local development and tests keep the 2 h 30 min application limit. The browser extraction path limits MP4 inputs to 400 MiB, and the VAD/transcription paths limit extracted audio to 250 MiB. A browser stage that exceeds a byte limit displays an actionable error on the public site and can use the Python service in local development. See [the browser memory budget](docs/browser-duration-memory-budget.md) for the byte calculations and important limits of these estimates. The ffmpeg.wasm extractor checks video size before loading the runtime and again after `fetchFile`; it probes video duration with a 10-second metadata timeout and cleans up the virtual filesystem after extraction. It can release the WASM runtime after a run when `releaseAfterRun` is enabled.
 
 ## Build and Run Locally
 
@@ -245,8 +251,8 @@ Then open <http://localhost:4173> in Chrome on Android. Using `localhost` also p
 ## Current Limitations
 
 - Speech segmentation is based on silence detection rather than a speech-aware model.
-- Translation is limited to Argos language-pair packages installed on the service host.
-- There is no hosted processing backend; the browser must be able to reach the local service.
+- Public translation requires an available browser model for the chosen language pair; local Python translation requires Argos packages.
+- Public language identification still requires the hosted Python service and its CPU capacity.
 - Browser UI tests and representative end-to-end media fixtures are still planned.
 
 ## TODO — Migration vers une architecture 100 % client

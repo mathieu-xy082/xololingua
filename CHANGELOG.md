@@ -4,6 +4,31 @@ All notable changes to XoloLingua will be documented in this file.
 
 This project follows Semantic Versioning.
 
+## [1.3.0] - 2026-09-21 - Merge branche 'feat/public-deployment' into main
+### Added
+
+- Added a production deployment profile for Ubuntu 24.04 with Caddy, systemd, a curated static web build, same-origin HTTPS API routing, and operational documentation.
+- Added gated GitHub Actions deployments through a restricted SSH account, exact tested-commit verification, versioned release links, health checks, rollback, and retention of the active and previous releases.
+- Added service protections for concurrent public processing, per-IP hourly requests, request and work-directory sizes, stale-media cleanup, and bounded in-memory job history.
+- Added a shared one-hour browser resource policy with documented memory budgets for audio extraction, VAD, transcription, and translation.
+- Added actionable browser-stage failure messages and a development plan for moving language identification to WebGPU with local WASM CPU fallback.
+
+### Changed
+
+- Changed hosted API resolution to use the site's HTTPS origin while preserving `127.0.0.1:8765` for local development.
+- Limited public videos to one hour and 400 MiB, while retaining the 2 h 30 min duration limit for local development and long-video tests.
+- Harmonized browser extraction, segmentation, transcription, and translation at a one-hour media limit, with 250 MiB extracted-audio and 9,000-segment guards.
+- Restricted the public Python service to language identification; extraction, segmentation, transcription, translation, and SRT creation now run in the visitor's browser.
+- Kept Python processing fallbacks available in local development and replaced public fallback attempts with clear recovery guidance.
+- Updated the PWA capability panel, upload notice, cache version, deployment guide, and browser memory documentation for the public processing policy.
+
+### Security
+
+- Bound the Python API to loopback behind Caddy and disabled cross-origin response headers in public mode while retaining local development CORS.
+- Disabled public Python fallback endpoints with HTTP 403 before their request bodies are processed.
+- Added a dedicated deployment key, pinned SSH host-key verification, a forced SSH command, restricted sudo rules, and branch-gated production approvals.
+- Prevented the public web server from exposing the repository checkout by deploying only an allowlisted static artifact.
+
 ## [1.2.0] - 2026-09-20 - Merge branche 'ec/optim-asr' into main 
 ### Added
 
