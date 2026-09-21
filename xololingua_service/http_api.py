@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 import cgi
-from collections import deque
 import json
 import re
 import shutil
 import subprocess
 import time
 import uuid
-from threading import BoundedSemaphore, Lock
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -29,62 +27,14 @@ from .jobs import (
     try_put_job,
 )
 from .media import extract_audio, extract_audio_clips_parallel, language_detection_windows, normalize_segments, normalize_text_segments, probe_duration, segment_audio
-from .settings import ARGOS_COMMAND, HOST, MAX_DURATION_SECONDS, PORT, PUBLIC_MAX_DURATION_SECONDS, PUBLIC_MAX_JSON_BYTES, PUBLIC_MAX_UPLOAD_BYTES, PUBLIC_MAX_WORK_BYTES, PUBLIC_MODE, PUBLIC_REQUESTS_PER_HOUR, WHISPER_CPU_COMPUTE_TYPE, WHISPER_CPU_MODEL, WHISPER_DEVICE_CHOICE, WORK_DIR
+from .settings import ARGOS_COMMAND, HOST, MAX_DURATION_SECONDS, PORT, PUBLIC_MAX_DURATION_SECONDS, PUBLIC_MAX_JSON_BYTES, PUBLIC_MODE, WHISPER_CPU_COMPUTE_TYPE, WHISPER_CPU_MODEL, WHISPER_DEVICE_CHOICE, WORK_DIR
 from .transcription import detect_audio_languages, transcribe_segments_with_cpu_fallback
 from .translation import get_supported_pairs, translate_segments, translation_backend_available
 
-PUBLIC_PROCESSING_SLOT = BoundedSemaphore(1)
-PUBLIC_RATE_LOCK = Lock()
-PUBLIC_REQUEST_TIMES: dict[str, deque[float]] = {}
-PUBLIC_MAX_BROWSER_VIDEO_BYTES = 400 * 1024 * 1024
-PUBLIC_MULTIPART_OVERHEAD_BYTES = 1_000_000
-PUBLIC_UPLOAD_PATHS = {"/api/detect-language"}
-PUBLIC_PROCESSING_PATHS = {"/api/detect-language"}
 PUBLIC_DISABLED_PROCESSING_PATHS = {
-    "/api/extract-audio", "/api/register-audio", "/api/segment-audio",
+    "/api/detect-language", "/api/extract-audio", "/api/register-audio", "/api/segment-audio",
     "/api/transcribe-audio", "/api/translate-segments", "/api/subtitle-jobs",
 }
-
-
-def allow_public_processing(client_ip: str, now: float | None = None) -> bool:
-    """Limit expensive requests from one visitor within a one-hour window."""
-    now = time.monotonic() if now is None else now
-    with PUBLIC_RATE_LOCK:
-        if len(PUBLIC_REQUEST_TIMES) > 1000:
-            for address, times in list(PUBLIC_REQUEST_TIMES.items()):
-                if times[-1] <= now - 3600:
-                    del PUBLIC_REQUEST_TIMES[address]
-        recent = PUBLIC_REQUEST_TIMES.setdefault(client_ip, deque())
-        while recent and recent[0] <= now - 3600:
-            recent.popleft()
-        if len(recent) >= PUBLIC_REQUESTS_PER_HOUR:
-            return False
-        recent.append(now)
-        return True
-
-
-def public_work_bytes(now: float | None = None) -> int:
-    """Reclaim abandoned media while retaining audio for an active subtitle job."""
-    now = time.time() if now is None else now
-    active_audio_ids = {
-        job.get("audioId") for job in list_job_snapshots()
-        if job.get("status") not in {"succeeded", "failed", "cancelled"}
-    }
-    total = 0
-    for path in WORK_DIR.iterdir():
-        if not path.is_file():
-            continue
-        try:
-            file_stat = path.stat()
-            audio_id = path.name[:32]
-            generated_media = re.fullmatch(r"[a-f0-9]{32}(?:\.detect-\d{2})?\.(?:wav|mp4)", path.name)
-            if generated_media and audio_id not in active_audio_ids and file_stat.st_mtime < now - 86400:
-                path.unlink(missing_ok=True)
-                continue
-            total += file_stat.st_size
-        except FileNotFoundError:
-            continue
-    return total
 
 class LocalServiceHandler(BaseHTTPRequestHandler):
     server_version = "XoloLinguaLocalService/0.1"
@@ -142,36 +92,15 @@ class LocalServiceHandler(BaseHTTPRequestHandler):
                 "This processing endpoint is disabled on the public site. Run this step in your browser.",
             )
             return
-        client_ip = self.headers.get("X-Real-IP", self.client_address[0])
         if PUBLIC_MODE:
             try:
                 length = int(self.headers.get("Content-Length", "0"))
             except ValueError:
                 self.send_error_json(HTTPStatus.BAD_REQUEST, "Invalid Content-Length.")
                 return
-            max_bytes = (
-                min(PUBLIC_MAX_UPLOAD_BYTES, PUBLIC_MAX_BROWSER_VIDEO_BYTES + PUBLIC_MULTIPART_OVERHEAD_BYTES)
-                if path in PUBLIC_UPLOAD_PATHS else PUBLIC_MAX_JSON_BYTES
-            )
-            if length > max_bytes:
-                message = "Video exceeds the 400 MiB public site limit." if path in PUBLIC_UPLOAD_PATHS else "Request body exceeds the public service limit."
-                self.send_error_json(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, message)
+            if length > PUBLIC_MAX_JSON_BYTES:
+                self.send_error_json(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "Request body exceeds the public service limit.")
                 return
-        if PUBLIC_MODE and path in PUBLIC_PROCESSING_PATHS:
-            if not PUBLIC_PROCESSING_SLOT.acquire(blocking=False):
-                self.send_error_json(HTTPStatus.TOO_MANY_REQUESTS, "Server busy. Retry in a few minutes.")
-                return
-            try:
-                if path in PUBLIC_UPLOAD_PATHS and public_work_bytes() + length + 1_000_000_000 > PUBLIC_MAX_WORK_BYTES:
-                    self.send_error_json(HTTPStatus.INSUFFICIENT_STORAGE, "Server media storage is full. Retry later.")
-                    return
-                if not allow_public_processing(client_ip):
-                    self.send_error_json(HTTPStatus.TOO_MANY_REQUESTS, "Hourly processing limit reached. Retry later.")
-                    return
-                self.dispatch_post()
-            finally:
-                PUBLIC_PROCESSING_SLOT.release()
-            return
         self.dispatch_post()
 
     def dispatch_post(self) -> None:

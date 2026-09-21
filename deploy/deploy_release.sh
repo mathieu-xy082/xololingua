@@ -125,6 +125,9 @@ curl --fail --silent --show-error --max-time 15 --output /dev/null "$SITE_URL/"
 curl --fail --silent --show-error --max-time 15 --output /dev/null "$SITE_URL/api/health"
 listing_status=$(curl --silent --show-error --max-time 15 --output /dev/null --write-out '%{http_code}' "$SITE_URL/api/subtitle-jobs")
 [[ "$listing_status" == 404 ]] || fail "public job listing returned HTTP $listing_status"
+detection_status=$(curl --silent --show-error --max-time 15 --output /dev/null --write-out '%{http_code}' \
+  --request POST --header 'Content-Type: application/json' --data '{}' "$SITE_URL/api/detect-language")
+[[ "$detection_status" == 403 ]] || fail "public language detection endpoint returned HTTP $detection_status"
 
 switched=false
 printf 'Deployed %s successfully. Previous release: %s\n' "$SHA" "$old_app"

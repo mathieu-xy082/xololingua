@@ -4,6 +4,25 @@ All notable changes to XoloLingua will be documented in this file.
 
 This project follows Semantic Versioning.
 
+## [Unreleased]
+
+### Added
+
+- Added browser language identification with `Xenova/whisper-base`, ten evenly distributed audio samples, language-token probabilities, vote aggregation, and confidence reporting.
+- Added a clean WebGPU-to-WASM recovery path that destroys the failed inference worker and retries on the visitor's local CPU.
+- Added browser language-identification progress, actionable failure guidance, retained model caching until transcription, and cache cleanup when a video is abandoned.
+
+### Changed
+
+- Extracted audio during language identification and reused the resulting WAV for VAD segmentation.
+- Updated the public capability report, processing status, privacy notice, PWA cache, deployment guide, and memory documentation for the complete browser media pipeline.
+- Reduced the public Caddy API request-body limit from 421 MB to 3 MB now that no public endpoint accepts media.
+
+### Security
+
+- Disabled `POST /api/detect-language` with HTTP 403 in public mode and removed the obsolete public upload concurrency, rate, and temporary-media quota machinery.
+- Removed every public MP4, WAV, and PCM upload path; local development retains the Python detection endpoint for diagnostics.
+
 ## [1.3.0] - 2026-09-21 - Merge branche 'feat/public-deployment' into main
 ### Added
 

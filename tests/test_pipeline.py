@@ -221,19 +221,9 @@ class PipelineIntegrationTests(unittest.TestCase):
         self.assertEqual(caught.exception.code, 404)
         self.assertIsNone(caught.exception.headers.get("Access-Control-Allow-Origin"))
 
-    def test_public_mode_rejects_processing_when_server_is_busy(self):
-        with mock.patch.object(http_api, "PUBLIC_MODE", True):
-            self.assertTrue(http_api.PUBLIC_PROCESSING_SLOT.acquire(blocking=False))
-            try:
-                with self.assertRaises(urllib.error.HTTPError) as caught:
-                    self._post_json("/api/detect-language", {})
-            finally:
-                http_api.PUBLIC_PROCESSING_SLOT.release()
-        self.assertEqual(caught.exception.code, 429)
-
     def test_public_service_rejects_all_server_processing_fallbacks(self):
         paths = (
-            "/api/extract-audio", "/api/register-audio", "/api/segment-audio",
+            "/api/detect-language", "/api/extract-audio", "/api/register-audio", "/api/segment-audio",
             "/api/transcribe-audio", "/api/translate-segments", "/api/subtitle-jobs",
         )
         with mock.patch.object(http_api, "PUBLIC_MODE", True):
@@ -244,36 +234,13 @@ class PipelineIntegrationTests(unittest.TestCase):
                     self.assertEqual(caught.exception.code, 403)
                     self.assertIn("disabled on the public site", json.loads(caught.exception.read())["error"])
 
-    def test_public_language_upload_rejects_request_over_browser_size_limit(self):
-        with (
-            mock.patch.object(http_api, "PUBLIC_MODE", True),
-            mock.patch.object(http_api, "PUBLIC_MAX_BROWSER_VIDEO_BYTES", 10),
-            mock.patch.object(http_api, "PUBLIC_MULTIPART_OVERHEAD_BYTES", 0),
-        ):
+    def test_public_language_upload_is_rejected_before_media_is_processed(self):
+        with mock.patch.object(http_api, "PUBLIC_MODE", True), mock.patch.object(http_api, "probe_duration") as probe:
             with self.assertRaises(urllib.error.HTTPError) as caught:
                 self._post_multipart_file("/api/detect-language", "video", "sample.mp4", b"long video", "video/mp4")
-        self.assertEqual(caught.exception.code, 413)
-        self.assertIn("400 MiB public site limit", json.loads(caught.exception.read())["error"])
-
-    def test_public_language_upload_rejects_media_over_one_hour_and_removes_temporary_file(self):
-        with tempfile.TemporaryDirectory() as directory:
-            work_dir = Path(directory)
-            video = work_dir / "sample.mp4"
-            video.write_bytes(b"test video")
-            with (
-                mock.patch.object(http_api, "WORK_DIR", work_dir),
-                mock.patch.object(http_api, "PUBLIC_MODE", True),
-                mock.patch.object(http_api, "public_work_bytes", return_value=0),
-                mock.patch.object(http_api, "allow_public_processing", return_value=True),
-                mock.patch.object(http_api, "probe_duration", return_value=3600.1),
-                mock.patch.dict(runtime.WHISPER_RUNTIME, {"available": True}),
-            ):
-                with self.assertRaises(urllib.error.HTTPError) as video_error:
-                    self._post_multipart_file("/api/detect-language", "video", video.name, video.read_bytes(), "video/mp4")
-
-            self.assertEqual(video_error.exception.code, 400)
-            self.assertIn("1 h limit", json.loads(video_error.exception.read())["error"])
-            self.assertEqual(sorted(path.name for path in work_dir.iterdir()), ["sample.mp4"])
+        self.assertEqual(caught.exception.code, 403)
+        self.assertIn("disabled on the public site", json.loads(caught.exception.read())["error"])
+        probe.assert_not_called()
 
     def test_local_service_accepts_over_two_hours_for_development(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -292,16 +259,14 @@ class PipelineIntegrationTests(unittest.TestCase):
             self.assertEqual(extracted["durationSeconds"], 7201)
             self.assertEqual(registered["durationSeconds"], 7201)
 
-    def test_public_language_upload_accepts_exactly_one_hour(self):
+    def test_local_language_upload_remains_available_for_development(self):
         with tempfile.TemporaryDirectory() as directory:
             work_dir = Path(directory)
             video = work_dir / "sample.mp4"
             video.write_bytes(b"test video")
             with (
                 mock.patch.object(http_api, "WORK_DIR", work_dir),
-                mock.patch.object(http_api, "PUBLIC_MODE", True),
-                mock.patch.object(http_api, "public_work_bytes", return_value=0),
-                mock.patch.object(http_api, "allow_public_processing", return_value=True),
+                mock.patch.object(http_api, "PUBLIC_MODE", False),
                 mock.patch.object(http_api, "probe_duration", return_value=3600),
                 mock.patch.dict(runtime.WHISPER_RUNTIME, {"available": True}),
                 mock.patch.object(local_service.LocalServiceHandler, "detect_language_from_video", return_value={"languageCode": "ru", "languageProbability": 0.9}),
@@ -317,13 +282,6 @@ class PipelineIntegrationTests(unittest.TestCase):
             self.assertFalse(jobs.try_put_job("b" * 32, {"status": "queued"}, max_active_jobs=1))
             jobs.JOBS["a" * 32]["status"] = "succeeded"
             self.assertTrue(jobs.try_put_job("b" * 32, {"status": "queued"}, max_active_jobs=1))
-
-    def test_public_processing_rate_limit_expires_after_one_hour(self):
-        with mock.patch.object(http_api, "PUBLIC_REQUEST_TIMES", {}), mock.patch.object(http_api, "PUBLIC_REQUESTS_PER_HOUR", 2):
-            self.assertTrue(http_api.allow_public_processing("visitor", now=100))
-            self.assertTrue(http_api.allow_public_processing("visitor", now=101))
-            self.assertFalse(http_api.allow_public_processing("visitor", now=102))
-            self.assertTrue(http_api.allow_public_processing("visitor", now=3701))
 
     def test_translation_pairs_endpoint_returns_pairs_list(self):
         fake_pairs = [{"source": "ru", "target": "en"}, {"source": "en", "target": "ru"}]

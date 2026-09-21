@@ -272,6 +272,7 @@ function renderModelDeliveryPanel() {
 
 async function fetchTranslationPairs() {
   if (_pairsFetched) return;
+  if (VIDEO_DURATION_POLICY.publicSite) return;
   try {
     const pairs = await backendClient.getTranslationPairs();
     for (const { source, target } of pairs) {

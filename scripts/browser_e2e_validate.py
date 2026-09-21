@@ -111,6 +111,11 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
         help="Fail unless the final pipeline status proves audio extraction ran in the browser.",
     )
     parser.add_argument(
+        "--require-browser-language",
+        action="store_true",
+        help="Fail unless language identification reports WebGPU or local WASM CPU and uploads no media.",
+    )
+    parser.add_argument(
         "--require-browser-vad",
         action="store_true",
         help="Fail unless the final pipeline status proves VAD segmentation ran in the browser.",
@@ -459,6 +464,8 @@ def run_backend_reference(args: argparse.Namespace) -> dict:
         if not translated_segments:
             raise RuntimeError("Backend reference subtitle job succeeded without segments")
         return {
+            "languageCode": detected.get("languageCode"),
+            "languageProbability": detected.get("languageProbability", 1.0),
             "audio": extracted,
             "segments": segments,
             "translatedSegments": translated_segments,
@@ -582,6 +589,14 @@ def assert_browser_audio_runtime(pipeline_status: str) -> None:
         )
 
 
+def assert_browser_language_runtime(language_status: str) -> None:
+    if not re.search(r"\b(?:WebGPU(?:\s*\([^)]*\))?|WASM CPU)\b", language_status, re.IGNORECASE):
+        raise AssertionError(
+            "Expected browser language identification on WebGPU or local WASM CPU, "
+            f"got: {language_status!r}"
+        )
+
+
 def assert_browser_vad_runtime(pipeline_status: str) -> None:
     if not re.search(r"VAD\s*/\s*segmentation:\s*Browser\b", pipeline_status):
         raise AssertionError(
@@ -613,6 +628,20 @@ def create_backend_reference_init_script(backend_reference: dict) -> str:
   const reference = {reference_json};
   const byPosition = (segments, index) => Array.isArray(segments) ? segments[index] || {{}} : {{}};
   window.transformersJs = true;
+  window.XOLOLINGUA_CLIENT_LANGUAGE_DETECTOR = {{
+    async detectLanguage(_request, onProgress = () => {{}}) {{
+      onProgress({{ stage: 'detecting-language', progress: 100, message: 'Browser reference language detection completed.' }});
+      return {{
+        languageCode: reference.languageCode,
+        confidence: reference.languageProbability || 1,
+        votes: {{ [reference.languageCode]: 1 }},
+        sampleCount: 1,
+        executionDevice: 'wasm',
+        executionDeviceLabel: 'WASM CPU'
+      }};
+    }},
+    async purgeCache() {{ return {{ cachePurged: true, filesDeleted: 0 }}; }}
+  }};
   window.XOLOLINGUA_CLIENT_TRANSCRIBER = {{
     async transcribeAudio(request, onProgress = () => {{}}) {{
       const inputSegments = Array.isArray(request?.segments) ? request.segments : [];
@@ -791,6 +820,7 @@ def run_browser_workflow(args: argparse.Namespace) -> Path | None:
     downloaded_model_ids: set[str] = set()
     model_request_urls: list[str] = []
     failed_model_requests: list[dict] = []
+    media_api_requests: list[str] = []
     local_model_urls: list[str] = []
     real_model_report: dict | None = None
     frontend_origin = urllib.parse.urlparse(args.frontend_url)
@@ -859,6 +889,17 @@ def run_browser_workflow(args: argparse.Namespace) -> Path | None:
                 })
 
         def capture_transcribe_request(request) -> None:
+            parsed = urllib.parse.urlparse(request.url)
+            if request.method == "POST" and parsed.path in {
+                "/api/detect-language",
+                "/api/extract-audio",
+                "/api/register-audio",
+                "/api/segment-audio",
+                "/api/transcribe-audio",
+                "/api/translate-segments",
+                "/api/subtitle-jobs",
+            }:
+                media_api_requests.append(f"{request.method} {parsed.path}")
             if not request.url.endswith("/api/transcribe-audio"):
                 return
             try:
@@ -926,6 +967,19 @@ def run_browser_workflow(args: argparse.Namespace) -> Path | None:
                 expect(page.locator("#sourceLanguageOutput")).to_contain_text(
                     f"Source language: {args.expected_source_label}",
                     timeout=args.language_timeout_ms,
+                )
+            language_status = page.locator("#languageStatus").inner_text()
+            if args.require_browser_language:
+                assert_browser_language_runtime(language_status)
+                if media_api_requests:
+                    raise AssertionError(
+                        "Language identification sent media to a processing API: "
+                        + ", ".join(media_api_requests)
+                    )
+            if args.require_webgpu and "webgpu" not in language_status.lower():
+                raise AssertionError(
+                    "Language identification did not report WebGPU inference: "
+                    + language_status
                 )
 
             log_step(f"Selecting target language {args.target}")
