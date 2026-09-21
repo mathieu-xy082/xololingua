@@ -21,6 +21,7 @@ This project follows Semantic Versioning.
 ### Fixed
 
 - Accepted Whisper's explicit `auto` source-language mode when resolving the browser language-identification model.
+- Versioned the Whisper worker and refreshed JavaScript from the network first so deployments cannot mix a new app shell with a stale worker.
 
 ### Security
 

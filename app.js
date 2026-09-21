@@ -28,7 +28,8 @@ const VIDEO_DURATION_POLICY = resolveVideoDurationPolicy();
 const SEGMENT_SECONDS = 12;
 const SERVICE_BASE_URL = resolveServiceBaseUrl();
 globalThis.__xololinguaDynamicModels = true;
-const APP_ASSET_VERSION = "2026-09-21-2";
+const APP_ASSET_VERSION = "2026-09-21-3";
+const TRANSCRIPTION_WORKER_URL = `frontend/transcription_worker.js?v=${APP_ASSET_VERSION}`;
 const backendClient = createBackendClient({ baseUrl: SERVICE_BASE_URL });
 const clientPipelineCapabilities = collectClientPipelineCapabilities();
 const appClientAdapters = createAppClientAdapters({
@@ -36,7 +37,7 @@ const appClientAdapters = createAppClientAdapters({
     ffmpegWasmExtractor: createAppFfmpegWasmAudioExtractor(),
   }),
   clientLanguageDetector: globalThis.XOLOLINGUA_CLIENT_LANGUAGE_DETECTOR || createClientLanguageDetector({
-    workerUrl: "frontend/transcription_worker.js",
+    workerUrl: TRANSCRIPTION_WORKER_URL,
     modelId: BROWSER_ML_CONFIG.languageDetection.defaultModelId,
     modelResolver: resolveTranscriptionModel,
     remoteModels: true,
@@ -56,7 +57,7 @@ const appClientAdapters = createAppClientAdapters({
     }),
   }),
   clientTranscriber: globalThis.XOLOLINGUA_CLIENT_TRANSCRIBER || createClientTranscriber({
-    workerUrl: "frontend/transcription_worker.js",
+    workerUrl: TRANSCRIPTION_WORKER_URL,
     modelId: BROWSER_ML_CONFIG.transcription.defaultModelId,
     modelResolver: resolveTranscriptionModel,
     remoteModels: true,

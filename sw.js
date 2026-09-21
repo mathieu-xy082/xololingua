@@ -1,8 +1,8 @@
-const CACHE_NAME = "xololingua-2026-09-21-2";
+const CACHE_NAME = "xololingua-2026-09-21-3";
 const ASSETS = [
   ".",
-  "styles.css?v=2026-09-21-2",
-  "app.js?v=2026-09-21-2",
+  "styles.css?v=2026-09-21-3",
+  "app.js?v=2026-09-21-3",
   "frontend/service_url.js",
   "frontend/backend_client.js",
   "frontend/app_hybrid_router_wiring.js",
@@ -26,7 +26,7 @@ const ASSETS = [
   "frontend/client_transcriber.js",
   "frontend/client_ml_progress.js",
   "frontend/worker_request_session.js",
-  "frontend/transcription_worker.js",
+  "frontend/transcription_worker.js?v=2026-09-21-3",
   "frontend/batched_whisper_runtime.js",
   "node_modules/@huggingface/transformers/dist/transformers.web.min.js",
   "node_modules/@huggingface/transformers/dist/transformers.min.js",
@@ -45,8 +45,8 @@ const ASSETS = [
   "node_modules/onnxruntime-web/dist/ort-wasm.wasm",
   "node_modules/@ricky0123/vad-web/dist/bundle.min.js",
   "node_modules/@ricky0123/vad-web/dist/silero_vad_legacy.onnx",
-  "manifest.webmanifest?v=2026-09-21-2",
-  "assets/icon.svg?v=2026-09-21-2",
+  "manifest.webmanifest?v=2026-09-21-3",
+  "assets/icon.svg?v=2026-09-21-3",
   "assets/babbel_parrot.png"
 ];
 
@@ -78,6 +78,16 @@ self.addEventListener("fetch", (event) => {
         caches.open(CACHE_NAME).then((cache) => cache.put("index.html", copy));
         return response;
       }).catch(() => caches.match(event.request).then((cached) => cached || caches.match("index.html")))
+    );
+    return;
+  }
+  if (url.pathname.endsWith(".js")) {
+    event.respondWith(
+      fetch(event.request).then((response) => {
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+        return response;
+      }).catch(() => caches.match(event.request))
     );
     return;
   }

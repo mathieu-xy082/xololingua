@@ -99,7 +99,8 @@ test("app configures local ffmpeg wasm audio extraction instead of relying on We
 test("app configures browser ASR with the dynamic ML download timeout", () => {
   assert.match(appSource, /import\s+\{\s*createClientTranscriber\s*\}\s+from\s+["']\.\/frontend\/client_transcriber\.js["']/);
   assert.match(appSource, /globalThis\.XOLOLINGUA_CLIENT_TRANSCRIBER\s*\|\|\s*createClientTranscriber\(\{/);
-  assert.match(appSource, /workerUrl:\s*["']frontend\/transcription_worker\.js["']/);
+  assert.match(appSource, /const TRANSCRIPTION_WORKER_URL\s*=\s*`frontend\/transcription_worker\.js\?v=\$\{APP_ASSET_VERSION\}`/);
+  assert.match(appSource, /workerUrl:\s*TRANSCRIPTION_WORKER_URL/);
   assert.match(appSource, /warmupTimeoutMs:\s*BROWSER_ML_CONFIG\.modelDownloadTimeoutMs/);
   assert.match(appSource, /devicePreference:\s*BROWSER_ML_CONFIG\.devicePreference/);
   assert.match(appSource, /maxWorkerResponseMs:\s*BROWSER_ML_CONFIG\.transcription\.inferenceTimeoutMs/);

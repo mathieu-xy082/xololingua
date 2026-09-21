@@ -79,10 +79,11 @@ test("service worker precaches the full frontend module graph used by offline as
     ...whisperLanguageDetectorSource.matchAll(/import\s+[^;]+from\s+["']\.\/(browser_language_detection\.js)["']/g),
     ...clientTranslatorSource.matchAll(/import\s+[^;]+from\s+["']\.\/(worker_request_session\.js)["']/g),
     ...appSource.matchAll(/workerUrl:\s*["'](frontend\/[^"']+\.js)["']/g),
+    ...appSource.matchAll(/const\s+\w+_WORKER_URL\s*=\s*`(frontend\/[^`?]+\.js)(?:\?[^`]*)?`/g),
   ]
     .map((match) => match[1].startsWith("frontend/") ? match[1] : `frontend/${match[1]}`));
   const cachedAssets = new Set(
-    [...serviceWorkerSource.matchAll(/["'](frontend\/[^"']+\.js)["']/g)]
+    [...serviceWorkerSource.matchAll(/["'](frontend\/[^"'?]+\.js)(?:\?[^"']*)?["']/g)]
       .map((match) => match[1]),
   );
 
@@ -185,4 +186,12 @@ test("PWA asset cache version changes with the app shell version", () => {
   assert.match(indexSource, new RegExp(`styles\\.css\\?v=${appAssetVersion}`));
   assert.match(serviceWorkerSource, new RegExp(`app\\.js\\?v=${appAssetVersion}`));
   assert.match(serviceWorkerSource, new RegExp(`styles\\.css\\?v=${appAssetVersion}`));
+  assert.match(serviceWorkerSource, new RegExp(`transcription_worker\\.js\\?v=${appAssetVersion}`));
+});
+
+test("service worker refreshes JavaScript online before using its offline cache", () => {
+  assert.match(serviceWorkerSource, /if \(url\.pathname\.endsWith\(["']\.js["']\)\)/);
+  const scriptBranch = serviceWorkerSource.indexOf('url.pathname.endsWith(".js")');
+  const cacheFirstBranch = serviceWorkerSource.lastIndexOf("caches.match(event.request)");
+  assert.ok(scriptBranch >= 0 && scriptBranch < cacheFirstBranch);
 });
