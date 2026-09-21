@@ -76,6 +76,7 @@ export function createWorkerRequestSession({
       timeoutMs,
       timeoutMessage,
       failureMessage,
+      transfer = [],
     }) {
       if (closed) return Promise.reject(new Error(closedMessage));
       if (activeRequest) return Promise.reject(new Error(busyMessage));
@@ -92,7 +93,7 @@ export function createWorkerRequestSession({
         };
         refreshActiveTimeout();
         try {
-          worker.postMessage({ type: requestType, request });
+          worker.postMessage({ type: requestType, request }, transfer);
         } catch (error) {
           close(error instanceof Error ? error : new Error(String(error)));
         }

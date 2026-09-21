@@ -1,5 +1,6 @@
 import { mapClientMlProgress } from "./client_ml_progress.js";
 import { createWorkerRequestSession } from "./worker_request_session.js";
+import { prepareBrowserPcmAudio } from "./browser_audio_pcm.js";
 
 export function detectClientTranscriptionCapabilities(environment = globalThis) {
   const dynamicModels = Boolean(environment?.__xololinguaDynamicModels);
@@ -221,7 +222,7 @@ async function prepareTranscriptionWorkerRequest({
   device,
   dtype,
 }) {
-  const audio = await prepareTranscriptionAudio(request.audio, environment);
+  const audio = await prepareBrowserPcmAudio(request.audio, environment);
   return {
     ...request,
     audio,
@@ -231,31 +232,4 @@ async function prepareTranscriptionWorkerRequest({
     ...(device ? { device } : {}),
     ...(dtype ? { dtype } : {}),
   };
-}
-
-async function prepareTranscriptionAudio(audio, environment) {
-  if (!audio?.audioBlob || audio?.pcm instanceof Float32Array) {
-    return audio;
-  }
-  const AudioContextCtor = environment?.AudioContext || environment?.webkitAudioContext;
-  if (typeof AudioContextCtor !== "function" || typeof audio.audioBlob.arrayBuffer !== "function") {
-    return audio;
-  }
-  const audioContext = new AudioContextCtor({ sampleRate: audio.sampleRateHz || audio.sampleRate || 16000 });
-  try {
-    const decoded = await audioContext.decodeAudioData(await audio.audioBlob.arrayBuffer());
-    const pcm = new Float32Array(decoded.getChannelData(0));
-    return {
-      ...audio,
-      pcm,
-      sampleRate: decoded.sampleRate,
-      sampleRateHz: decoded.sampleRate,
-      channelCount: decoded.numberOfChannels,
-      durationSeconds: audio.durationSeconds ?? decoded.duration,
-    };
-  } finally {
-    if (typeof audioContext.close === "function") {
-      await audioContext.close();
-    }
-  }
 }
