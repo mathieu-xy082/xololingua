@@ -1,12 +1,16 @@
-const CACHE_NAME = "xololingua-2026-09-20-6";
+const CACHE_NAME = "xololingua-2026-09-21-1";
 const ASSETS = [
   ".",
-  "styles.css?v=2026-09-20-6",
-  "app.js?v=2026-09-20-6",
+  "styles.css?v=2026-09-21-1",
+  "app.js?v=2026-09-21-1",
   "frontend/service_url.js",
   "frontend/backend_client.js",
   "frontend/app_hybrid_router_wiring.js",
   "frontend/client_audio_extractor.js",
+  "frontend/browser_audio_pcm.js",
+  "frontend/browser_language_detection.js",
+  "frontend/client_language_detector.js",
+  "frontend/whisper_language_detector.js",
   "frontend/ffmpeg_wasm_runtime.js",
   "frontend/client_pipeline_capabilities.js",
   "frontend/browser_ml_config.js",
@@ -20,10 +24,12 @@ const ASSETS = [
   "frontend/pipeline_stage_contract.js",
   "frontend/client_srt_formatter.js",
   "frontend/client_transcriber.js",
+  "frontend/client_ml_progress.js",
   "frontend/worker_request_session.js",
   "frontend/transcription_worker.js",
   "frontend/batched_whisper_runtime.js",
   "node_modules/@huggingface/transformers/dist/transformers.web.min.js",
+  "node_modules/@huggingface/transformers/dist/transformers.min.js",
   "node_modules/@huggingface/transformers/node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm",
   "node_modules/@huggingface/transformers/node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.asyncify.wasm",
   "frontend/client_translator.js",
@@ -39,8 +45,8 @@ const ASSETS = [
   "node_modules/onnxruntime-web/dist/ort-wasm.wasm",
   "node_modules/@ricky0123/vad-web/dist/bundle.min.js",
   "node_modules/@ricky0123/vad-web/dist/silero_vad_legacy.onnx",
-  "manifest.webmanifest?v=2026-09-20-6",
-  "assets/icon.svg?v=2026-09-20-6",
+  "manifest.webmanifest?v=2026-09-21-1",
+  "assets/icon.svg?v=2026-09-21-1",
   "assets/babbel_parrot.png"
 ];
 

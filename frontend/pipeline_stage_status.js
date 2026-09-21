@@ -1,5 +1,6 @@
 const PIPELINE_STAGE_LABELS = {
   audioExtraction: "Audio extraction",
+  languageDetection: "Language identification",
   vad: "VAD / segmentation",
   transcription: "Transcription",
   translation: "Translation",

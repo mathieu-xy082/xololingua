@@ -7,6 +7,13 @@ import {
 export const BROWSER_ML_CONFIG = Object.freeze({
   modelDownloadTimeoutMs: 900_000,
   devicePreference: "auto",
+  languageDetection: Object.freeze({
+    defaultModelId: "Xenova/whisper-base",
+    sampleCount: 10,
+    sampleSeconds: 30,
+    confidenceThreshold: 0.5,
+    inferenceTimeoutMs: 300_000,
+  }),
   vad: Object.freeze({
     maxAudioSeconds: BROWSER_MAX_MEDIA_DURATION_SECONDS,
     maxAudioBytes: BROWSER_MAX_AUDIO_BYTES,

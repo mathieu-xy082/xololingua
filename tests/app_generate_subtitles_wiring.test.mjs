@@ -10,6 +10,14 @@ test("public app disables server processing fallback and prototype segments", ()
   assert.match(appSource, /if \(VIDEO_DURATION_POLICY\.publicSite\) \{\s*failPublicSegmentation\(segmentationError\);/);
 });
 
+test("app identifies language from browser-extracted audio without uploading media", () => {
+  assert.match(appSource, /hybridPipelineRouter\.runAudioExtraction\(state\.videoFile/);
+  assert.match(appSource, /appClientAdapters\.languageDetection\(\s*\{ audio: state\.extractedAudio \}/s);
+  assert.match(appSource, /state\.audioExtractionReport/);
+  assert.doesNotMatch(appSource, /\/api\/detect-language/);
+  assert.doesNotMatch(appSource, /Uploading video for language detection/);
+});
+
 test("app subtitle generation routes transcription and translation as separate hybrid stages", () => {
   assert.match(appSource, /hybridPipelineRouter\.runTranscription\(/);
   assert.match(appSource, /hybridPipelineRouter\.runTranslation\(/);

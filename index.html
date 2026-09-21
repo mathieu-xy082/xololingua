@@ -6,16 +6,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#1f6f5b">
   <title>XoloLingua</title>
-  <link rel="manifest" href="manifest.webmanifest?v=2026-09-20-6">
-  <link rel="icon" href="assets/icon.svg?v=2026-09-20-6" type="image/svg+xml">
-  <link rel="stylesheet" href="styles.css?v=2026-09-20-6">
+  <link rel="manifest" href="manifest.webmanifest?v=2026-09-21-1">
+  <link rel="icon" href="assets/icon.svg?v=2026-09-21-1" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css?v=2026-09-21-1">
 </head>
 
 <body>
   <div class="app-shell">
     <header class="topbar">
       <a class="brand" href="/" aria-label="XoloLingua home">
-        <img src="assets/icon.svg?v=2026-09-20-6" alt="" width="40" height="40">
+        <img src="assets/icon.svg?v=2026-09-21-1" alt="" width="40" height="40">
         <span>XoloLingua</span>
       </a>
       <button class="install-button" id="installButton" type="button" hidden>Install</button>
@@ -96,7 +96,7 @@
           </div>
           <button id="browseButton" type="button">Browse video</button>
         </section>
-        <p class="upload-notice" id="uploadNotice" hidden>On this public site, your video is sent to the server for language identification. Audio extraction, segmentation, transcription and translation run in your browser. Maximum video duration: 1 hour; browser audio extraction accepts MP4 files up to 400 MiB.</p>
+        <p class="upload-notice" id="uploadNotice" hidden>Your video and audio stay on this device. Language identification, audio extraction, segmentation, transcription and translation run in your browser. Model files are downloaded on demand. Maximum video duration: 1 hour; browser audio extraction accepts MP4 files up to 400 MiB.</p>
 
         <section class="video-card" id="videoCard" hidden>
           <video id="videoPreview" controls preload="metadata"></video>
@@ -244,10 +244,10 @@
     </main>
   </div>
 
-  <script src="node_modules/@ffmpeg/ffmpeg/dist/ffmpeg.min.js?v=2026-09-20-6"></script>
-  <script src="node_modules/onnxruntime-web/dist/ort.min.js?v=2026-09-20-6"></script>
-  <script src="node_modules/@ricky0123/vad-web/dist/bundle.min.js?v=2026-09-20-6"></script>
-  <script src="app.js?v=2026-09-20-6" type="module"></script>
+  <script src="node_modules/@ffmpeg/ffmpeg/dist/ffmpeg.min.js?v=2026-09-21-1"></script>
+  <script src="node_modules/onnxruntime-web/dist/ort.min.js?v=2026-09-21-1"></script>
+  <script src="node_modules/@ricky0123/vad-web/dist/bundle.min.js?v=2026-09-21-1"></script>
+  <script src="app.js?v=2026-09-21-1" type="module"></script>
 </body>
 
 </html>

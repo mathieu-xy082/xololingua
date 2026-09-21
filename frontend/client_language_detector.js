@@ -10,10 +10,16 @@ const DEFAULT_MODEL_ID = "Xenova/whisper-base";
 
 export function detectClientLanguageCapabilities(environment = globalThis) {
   const worker = typeof environment?.Worker === "function";
+  const remoteModels = Boolean(environment?.__xololinguaDynamicModels && worker);
   return {
     worker,
     webGpu: Boolean(environment?.navigator?.gpu),
     wasm: worker,
+    ...(remoteModels ? {
+      remoteModels: true,
+      transientModelCache: true,
+      modelRetention: "retain-until-transcription",
+    } : {}),
     strategy: worker ? "whisper-transformers.js" : "unavailable",
   };
 }
@@ -100,6 +106,28 @@ export function createClientLanguageDetector({
   return {
     capabilities: detectClientLanguageCapabilities(environment),
     cancel,
+
+    async purgeCache() {
+      if (!workerUrl || typeof environment?.Worker !== "function") return {};
+      const model = typeof modelResolver === "function"
+        ? modelResolver({ sourceLanguage: "auto" }) || {}
+        : {};
+      const session = createWorkerRequestSession({ environment, workerUrl });
+      if (!session) return {};
+      try {
+        return await session.request({
+          requestType: "dispose",
+          resultType: "dispose-complete",
+          request: {
+            modelId: model.modelId || modelId,
+            dtype: model.dtype || dtype,
+            purgeCache: true,
+          },
+        });
+      } finally {
+        session.close();
+      }
+    },
 
     async detectLanguage({ audio }, onProgress = () => {}) {
       onProgress({

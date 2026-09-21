@@ -88,3 +88,30 @@ test("client language detector restarts in a fresh WASM worker after a browser i
   assert.equal(result.executionDevice, "wasm");
   assert.ok(progress.some((event) => event.fallbackReason === "WebGPU device lost"));
 });
+
+test("client language detector can purge retained Whisper files when a video is abandoned", async () => {
+  const messages = [];
+  class Worker {
+    postMessage(message) {
+      messages.push(message);
+      queueMicrotask(() => this.onmessage({ data: {
+        type: "dispose-complete",
+        metadata: { cachePurged: true, filesDeleted: 4 },
+      } }));
+    }
+    terminate() {}
+  }
+  const detector = createClientLanguageDetector({
+    environment: { Worker },
+    workerUrl: "/frontend/transcription_worker.js",
+    modelId: "Xenova/whisper-base",
+  });
+
+  const result = await detector.purgeCache();
+
+  assert.deepEqual(messages, [{
+    type: "dispose",
+    request: { modelId: "Xenova/whisper-base", dtype: "q4", purgeCache: true },
+  }]);
+  assert.deepEqual(result, { cachePurged: true, filesDeleted: 4 });
+});
