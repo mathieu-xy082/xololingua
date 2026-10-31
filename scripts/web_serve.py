@@ -15,6 +15,7 @@ import webbrowser
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Iterable
+from urllib.parse import unquote
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_HOST = "127.0.0.1"
@@ -23,7 +24,37 @@ DEFAULT_WEBGPU_PROFILE = Path.home() / ".cache" / "xololingua" / "brave-vulkan-p
 WEBGPU_FLAGS = ("--enable-features=Vulkan", "--use-angle=vulkan", "--enable-unsafe-webgpu")
 
 
+# Deliberately explicit: unknown paths must never fall back to the root app.
+SEO_ROUTES = {
+    "/generateur-sous-titres-video": "/generateur-sous-titres-video.html",
+    "/traduire-sous-titres-srt": "/traduire-sous-titres-srt.html",
+    "/sous-titres-youtube": "/sous-titres-youtube.html",
+    "/en/video-subtitle-generator": "/en/video-subtitle-generator.html",
+    "/en/translate-srt-subtitles": "/en/translate-srt-subtitles.html",
+    "/en/youtube-subtitles": "/en/youtube-subtitles.html",
+}
+
+
 class XoloLinguaStaticHandler(SimpleHTTPRequestHandler):
+    def send_head(self):
+        target = self.path.split("#", 1)[0]
+        path, separator, query = target.partition("?")
+        if ".." in unquote(path).split("/"):
+            self.send_error(404, "File not found")
+            return None
+        for canonical, built in SEO_ROUTES.items():
+            if path in (built, canonical + "/"):
+                self.send_response(308)
+                self.send_header("Location", canonical + (separator + query if query else ""))
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return None
+        if path in SEO_ROUTES:
+            built = SEO_ROUTES[path]
+            # Built previews take precedence; source checkouts keep guides in seo/.
+            self.path = built if Path(self.translate_path(built)).is_file() else "/seo" + built
+        return super().send_head()
+
     extensions_map = {
         **SimpleHTTPRequestHandler.extensions_map,
         ".js": "text/javascript",

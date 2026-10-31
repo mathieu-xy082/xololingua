@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import shutil
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 
@@ -14,7 +15,18 @@ FILES = (
     "styles.css",
     "sw.js",
     "manifest.webmanifest",
+    "robots.txt",
 )
+SEO_ROUTES = (
+    "generateur-sous-titres-video",
+    "traduire-sous-titres-srt",
+    "sous-titres-youtube",
+    "en/video-subtitle-generator",
+    "en/translate-srt-subtitles",
+    "en/youtube-subtitles",
+)
+SEO_FILES = {f"seo/{route}.html": f"{route}.html" for route in SEO_ROUTES}
+SEO_FILES["seo/seo.css"] = "seo/seo.css"
 DIRECTORIES = (
     "assets",
     "frontend",
@@ -31,10 +43,10 @@ def build(output: Path) -> Path:
     output = output.resolve()
     if output == ROOT or output.exists():
         raise ValueError(f"Output directory must be new and must not be the project root: {output}")
-    if any(output.is_relative_to(ROOT / path) for path in DIRECTORIES):
+    if any(output.is_relative_to(ROOT / path) for path in (*DIRECTORIES, "seo")):
         raise ValueError(f"Output directory must not be inside a copied source directory: {output}")
 
-    missing = [path for path in (*FILES, *DIRECTORIES) if not (ROOT / path).exists()]
+    missing = [path for path in (*FILES, *DIRECTORIES, *SEO_FILES) if not (ROOT / path).exists()]
     if missing:
         raise FileNotFoundError(f"Missing web dependencies: {', '.join(missing)}. Run npm ci first.")
 
@@ -47,6 +59,22 @@ def build(output: Path) -> Path:
         destination = output / path
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copytree(ROOT / path, destination)
+
+    # Do not copy the whole editorial source directory: unpublished drafts and
+    # build-only inputs must never become public by accident.
+    for source, target in SEO_FILES.items():
+        destination = output / target
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / source, destination)
+
+    namespace = "http://www.sitemaps.org/schemas/sitemap/0.9"
+    ET.register_namespace("", namespace)
+    sitemap = ET.Element(f"{{{namespace}}}urlset")
+    for route in ("", *SEO_ROUTES):
+        entry = ET.SubElement(sitemap, f"{{{namespace}}}url")
+        ET.SubElement(entry, f"{{{namespace}}}loc").text = f"https://xololingua.fr/{route}"
+    ET.indent(sitemap)
+    ET.ElementTree(sitemap).write(output / "sitemap.xml", encoding="utf-8", xml_declaration=True)
 
     # Every precached file must exist, including those with cache-busting query strings.
     sw = (output / "sw.js").read_text()

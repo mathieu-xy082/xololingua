@@ -5,7 +5,15 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#1f6f5b">
-  <title>XoloLingua</title>
+  <title>Generate translated video subtitles from MP4 | XoloLingua</title>
+  <meta name="description" content="Create translated SRT subtitles from MP4 video with XoloLingua. Identify speech, transcribe and translate in your browser, then download your subtitle file.">
+  <link rel="canonical" href="https://xololingua.fr/">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="XoloLingua">
+  <meta property="og:title" content="Generate translated video subtitles from MP4 | XoloLingua">
+  <meta property="og:description" content="Turn MP4 speech into translated SRT subtitles in your browser. Choose a different target language, review your results and download the file.">
+  <meta property="og:url" content="https://xololingua.fr/">
+  <meta property="og:locale" content="en_US">
   <link rel="manifest" href="manifest.webmanifest?v=2026-10-31-seo-1">
   <link rel="icon" href="assets/icon.svg?v=2026-10-31-seo-1" type="image/svg+xml">
   <link rel="stylesheet" href="styles.css?v=2026-10-31-seo-1">
@@ -21,10 +29,12 @@
       <button class="install-button" id="installButton" type="button" hidden>Install</button>
     </header>
 
+    <h1 class="studio-title">Create translated SRT subtitles from MP4 video</h1>
+
     <main class="workspace" aria-label="Subtitle studio workspace">
       <section class="summary-panel">
         <p class="eyebrow">Subtitle studio</p>
-        <img class="parrot-image" src="assets/babbel_parrot.png" alt="Babbel parrot mascot">
+        <img class="parrot-image" src="assets/babbel_parrot.png" alt="Babbel parrot mascot" width="1122" height="1402">
         <dl class="facts">
           <div>
             <dt>Format</dt>
@@ -242,6 +252,20 @@
         </section>
       </section>
     </main>
+    <footer class="guide-navigation" aria-label="Subtitle guides">
+      <nav aria-label="English guides" lang="en">
+        <strong>Guides in English</strong>
+        <a href="/en/video-subtitle-generator">Video subtitle generator</a>
+        <a href="/en/translate-srt-subtitles">Translate SRT subtitles: guide</a>
+        <a href="/en/youtube-subtitles">Subtitles for YouTube</a>
+      </nav>
+      <nav aria-label="Guides en français" lang="fr">
+        <strong>Guides en français</strong>
+        <a href="/generateur-sous-titres-video">Générateur de sous-titres vidéo</a>
+        <a href="/traduire-sous-titres-srt">Traduire des sous-titres SRT : guide</a>
+        <a href="/sous-titres-youtube">Sous-titres YouTube</a>
+      </nav>
+    </footer>
   </div>
 
   <script src="node_modules/@ffmpeg/ffmpeg/dist/ffmpeg.min.js?v=2026-10-31-seo-1"></script>
