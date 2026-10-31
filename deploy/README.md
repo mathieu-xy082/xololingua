@@ -2,6 +2,12 @@
 
 This example targets one Ubuntu 24.04 server with 2 vCPU, 8 GiB RAM, no GPU, and one HTTPS domain. On the public site, language identification, audio extraction, segmentation, transcription, and translation run in the visitor's browser. WebGPU is preferred for Whisper and local WASM CPU is used after a GPU failure. Local development retains the Python processing endpoints for tests and diagnostics. Public videos are limited to 1 hour and the browser extraction path accepts MP4 files up to 400 MiB.
 
+## SEO guides and publication safeguards
+
+The bilingual static guides are documented in [the SEO guide](../docs/seo.md), including local preview, Search Console preparation, tests and rollback. The updated `Caddyfile.example` adds only explicit guide routes and aliases; it is not applied to production automatically by editing this file.
+
+Do not publish this change without a separate production approval. The existing deployment script restarts Python and prunes older releases; those effects require explicit authorization or a separately reviewed deployment adaptation. Do not switch only the web link while leaving the existing same-SHA deployment assumptions broken. Preserve all existing data, secrets and release directories unless deletion is separately approved.
+
 ## Prepare the server
 
 1. Choose a domain or subdomain and point its A record to the server's public IPv4 address. Point an AAAA record only if IPv6 reaches this server. Open TCP ports 80 and 443 in the provider firewall and Ubuntu firewall. Caddy obtains and renews the HTTPS certificate when DNS and ports are ready.
