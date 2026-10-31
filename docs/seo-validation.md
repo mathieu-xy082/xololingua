@@ -13,7 +13,7 @@ Baseline on unchanged main:
 Final check after the development-routing review fix:
 - `PDM_IGNORE_ACTIVE_VENV=1 pdm run check`: exit 0, including compilation, Python and Node suites.
 - Node: 248 tests passed, 0 failed or skipped.
-- Python: 134 tests, OK, 3 skipped (existing skips).
+- Python: 136 tests, OK, 3 skipped (existing skips), including two CI-bootstrap regression tests added after the first remote run.
 - `git diff --check`: passed.
 - Added-line static scan: no hardcoded-credential assignments, shell injection patterns, pickle loading or eval usage detected. This scan is not a substitute for independent code review.
 
@@ -159,5 +159,15 @@ The isolated backend and Caddy preview were stopped after the media checks. Prod
 ## Boundaries
 
 No production traffic/indexing/Google ranking gain is asserted. No Search Console account was connected, property verified or sitemap submitted. No visitor tracking was activated. No Lighthouse or field Core Web Vitals claim is made. The original large PNG remains; explicit dimensions address layout reservation, not transfer size.
+
+## Remote CI bootstrap correction
+
+The first GitHub run, `41249133536` on commit `4c8ff03`, failed before executing application tests, during PDM's dependency installation. The deploy job was skipped. A fresh local Python 3.12 tool-only virtualenv reproduced the exact `TypeError: super(type, obj): obj must be an instance or subtype of type` when constructing `PDMPyPIClient(sources=[])` with PDM 2.28.0 and Unearth 0.19.0.
+
+Unearth's published metadata changes its HTTP requirement from `httpx<1,>=0.27.0` in 0.18.2 to `httpx2<3,>=2.0` in 0.19.0. PDM 2.28.0's client construction is incompatible with that newly selected base. The CI bootstrap now constrains only its tool installation with `.github/pdm-constraints.txt` (`unearth==0.18.2`) and exercises the HTTP session immediately. Application `pyproject.toml`, `pdm.lock` and runtime dependencies are unchanged.
+
+Validation of this correction: the regression tests failed before the workflow change and passed afterward; the isolated tool environment successfully constructed the client, performed a real HTTP GET to PyPI (200), and passed `pip check`. The full project suite was rerun successfully (136 Python tests, three existing skips, 248 Node tests). Logs: `pdm-tool-install.log`, `pdm-tool-fixed.log`, `pdm-check-ci-fix.log` under the artifact directory. The private PDM smoke-test API is intentional because the PDM tool version is fixed at 2.28.0.
+
+The remote retry result must be read from the GitHub checks for the pushed tip; these local results alone do not claim that a later remote run succeeded. The production deploy condition and branch restriction are unchanged.
 
 Deployment and operational rollback require a separate explicit authorization and a reviewed decision about backend restart and release retention; see [the publication guide](seo.md).

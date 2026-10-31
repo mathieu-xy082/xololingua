@@ -1,0 +1,4 @@
+# PDM 2.28.0 subclasses Unearth's httpx client but initializes httpx.Client.
+# Unearth 0.19.0 switches its client base to httpx2, breaking that constructor.
+# Pin the tool bootstrap only; application dependencies remain in pdm.lock.
+unearth==0.18.2
