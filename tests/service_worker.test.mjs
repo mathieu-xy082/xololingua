@@ -168,7 +168,7 @@ test("PWA shell displays honest offline asset and Python fallback metadata", () 
   assert.match(appSource, /Offline assets available; ML stages may still need Python fallback/);
 });
 
-test("PWA asset cache version changes with the app shell version", () => {
+test("PWA cache namespace upgrades independently of unchanged app asset versions", () => {
   const [, appAssetVersion] = appSource.match(/APP_ASSET_VERSION\s*=\s*["']([^"']+)["']/) || [];
   const [, cacheName] = serviceWorkerSource.match(/CACHE_NAME\s*=\s*["']([^"']+)["']/) || [];
   const indexAssetVersions = new Set(
@@ -179,7 +179,7 @@ test("PWA asset cache version changes with the app shell version", () => {
   );
 
   assert.ok(appAssetVersion);
-  assert.equal(cacheName, `xololingua-${appAssetVersion}`);
+  assert.equal(cacheName, "xololingua-2026-10-31-seo-1");
   assert.deepEqual(indexAssetVersions, new Set([appAssetVersion]));
   assert.deepEqual(serviceWorkerAssetVersions, new Set([appAssetVersion]));
   assert.match(indexSource, new RegExp(`app\\.js\\?v=${appAssetVersion}`));

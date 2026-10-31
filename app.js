@@ -28,7 +28,7 @@ const VIDEO_DURATION_POLICY = resolveVideoDurationPolicy();
 const SEGMENT_SECONDS = 12;
 const SERVICE_BASE_URL = resolveServiceBaseUrl();
 globalThis.__xololinguaDynamicModels = true;
-const APP_ASSET_VERSION = "2026-09-21-3";
+const APP_ASSET_VERSION = "2026-10-31-seo-1";
 const TRANSCRIPTION_WORKER_URL = `frontend/transcription_worker.js?v=${APP_ASSET_VERSION}`;
 const backendClient = createBackendClient({ baseUrl: SERVICE_BASE_URL });
 const clientPipelineCapabilities = collectClientPipelineCapabilities();
