@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#1f6f5b">
+  <title>Translate SRT subtitles: format, workflow and limits | XoloLingua</title>
+  <meta name="description" content="Learn how SRT cues and translated text fit together. Existing SRT import is not supported: regenerate translated subtitles from the original MP4 instead.">
+  <link rel="canonical" href="https://xololingua.fr/en/translate-srt-subtitles">
+  <link rel="alternate" hreflang="fr" href="https://xololingua.fr/traduire-sous-titres-srt">
+  <link rel="alternate" hreflang="en" href="https://xololingua.fr/en/translate-srt-subtitles">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Translate SRT subtitles: format, workflow and limits | XoloLingua">
+  <meta property="og:description" content="Learn how SRT cues and translated text fit together. Existing SRT import is not supported: regenerate translated subtitles from the original MP4 instead.">
+  <meta property="og:url" content="https://xololingua.fr/en/translate-srt-subtitles">
+  <meta property="og:site_name" content="XoloLingua">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:locale:alternate" content="fr_FR">
+  <link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/seo/seo.css">
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebPage",
+      "@id": "https://xololingua.fr/en/translate-srt-subtitles#webpage",
+      "url": "https://xololingua.fr/en/translate-srt-subtitles",
+      "name": "Translate SRT subtitles: format, workflow and limits | XoloLingua",
+      "description": "Learn how SRT cues and translated text fit together. Existing SRT import is not supported: regenerate translated subtitles from the original MP4 instead.",
+      "inLanguage": "en",
+      "breadcrumb": {
+        "@id": "https://xololingua.fr/en/translate-srt-subtitles#breadcrumb"
+      }
+    },
+    {
+      "@type": "BreadcrumbList",
+      "@id": "https://xololingua.fr/en/translate-srt-subtitles#breadcrumb",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "XoloLingua",
+          "item": "https://xololingua.fr/"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Understand SRT",
+          "item": "https://xololingua.fr/en/translate-srt-subtitles"
+        }
+      ]
+    }
+  ]
+}
+  </script>
+</head>
+<body class="seo-page">
+  <a class="seo-skip" href="#main">Skip to content</a>
+  <header class="seo-header">
+    <a class="seo-brand" href="/"><img src="/assets/icon.svg" alt="" width="36" height="36">XoloLingua</a>
+    <nav aria-label="Guide language" class="seo-languages">
+      <a href="/traduire-sous-titres-srt" lang="fr" hreflang="fr">Français</a>
+      <span aria-hidden="true">/</span>
+      <a href="/en/translate-srt-subtitles" lang="en" hreflang="en" aria-current="page">English</a>
+    </nav>
+  </header>
+  <div class="seo-layout">
+    <main id="main" tabindex="-1">
+      <nav class="seo-breadcrumb" aria-label="Breadcrumb"><a href="/">Studio</a> <span aria-hidden="true">/</span> <span>Understand SRT</span></nav>
+      <article class="seo-article">
+        <header class="seo-hero"><p class="seo-eyebrow">The practical guide · 02 </p><h1>Understand how SRT subtitle translation works</h1></header>
+
+<section class="seo-notice" aria-labelledby="srt-limit"><h2 id="srt-limit">Important: existing SRT import is not supported</h2><p><strong>XoloLingua does not support existing SRT import.</strong> It generates a new translated SRT from the original MP4. If you only have a subtitle file, you cannot upload or translate that file directly in this studio.</p></section>
+<p class="seo-lead">Translating subtitles means preserving a readable file structure while adapting the meaning and length of the text. This guide explains how SRT works and separates that task from the workflow XoloLingua actually offers: starting again from the video’s speech to produce a new translated track.</p>
+<section><h2>Read the structure of an SRT cue</h2><p>Each cue contains a sequence number, a time range and one or more lines of text. A blank line separates it from the next cue. Timestamps use hours, minutes, seconds and milliseconds, with a comma before the milliseconds. The arrow separates the start time from the end time.</p><p>This is an illustrative example written to explain the format, <strong>not a measured XoloLingua output</strong>. The English text and French adaptation deliberately use the same time slots.</p><div class="seo-samples"><div><h3>Source text · English</h3><pre><code>1
+00:00:01,000 --> 00:00:03,000
+Welcome to the workshop.
+
+2
+00:00:03,500 --> 00:00:05,500
+Let’s begin.</code></pre></div><div><h3>Adaptation · French</h3><pre lang="fr"><code>1
+00:00:01,000 --> 00:00:03,000
+Bienvenue à l’atelier.
+
+2
+00:00:03,500 --> 00:00:05,500
+Commençons.</code></pre></div></div><p>Keeping timestamps does not automatically make a translation readable: the translated phrase may be longer. Preserve accented characters with UTF-8 encoding, and check the saved file in the player where it will actually be used.</p></section>
+<section><h2>Only have the subtitle file?</h2><p>Do not rename an SRT to MP4: changing an extension cannot create an audio track. To translate that file while retaining existing timing work, choose a tool that explicitly accepts SRT input. Keep an untouched copy before editing. XoloLingua does not reuse the cues or corrections from an existing subtitle file.</p></section>
+<section><h2>Have the original MP4 instead?</h2><ol class="seo-steps">
+<li><strong>Choose the matching video version.</strong> The MP4 must fit the 1 hour and 400 MiB limits. A different edit will not align with the subtitles you already have.</li>
+<li><strong>Identify and verify the spoken language.</strong> Correct the detected source if needed. The target language must be different from the source: there is no monolingual export.</li>
+<li><strong>Segment and generate.</strong> The studio transcribes the audio and translates the text. This regenerates subtitles; it does not translate the SRT file you previously prepared.</li>
+<li><strong>Download and compare.</strong> Open the new SRT beside your reference in an external tool. Do not expect the cue numbers or their boundaries to match the old file exactly.</li>
+</ol></section>
+<section><h2>Check before handing the track over</h2><p>Proofread names, numbers, meaning and timing. Listen closely around speaker changes and technical explanations. Check accented characters and line breaks after saving, not just while editing. Keep source and translated versions separate so that a correction does not accidentally overwrite your only reliable copy.</p></section>
+<section class="seo-boundaries"><h2>Local processing, with practical limits</h2><p>In the studio, video and audio are processed locally in your browser; models are downloaded from remote services on demand. This is not a promise of fully offline operation. Compatibility depends on your browser, available memory and device capabilities. Not all languages or language pairs are supported, and there is no guaranteed processing time.</p><p>Existing SRT import is not supported. There is no built-in editor for corrections, no YouTube URL ingestion and no automatic publishing. Keep your original file and use an external tool when the subtitles need changes. A successful download is the start of your review, not a guarantee that the translation is ready for an audience.</p></section>
+        <section class="seo-action" aria-label="Try the workflow"><h2>Your video, another language</h2><p>The studio is in English. Have your original MP4 ready before you begin.</p><a class="seo-button" href="/">Open XoloLingua <span aria-hidden="true">↗</span></a></section>
+      </article>
+    </main>
+    <aside class="seo-sidebar"><nav aria-label="XoloLingua guides"><p class="seo-eyebrow">Explore the guides</p><ul><li><a href="/en/video-subtitle-generator">Generate from MP4</a></li><li><a href="/en/translate-srt-subtitles" aria-current="page">Understand SRT</a></li><li><a href="/en/youtube-subtitles">Prepare for YouTube</a></li></ul></nav><p>MP4 in.<br>Translated SRT out.</p></aside>
+  </div>
+  <footer class="seo-footer"><a href="/">XoloLingua · Subtitle studio</a><p>Readable without JavaScript. These guides load no models.</p></footer>
+</body>
+</html>

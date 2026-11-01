@@ -1,31 +1,57 @@
 # Replace xololingua.example.com with the chosen DNS name.
 xololingua.example.com {
-    encode zstd gzip
+	encode zstd gzip
 
-    # Public API requests are metadata and small JSON bodies only.
-    request_body /api/* {
-        max_size 3MB
-    }
+	# Public API requests are metadata and small JSON bodies only.
+	request_body /api/* {
+		max_size 3MB
+	}
 
-    header {
-        Cross-Origin-Opener-Policy same-origin
-        Cross-Origin-Embedder-Policy require-corp
-        X-Content-Type-Options nosniff
-        Referrer-Policy no-referrer
-    }
+	header {
+		Cross-Origin-Opener-Policy same-origin
+		Cross-Origin-Embedder-Policy require-corp
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+	}
 
-    handle /api/* {
-        header Cache-Control no-store
-        reverse_proxy 127.0.0.1:8765 {
-            header_up X-Real-IP {remote_host}
-            transport http {
-                max_conns_per_host 16
-            }
-        }
-    }
+	handle /api/* {
+		header Cache-Control no-store
+		reverse_proxy 127.0.0.1:8765 {
+			header_up X-Real-IP {remote_host}
+			transport http {
+				max_conns_per_host 16
+			}
+		}
+	}
 
-    handle {
-        root * /srv/xololingua/www
-        file_server
-    }
+	handle {
+		root * /srv/xololingua/www
+
+		# Exact SEO aliases only. Preserve the raw query without adding a bare ?.
+		map {query} {seo_query} {
+			"" ""
+			default ?{query}
+		}
+		@fr_generator_alias path /generateur-sous-titres-video.html /generateur-sous-titres-video/
+		@fr_translation_alias path /traduire-sous-titres-srt.html /traduire-sous-titres-srt/
+		@fr_youtube_alias path /sous-titres-youtube.html /sous-titres-youtube/
+		@en_generator_alias path /en/video-subtitle-generator.html /en/video-subtitle-generator/
+		@en_translation_alias path /en/translate-srt-subtitles.html /en/translate-srt-subtitles/
+		@en_youtube_alias path /en/youtube-subtitles.html /en/youtube-subtitles/
+		redir @fr_generator_alias /generateur-sous-titres-video{seo_query} 308
+		redir @fr_translation_alias /traduire-sous-titres-srt{seo_query} 308
+		redir @fr_youtube_alias /sous-titres-youtube{seo_query} 308
+		redir @en_generator_alias /en/video-subtitle-generator{seo_query} 308
+		redir @en_translation_alias /en/translate-srt-subtitles{seo_query} 308
+		redir @en_youtube_alias /en/youtube-subtitles{seo_query} 308
+
+		# No generic extension inference or root/index fallback: unknown = 404.
+		rewrite /generateur-sous-titres-video /generateur-sous-titres-video.html
+		rewrite /traduire-sous-titres-srt /traduire-sous-titres-srt.html
+		rewrite /sous-titres-youtube /sous-titres-youtube.html
+		rewrite /en/video-subtitle-generator /en/video-subtitle-generator.html
+		rewrite /en/translate-srt-subtitles /en/translate-srt-subtitles.html
+		rewrite /en/youtube-subtitles /en/youtube-subtitles.html
+		file_server
+	}
 }

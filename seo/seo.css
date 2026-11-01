@@ -1,0 +1,214 @@
+/* Editorial pages only: the studio's stylesheet and components stay untouched. */
+.seo-page {
+  --seo-bg: #eef1ed;
+  --seo-panel: #fffdf8;
+  --seo-ink: #16211e;
+  --seo-muted: #526259;
+  --seo-accent: #1f6f5b;
+  --seo-accent-strong: #174d40;
+  --seo-line: #d4d9d0;
+  color-scheme: light;
+  margin: 0;
+  color: var(--seo-ink);
+  background: linear-gradient(135deg, #e0e9df, var(--seo-bg) 45%, #f3ece3);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 1rem;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+.seo-page *,
+.seo-page *::before,
+.seo-page *::after { box-sizing: border-box; }
+.seo-page a {
+  color: var(--seo-accent);
+  text-decoration-thickness: 0.08em;
+  text-underline-offset: 0.2em;
+}
+.seo-page a:hover { color: var(--seo-accent-strong); }
+.seo-page :focus-visible {
+  outline: 3px solid var(--seo-accent-strong);
+  outline-offset: 5px;
+  border-radius: 3px;
+}
+.seo-page .seo-skip {
+  position: absolute;
+  top: 8px;
+  left: 16px;
+  z-index: 10;
+  padding: 10px 18px;
+  background: var(--seo-panel);
+  transform: translateY(-160%);
+}
+.seo-page .seo-skip:focus { transform: translateY(0); }
+.seo-page .seo-header,
+.seo-page .seo-layout,
+.seo-page .seo-footer {
+  width: min(1160px, 100%);
+  margin-inline: auto;
+  padding-inline: 28px;
+}
+.seo-page .seo-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 24px;
+  padding-block: 24px;
+}
+.seo-page .seo-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  color: var(--seo-ink);
+  font-size: 1.2rem;
+  font-weight: 800;
+  text-decoration: none;
+}
+.seo-page .seo-brand img { flex: none; }
+.seo-page .seo-languages { display: flex; align-items: center; gap: 4px; }
+.seo-page .seo-languages a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 8px;
+}
+.seo-page .seo-languages [aria-current] { color: var(--seo-ink); font-weight: 750; }
+.seo-page .seo-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 226px;
+  gap: 32px;
+  align-items: start;
+}
+.seo-page main { min-width: 0; }
+.seo-page .seo-breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-block: 2px 18px;
+  color: var(--seo-muted);
+  font-size: 0.875rem;
+}
+.seo-page .seo-article {
+  padding: clamp(24px, 4vw, 52px);
+  border: 1px solid var(--seo-line);
+  border-radius: 18px;
+  background: var(--seo-panel);
+  box-shadow: 0 18px 48px rgb(22 33 30 / 6%);
+}
+.seo-page .seo-eyebrow {
+  margin: 0 0 16px;
+  color: var(--seo-accent-strong);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.seo-page h1 {
+  margin: 0 0 28px;
+  max-width: 22ch;
+  font-size: clamp(2rem, 4vw, 3.3rem);
+  font-weight: 750;
+  letter-spacing: -0.045em;
+  line-height: 1.13;
+  text-wrap: balance;
+}
+.seo-page h2 {
+  margin: 0 0 14px;
+  font-size: clamp(1.25rem, 2.1vw, 1.55rem);
+  letter-spacing: -0.02em;
+  line-height: 1.3;
+  text-wrap: balance;
+}
+.seo-page h3 { margin: 0 0 8px; font-size: 1rem; }
+.seo-page p { margin: 0 0 20px; }
+.seo-page .seo-lead { color: var(--seo-muted); font-size: 1.125rem; line-height: 1.7; }
+.seo-page .seo-article section { margin-block: 34px; }
+.seo-page .seo-notice {
+  border-left: 4px solid var(--seo-accent);
+  border-radius: 0 10px 10px 0;
+  padding: 22px 24px;
+  background: #edf2e9;
+}
+.seo-page .seo-notice p:last-child,
+.seo-page .seo-boundaries p:last-child,
+.seo-page .seo-action p:last-child { margin-bottom: 0; }
+.seo-page .seo-steps { margin: 0; padding-left: 1.5em; }
+.seo-page .seo-steps li { margin-bottom: 18px; padding-left: 7px; }
+.seo-page .seo-steps li::marker { color: var(--seo-accent); font-weight: 800; }
+.seo-page .seo-samples { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; margin-bottom: 20px; }
+.seo-page pre {
+  max-width: 100%;
+  margin: 0;
+  padding: 18px;
+  border: 1px solid var(--seo-line);
+  border-radius: 8px;
+  background: #f1f3ec;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.86rem;
+  line-height: 1.7;
+}
+.seo-page code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.seo-page .seo-boundaries {
+  padding-top: 28px;
+  border-top: 1px solid var(--seo-line);
+  color: var(--seo-muted);
+  font-size: 0.95rem;
+}
+.seo-page .seo-boundaries h2 { color: var(--seo-ink); }
+.seo-page .seo-article .seo-action {
+  margin-bottom: 0;
+  padding: 26px;
+  background: #e7ede1;
+  border-radius: 12px;
+}
+.seo-page .seo-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  min-height: 48px;
+  max-width: 100%;
+  padding: 11px 20px;
+  border-radius: 8px;
+  color: var(--seo-panel);
+  background: var(--seo-accent);
+  font-weight: 750;
+  text-decoration: none;
+}
+.seo-page .seo-button:hover { color: var(--seo-panel); background: var(--seo-accent-strong); }
+.seo-page .seo-sidebar {
+  position: sticky;
+  top: 28px;
+  padding-top: 56px;
+  color: var(--seo-muted);
+  font-size: 0.95rem;
+}
+.seo-page .seo-sidebar ul { padding: 0; margin: 0 0 30px; list-style: none; }
+.seo-page .seo-sidebar li { border-bottom: 1px solid var(--seo-line); }
+.seo-page .seo-sidebar a { display: block; min-height: 44px; padding-block: 13px; }
+.seo-page .seo-sidebar [aria-current] { color: var(--seo-ink); font-weight: 750; }
+.seo-page .seo-footer { padding-block: 36px; color: var(--seo-muted); font-size: 0.875rem; }
+.seo-page .seo-footer p { margin-block: 8px 0; }
+@media (max-width: 850px) {
+  .seo-page .seo-layout { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  .seo-page .seo-sidebar { position: static; padding: 8px 6px; }
+  .seo-page .seo-sidebar ul { margin-bottom: 18px; }
+}
+@media (max-width: 480px) {
+  .seo-page .seo-header,
+  .seo-page .seo-layout,
+  .seo-page .seo-footer { padding-inline: 16px; }
+  .seo-page .seo-header { padding-block: 16px; }
+  .seo-page .seo-article { padding: 24px 20px; border-radius: 12px; }
+  .seo-page .seo-notice { padding: 18px; }
+  .seo-page .seo-article .seo-action { padding: 20px; }
+}
+@media print {
+  .seo-page { background: white; }
+  .seo-page .seo-layout { display: block; }
+  .seo-page .seo-article { padding: 0; border: 0; box-shadow: none; }
+  .seo-page .seo-sidebar,
+  .seo-page .seo-skip { display: none; }
+}
