@@ -4,6 +4,28 @@ All notable changes to XoloLingua will be documented in this file.
 
 This project follows Semantic Versioning.
 
+## [1.5.0] - 2026-11-01 - Merge branche 'ci/seo-guides' in main
+### Added
+
+- Added six standalone French and English guides covering video subtitle generation, SRT translation, and YouTube subtitles, with responsive layouts, equivalent-language links, and links to the studio.
+- Added per-guide titles, descriptions, canonical URLs, Open Graph metadata, and reciprocal French/English `hreflang` links.
+- Added `robots.txt` and build-time sitemap generation listing the studio and six canonical guide URLs.
+- Added explicit guide routes in the development server and example Caddy configuration, with permanent redirects from `.html` and trailing-slash aliases that preserve query strings.
+- Added automated coverage for guide content and metadata, static-build allowlisting, sitemap generation, studio markup, routing, and service-worker navigation behavior.
+- Added SEO architecture, validation, controlled publication, rollback, and owner-managed Search Console documentation, including recorded validation results and limitations.
+
+### Changed
+
+- Updated the studio title, description, canonical URL, Open Graph metadata, and visible heading, and added navigation to all six guides.
+- Extended the static build to publish only the allowlisted guides and shared editorial stylesheet.
+- Reserved layout space with explicit mascot image dimensions and refreshed PWA asset and worker versions.
+
+### Fixed
+
+- Isolated cached guide documents from the offline studio shell so guide visits and error pages cannot replace the studio; unknown routes retain their 404 behavior.
+- Kept successful network responses usable when cache writes fail, rejected redirected or non-cacheable shell responses, and limited obsolete-cache cleanup to XoloLingua caches.
+- Fixed CI bootstrap compatibility with PDM 2.28.0 by pinning its Unearth dependency to `0.18.2` and checking HTTP-client construction immediately after installation.
+
 ## [1.4.0] - 2026-09-21 - Merge branche 'feat/browser-language-detection' in main
 ### Added
 
